@@ -9,8 +9,15 @@ use solana_program_error::ProgramError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum EquityGuardError {
-    /// Instruction data does not name a supported instruction.
+    /// Instruction data is empty or names an unsupported ABI version.
     UnsupportedInstruction = 0,
+    /// Instruction data length does not match the ABI version.
+    InvalidInstructionLength = 1,
+    /// Expected state in the instruction is malformed (invalid multiplier
+    /// encoding or unknown activation phase).
+    InvalidExpectedState = 2,
+    /// Instruction was not given exactly one account.
+    InvalidAccountCount = 3,
     /// Mint account is not owned by the Token-2022 program.
     InvalidMintOwner = 4,
     /// Mint account data is not a valid, initialized Token-2022 mint with
@@ -23,6 +30,22 @@ pub enum EquityGuardError {
     InvalidExtensionCombination = 7,
     /// A stored multiplier is not positive and normal.
     InvalidMultiplier = 8,
+    /// Stored `multiplier` differs from the expected bytes.
+    MultiplierChanged = 9,
+    /// Stored `new_multiplier` differs from the expected bytes.
+    NewMultiplierChanged = 10,
+    /// Stored `new_multiplier_effective_timestamp` differs from expected.
+    EffectiveTimestampChanged = 11,
+    /// The clock crossed the effective timestamp relative to what the client
+    /// observed, so a different multiplier is now effective.
+    ActivationPhaseChanged = 12,
+    /// Execution falls inside the protection window around a scheduled
+    /// multiplier activation.
+    InsideTransitionWindow = 13,
+    /// Protection window bounds overflow `i64`.
+    ArithmeticOverflow = 14,
+    /// The Clock sysvar could not be read.
+    ClockUnavailable = 15,
 }
 
 impl From<EquityGuardError> for ProgramError {

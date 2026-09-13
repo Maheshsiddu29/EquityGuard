@@ -34,3 +34,19 @@ pub fn with_scaled_ui_config(
     edit(mint.get_extension_mut::<ScaledUiAmountConfig>().unwrap());
     data
 }
+
+/// Every multiplier encoding that is not positive and normal.
+pub fn invalid_multiplier_bytes() -> Vec<(&'static str, [u8; 8])> {
+    vec![
+        ("+0.0", 0.0_f64.to_le_bytes()),
+        ("-0.0", (-0.0_f64).to_le_bytes()),
+        ("quiet NaN", f64::NAN.to_le_bytes()),
+        ("signaling NaN", 0x7ff0_0000_0000_0001_u64.to_le_bytes()),
+        ("negative NaN", 0xfff8_0000_0000_0000_u64.to_le_bytes()),
+        ("+inf", f64::INFINITY.to_le_bytes()),
+        ("-inf", f64::NEG_INFINITY.to_le_bytes()),
+        ("negative", (-1.0_f64).to_le_bytes()),
+        ("smallest subnormal", 1_u64.to_le_bytes()),
+        ("largest subnormal", 0x000f_ffff_ffff_ffff_u64.to_le_bytes()),
+    ]
+}

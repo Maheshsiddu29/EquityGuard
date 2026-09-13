@@ -53,6 +53,49 @@ pub struct ProtectedState {
     pub new_multiplier_effective_timestamp: i64,
 }
 
+/// Which stored multiplier Token-2022 treats as effective at a given time.
+///
+/// Token-2022 uses `new_multiplier` when `unix_timestamp >=
+/// new_multiplier_effective_timestamp` and `multiplier` otherwise. The mint
+/// bytes do not change at that moment, so economic state can change while the
+/// account stays byte-identical.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ActivationPhase {
+    /// `now < new_multiplier_effective_timestamp`: `multiplier` is effective.
+    Pending = 0,
+    /// `now >= new_multiplier_effective_timestamp`: `new_multiplier` is effective.
+    Activated = 1,
+}
+
+impl ActivationPhase {
+    /// Decodes the ABI byte.
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Pending),
+            1 => Some(Self::Activated),
+            _ => None,
+        }
+    }
+}
+
+impl ProtectedState {
+    /// Whether crossing the effective timestamp changes the effective
+    /// multiplier. Compared by stored bytes, so this is exact.
+    pub fn has_scheduled_change(&self) -> bool {
+        self.multiplier != self.new_multiplier
+    }
+
+    /// Phase at `unix_timestamp`, matching Token-2022's boundary (`>=`).
+    pub fn phase_at(&self, unix_timestamp: i64) -> ActivationPhase {
+        if unix_timestamp >= self.new_multiplier_effective_timestamp {
+            ActivationPhase::Activated
+        } else {
+            ActivationPhase::Pending
+        }
+    }
+}
+
 /// Decodes the protected ScaledUiAmount state from a mint account.
 ///
 /// Fails closed on anything other than an initialized Token-2022 mint with a
@@ -102,7 +145,9 @@ mod tests {
     };
 
     use super::*;
-    use crate::test_fixtures::{mainnet_mint, with_scaled_ui_config, FIXTURE_SYMBOLS};
+    use crate::test_fixtures::{
+        invalid_multiplier_bytes, mainnet_mint, with_scaled_ui_config, FIXTURE_SYMBOLS,
+    };
 
     const LEGACY_TOKEN_PROGRAM: Address =
         Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -244,22 +289,6 @@ mod tests {
         );
     }
 
-    /// Every multiplier encoding that is not positive and normal.
-    fn invalid_multiplier_bytes() -> Vec<(&'static str, [u8; 8])> {
-        vec![
-            ("+0.0", 0.0_f64.to_le_bytes()),
-            ("-0.0", (-0.0_f64).to_le_bytes()),
-            ("quiet NaN", f64::NAN.to_le_bytes()),
-            ("signaling NaN", 0x7ff0_0000_0000_0001_u64.to_le_bytes()),
-            ("negative NaN", 0xfff8_0000_0000_0000_u64.to_le_bytes()),
-            ("+inf", f64::INFINITY.to_le_bytes()),
-            ("-inf", f64::NEG_INFINITY.to_le_bytes()),
-            ("negative", (-1.0_f64).to_le_bytes()),
-            ("smallest subnormal", 1_u64.to_le_bytes()),
-            ("largest subnormal", 0x000f_ffff_ffff_ffff_u64.to_le_bytes()),
-        ]
-    }
-
     #[test]
     fn rejects_invalid_stored_multipliers() {
         for (label, bytes) in invalid_multiplier_bytes() {
@@ -303,5 +332,18 @@ mod tests {
         assert_eq!(0.0_f64, -0.0_f64);
         assert_eq!(StoredMultiplier::new(0.0_f64.to_le_bytes()), None);
         assert_eq!(StoredMultiplier::new((-0.0_f64).to_le_bytes()), None);
+    }
+
+    #[test]
+    fn phase_boundary_matches_token_2022() {
+        let state = decode(&mainnet_mint("UNHx")).unwrap();
+        let t = state.new_multiplier_effective_timestamp;
+        assert_eq!(state.phase_at(t - 1), ActivationPhase::Pending);
+        assert_eq!(state.phase_at(t), ActivationPhase::Activated);
+        assert_eq!(state.phase_at(t + 1), ActivationPhase::Activated);
+        assert!(state.has_scheduled_change());
+        assert!(!decode(&mainnet_mint("UNHon"))
+            .unwrap()
+            .has_scheduled_change());
     }
 }
