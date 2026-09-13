@@ -1,8 +1,8 @@
 [
-  { "symbol": "UNHx", "issuer": "xstocks", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
-  { "symbol": "UNHon", "issuer": "ondo", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
-  { "symbol": "KOx", "issuer": "xstocks", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
-  { "symbol": "KOon", "issuer": "ondo", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
-  { "symbol": "CRMx", "issuer": "xstocks", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
-  { "symbol": "CRMon", "issuer": "ondo", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" }
+  { "symbol": "UNHx", "issuer": "xstocks", "mint": "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe" },
+  { "symbol": "UNHon", "issuer": "ondo", "mint": "kPBGL8vAwKN3UGmr9cjkM2dU79SC3nzTC9yu7F8ondo" },
+  { "symbol": "KOx", "issuer": "xstocks", "mint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ" },
+  { "symbol": "KOon", "issuer": "ondo", "mint": "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo" },
+  { "symbol": "CRMx", "issuer": "xstocks", "mint": "XsczbcQ3zfcgAEt9qHQES8pxKAVG5rujPSHQEXi4kaN" },
+  { "symbol": "CRMon", "issuer": "ondo", "mint": "7D7ukbcnUNYt7Et5vtsDZhAy28MKu9pkHka1Hp9ondo" }
 ]

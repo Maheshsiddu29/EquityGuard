@@ -45,8 +45,8 @@ All mints in one poll share one `slot`, because they are read with a single
 
 Requires Node.js ≥ 22. No npm install needed.
 
-1. Create a mint list from the template, filling in **verified** mint addresses
-   (from issuer documentation or the existing recorder's configuration):
+1. Choose a mint list. `scripts/evidence/mints.example.json` is the verified
+   mainnet watchlist (see below); copy and edit it to capture other mints:
 
    ```sh
    cp scripts/evidence/mints.example.json scripts/evidence/mints.json
@@ -70,6 +70,25 @@ Requires Node.js ≥ 22. No npm install needed.
 
 Failed polls are logged to stderr and retried at the next interval; `--once`
 exits non-zero on failure.
+
+## Verified watchlist
+
+Each address in `scripts/evidence/mints.example.json` was checked read-only
+against mainnet (`getMultipleAccounts`, `confirmed`, slot 446827429,
+2026-09-13):
+
+| Symbol | Issuer | Mint | Owner | Data len | Decimals | ScaledUiAmount | On-chain metadata symbol |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| UNHx | xStocks | `XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe` | Token-2022 | 683 | 8 | decodes | UNHx |
+| UNHon | Ondo | `kPBGL8vAwKN3UGmr9cjkM2dU79SC3nzTC9yu7F8ondo` | Token-2022 | 653 | 9 | decodes | UNHon |
+| KOx | xStocks | `XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ` | Token-2022 | 678 | 8 | decodes | KOx |
+| KOon | Ondo | `e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo` | Token-2022 | 648 | 9 | decodes | KOon |
+| CRMx | xStocks | `XsczbcQ3zfcgAEt9qHQES8pxKAVG5rujPSHQEXi4kaN` | Token-2022 | 681 | 8 | decodes | CRMx |
+| CRMon | Ondo | `7D7ukbcnUNYt7Et5vtsDZhAy28MKu9pkHka1Hp9ondo` | Token-2022 | 651 | 9 | decodes | CRMon |
+
+Account sizes and extension sets differ by issuer (xStocks mints carry
+PermanentDelegate; Ondo mints do not), which is one reason the adapters are
+built independently.
 
 ## Git policy
 

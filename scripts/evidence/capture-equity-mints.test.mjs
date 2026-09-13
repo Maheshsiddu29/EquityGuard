@@ -40,9 +40,14 @@ test("parseMintList rejects bad config with a config error", () => {
   }
 });
 
-test("example mint list is rejected until real addresses are filled in", async () => {
-  const example = JSON.parse(await readFile(new URL("./mints.example.json", import.meta.url), "utf8"));
-  assert.throws(() => parseMintList(example), CaptureError);
+test("committed watchlist is valid and covers both issuers per stock", async () => {
+  const watchlist = parseMintList(
+    JSON.parse(await readFile(new URL("./mints.example.json", import.meta.url), "utf8")),
+  );
+  assert.deepEqual(
+    watchlist.map((m) => `${m.symbol}:${m.issuer}`),
+    ["UNHx:xstocks", "UNHon:ondo", "KOx:xstocks", "KOon:ondo", "CRMx:xstocks", "CRMon:ondo"],
+  );
 });
 
 test("buildRecords preserves raw bytes and records missing accounts", () => {
