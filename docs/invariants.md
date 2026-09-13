@@ -1,0 +1,66 @@
+# Invariants
+
+## I-1 Core execution invariant
+
+> A transaction constructed against economic state **S** must not execute
+> successfully if the relevant protected economic state has changed to **S'**
+> before execution.
+
+Mechanism:
+
+```
+quote/check time:   read mint state S
+transaction:        [ equity_guard::assert_safe_execution(expected = S), execution ixs... ]
+execution time:     guard reads actual state A
+                    A == S (protected fields) and outside protection window → Ok
+                    otherwise                                                 → Err
+atomicity:          Err ⇒ no instruction in the transaction settles
+```
+
+The guard must precede the execution instructions it protects. Ordering is the
+composer's responsibility; the guard itself does not introspect the transaction
+in the MVP.
+
+## I-2 Fail closed
+
+If the guard cannot establish that execution is safe — wrong account owner,
+unparseable mint, missing ScaledUiAmount extension, malformed instruction data,
+unsupported extension set — it returns an error. There is no "proceed anyway"
+path.
+
+Off-chain, `UNKNOWN` blocks execution.
+
+## I-3 No floating-point equality in safety decisions
+
+Protected multiplier values are compared by stored byte representation.
+Float arithmetic is permitted only in display/valuation code, which must use an
+explicit rounding/tolerance policy and never assume exact `ui → raw → ui`
+round-trips.
+
+## I-4 Guard has no side effects
+
+The guard is read-only: it writes no accounts and transfers nothing. Adding it
+to a transaction cannot change the outcome of a transaction that would
+otherwise succeed with unchanged state, other than compute and size cost.
+
+## I-5 Minimal overhead
+
+The guard adds one instruction, one read-only account (the mint, usually already
+present in the swap), and fixed-size instruction data.
+
+## I-6 Honest environments
+
+Data shown as LIVE MAINNET is real and read-only. Engineered transitions exist
+only on devnet. See [demo-boundary.md](demo-boundary.md).
+
+## I-7 No silent rerouting
+
+Execution is never moved to a different issuer's representation without
+explicit user policy and disclosure of issuers, reason, and cost/quote
+difference.
+
+## Test obligations
+
+Each invariant maps to tests as components land (tracked in `AGENTS.md` §4).
+I-1 and I-2 require on-chain tests demonstrating that a failing guard prevents
+a downstream instruction in the same transaction from settling.
