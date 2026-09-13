@@ -139,9 +139,10 @@ The core invariant (`docs/invariants.md`):
 A change is done when:
 
 - it stays within the scope freeze;
-- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
-  `cargo test` pass, plus the equivalent TypeScript/JS checks for code that
-  exists;
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test`, `cargo build-sbf` and the LiteSVM tests against the built
+  program pass, plus the equivalent TypeScript/JS checks for code that exists.
+  Validation that could not run is reported as blocked, never as passed;
 - failure-mode tests exist for new behaviour;
 - relevant docs in `docs/` reflect the implementation;
 - no secrets, generated evidence, or dead code is committed;

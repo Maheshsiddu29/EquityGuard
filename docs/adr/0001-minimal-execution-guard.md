@@ -31,8 +31,11 @@ infrastructure.
 5. **Fail closed.** Every unrecognised condition is an error.
 6. **Atomicity supplies enforcement.** The guard precedes execution
    instructions in the same transaction; its failure reverts everything.
-7. **Test with LiteSVM** once `cargo build-sbf` is available, including a
-   downstream instruction to prove atomic non-settlement.
+7. **Test with LiteSVM** against the compiled program, including a downstream
+   instruction to prove atomic non-settlement (done in Milestone 2).
+
+Clock handling was refined in
+[ADR 0002](0002-clock-aware-transition-protection.md).
 
 ## Consequences
 

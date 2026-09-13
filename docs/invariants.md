@@ -9,13 +9,20 @@
 Mechanism:
 
 ```
-quote/check time:   read mint state S
-transaction:        [ equity_guard::assert_safe_execution(expected = S), execution ixs... ]
-execution time:     guard reads actual state A
-                    A == S (protected fields) and outside protection window → Ok
-                    otherwise                                                 → Err
+quote/check time:   read mint state S and activation phase P = phase(S, now_check)
+transaction:        [ equity_guard::assert_safe_execution(expected = S, P, window), execution ixs... ]
+execution time:     guard reads actual state A and Clock
+                    A == S (protected fields, by bytes)
+                    and, if a multiplier change is scheduled:
+                        now outside [T - before, T + after] and phase(A, now) == P  → Ok
+                    otherwise                                                        → Err
 atomicity:          Err ⇒ no instruction in the transaction settles
 ```
+
+"Economic state" includes the clock: Token-2022 switches from `multiplier` to
+`new_multiplier` at `now >= T` without changing the account, so S is the stored
+fields **plus** which of them is effective. See
+[architecture](architecture.md#byte-state-vs-clock-state).
 
 The guard must precede the execution instructions it protects. Ordering is the
 composer's responsibility; the guard itself does not introspect the transaction
@@ -46,7 +53,9 @@ otherwise succeed with unchanged state, other than compute and size cost.
 ## I-5 Minimal overhead
 
 The guard adds one instruction, one read-only account (the mint, usually already
-present in the swap), and fixed-size instruction data.
+present in the swap), and 34 bytes of instruction data. A `[guard, system
+transfer]` transaction measures 2,800 compute units in LiteSVM, and the test
+suite enforces a ceiling of 20,000.
 
 ## I-6 Honest environments
 
@@ -62,5 +71,10 @@ difference.
 ## Test obligations
 
 Each invariant maps to tests as components land (tracked in `AGENTS.md` §4).
-I-1 and I-2 require on-chain tests demonstrating that a failing guard prevents
-a downstream instruction in the same transaction from settling.
+
+| Invariant | Tests |
+| --- | --- |
+| I-1 | `guard.rs` (stored-field changes, window boundaries, phase crossing); `tests/litesvm_atomicity.rs` cases A–C on the compiled program |
+| I-2 | `state.rs` (owner, truncation, malformed TLV, missing extension, extension combination, invalid multipliers); `instruction.rs` (version, length, expected state); LiteSVM case B |
+| I-3 | `state.rs` byte identity; `guard.rs` identical UI amount but changed state, non-exact UI round-trip |
+| I-4, I-5 | LiteSVM: mint bytes unchanged, compute ceiling |

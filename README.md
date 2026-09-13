@@ -29,14 +29,16 @@ protocols. EquityGuard is not primarily a retail product.
 
 ## Status
 
-Milestone 1: repository foundation. The guard program is a fail-closed skeleton;
-guard business logic has not been implemented yet.
+Milestone 2: the guard is implemented, and LiteSVM tests show it atomically
+prevents a downstream instruction from settling when a ScaledUiAmount mint's
+protected state is unsafe. It is not yet deployed, and Jupiter composition is
+not yet demonstrated.
 
 | Component | Status |
 | --- | --- |
-| `programs/equity_guard` | skeleton, rejects all instructions |
-| `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder |
-| Token-2022 ScaledUiAmount decoding | planned |
+| `programs/equity_guard` — `assert_safe_execution` | implemented; host and LiteSVM tests |
+| Token-2022 ScaledUiAmount decoding | implemented; tested against real mainnet mint bytes |
+| `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
 | Devnet test mints | planned |
 | Mainnet watcher / xStocks adapter | planned |
 | Jupiter composition | planned |
@@ -54,18 +56,18 @@ docs/                     architecture, invariants, threat model, demo boundary,
 
 ## Development
 
-Requirements: Rust (pinned by `rust-toolchain.toml`), Node.js ≥ 22.
+Requirements: Rust (pinned by `rust-toolchain.toml`), Node.js ≥ 22, and the
+Agave CLI (validated with 4.2.2) for `cargo build-sbf`.
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --lib --locked                      # host unit tests
+cargo build-sbf --manifest-path programs/equity_guard/Cargo.toml
+cargo test --locked -p equity_guard --test litesvm_atomicity  # needs the .so
 node --check scripts/evidence/capture-equity-mints.mjs
 node --test 'scripts/evidence/*.test.mjs'
 ```
-
-Building the on-chain SBF artifact additionally requires the Solana/Agave CLI
-(`cargo build-sbf`). See `docs/architecture.md`.
 
 ## Documentation
 
@@ -74,4 +76,5 @@ Building the on-chain SBF artifact additionally requires the Solana/Agave CLI
 - [Threat model](docs/threat-model.md)
 - [Demo boundary: live mainnet vs devnet execution](docs/demo-boundary.md)
 - [ADR 0001: minimal execution guard](docs/adr/0001-minimal-execution-guard.md)
+- [ADR 0002: clock-aware transition protection](docs/adr/0002-clock-aware-transition-protection.md)
 - [Evidence capture](evidence/README.md)
