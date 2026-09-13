@@ -1,0 +1,23 @@
+# Rust / Solana build output
+/target/
+**/*.so
+test-ledger/
+
+# Keypairs and secrets: never commit
+*-keypair.json
+id.json
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+
+# Generated evidence (keep evidence/README.md)
+evidence/*.jsonl
+evidence/*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

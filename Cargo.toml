@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["programs/equity_guard"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+repository = "https://github.com/Maheshsiddu29/EquityGuard"
+
+[workspace.dependencies]
+solana-account-info = "3.1.1"
+solana-program-entrypoint = "3.1.1"
+solana-program-error = "3.0.1"
+solana-pubkey = "4.3.0"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+# The Solana entrypoint macro gates code on the SBF target.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[workspace.lints.clippy]
+expect_used = "deny"
+panic = "deny"
+unwrap_used = "deny"
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
