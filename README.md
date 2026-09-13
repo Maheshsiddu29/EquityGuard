@@ -61,7 +61,7 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 node --check scripts/evidence/capture-equity-mints.mjs
-node --test scripts/evidence/
+node --test 'scripts/evidence/*.test.mjs'
 ```
 
 Building the on-chain SBF artifact additionally requires the Solana/Agave CLI

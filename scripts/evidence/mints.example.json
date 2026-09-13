@@ -1,0 +1,8 @@
+[
+  { "symbol": "UNHx", "issuer": "xstocks", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
+  { "symbol": "UNHon", "issuer": "ondo", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
+  { "symbol": "KOx", "issuer": "xstocks", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
+  { "symbol": "KOon", "issuer": "ondo", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
+  { "symbol": "CRMx", "issuer": "xstocks", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" },
+  { "symbol": "CRMon", "issuer": "ondo", "mint": "REPLACE_WITH_VERIFIED_MINT_ADDRESS" }
+]

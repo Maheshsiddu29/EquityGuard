@@ -28,3 +28,16 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+
+  evidence-script:
+    name: Evidence capture script (syntax, tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Syntax check
+        run: node --check scripts/evidence/capture-equity-mints.mjs
+      - name: Test
+        run: node --test 'scripts/evidence/*.test.mjs'
