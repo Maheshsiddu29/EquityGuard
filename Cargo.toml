@@ -8,11 +8,20 @@ license = "Apache-2.0"
 publish = false
 repository = "https://github.com/Maheshsiddu29/EquityGuard"
 
+# Versions are constrained to the set LiteSVM 0.16 resolves against (it pins
+# several Solana crates with `~`), so program and test code share one type
+# universe for addresses, clocks and instructions.
 [workspace.dependencies]
-solana-account-info = "3.1.1"
-solana-program-entrypoint = "3.1.1"
-solana-program-error = "3.0.1"
-solana-pubkey = "4.3.0"
+solana-account-info = "3.1"
+solana-address = "2.6"
+solana-clock = { version = "3.1", features = ["sysvar"] }
+solana-get-sysvar = "1"
+solana-msg = "3"
+solana-program-entrypoint = "3.1"
+solana-program-error = "3.0"
+spl-token-2022-interface = { version = "3.1.1", default-features = false }
+
+base64 = "0.22"
 
 [workspace.lints.rust]
 missing_docs = "warn"

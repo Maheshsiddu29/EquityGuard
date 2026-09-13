@@ -18,9 +18,13 @@ custom-panic = []
 
 [dependencies]
 solana-account-info.workspace = true
+solana-address.workspace = true
 solana-program-entrypoint.workspace = true
 solana-program-error.workspace = true
-solana-pubkey.workspace = true
+spl-token-2022-interface.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
 
 [lints]
 workspace = true

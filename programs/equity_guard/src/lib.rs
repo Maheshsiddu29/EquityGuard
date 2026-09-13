@@ -9,6 +9,9 @@
 
 pub mod error;
 pub mod processor;
+pub mod state;
+#[cfg(test)]
+mod test_fixtures;
 
 pub use error::EquityGuardError;
 
