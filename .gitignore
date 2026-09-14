@@ -26,3 +26,6 @@ node_modules/
 
 # Evidence is local by default
 evidence/**
+
+# Local analysis snapshots and extracted windows (INV-CAP-01 copies)
+tmp/

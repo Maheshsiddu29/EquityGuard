@@ -72,3 +72,16 @@ export {
   type RerouteDisclosure,
   type ReroutePolicy,
 } from "./decision.ts";
+export {
+  CAPTURE_CADENCE_SECS,
+  CAPTURE_GAP_THRESHOLD_SECS,
+  QUALITY_THRESHOLDS,
+  buildTimeline,
+  timelineJson,
+  type QualityMetrics,
+  type QualityStatus,
+  type StateFields,
+  type TimelineEntry,
+  type TimelineOptions,
+  type TimelineResult,
+} from "./timeline.ts";
