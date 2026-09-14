@@ -1,6 +1,6 @@
 /**
  * Devnet execution evidence, schema v1. One JSON file per transaction under
- * `evidence/devnet/` (gitignored); curated signatures go in docs/devnet.md.
+ * `evidence/devnet/` (gitignored); selected signatures are listed in the root README.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";

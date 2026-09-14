@@ -1,7 +1,6 @@
 /**
  * `assert_safe_execution` ABI v1 encoder. Mirrors
- * `programs/equity_guard/src/instruction.rs`; layout documented in
- * `docs/architecture.md`.
+ * `programs/equity_guard/src/instruction.rs`, which documents the layout.
  */
 
 import { GuardClientError } from "./errors.ts";

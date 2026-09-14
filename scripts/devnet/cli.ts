@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * EquityGuard devnet tooling. Devnet only; see docs/devnet.md.
+ * EquityGuard devnet tooling. Devnet only; see the root README for setup.
  *
  *   node scripts/devnet/cli.ts create-mints
  *   node scripts/devnet/cli.ts schedule --label EQ-A --multiplier 1.25 --in-seconds 120
@@ -79,7 +79,7 @@ function describeSnapshot(snapshot: GuardSnapshot) {
 async function createMints(ctx: DevnetContext): Promise<void> {
   const state = await loadDevnetState();
   if (state.assets.length > 0) {
-    throw new Error("devnet.json already lists test assets; remove them to regenerate (see docs/devnet.md)");
+    throw new Error("devnet.json already lists test assets; remove the assets entries to regenerate them");
   }
   const assets: TestAsset[] = [];
   for (const spec of TEST_MINT_SPECS) {
@@ -144,7 +144,7 @@ async function scenario(
   const { programId } = requireDeployment(state);
   const program = await ctx.rpc.getAccountInfo(programId, { encoding: "base64" }).send();
   if (!program.value?.executable) {
-    throw new Error(`program ${programId} is not deployed on this cluster; see docs/devnet.md`);
+    throw new Error(`program ${programId} is not deployed on this cluster; deploy it first (see the root README)`);
   }
   const window = {
     beforeSecs: Number(values.before ?? DEFAULT_WINDOW_SECS),
@@ -224,7 +224,7 @@ async function main(): Promise<void> {
       return printJson(describeSnapshot(await fetchGuardSnapshot(ctx.rpc, asset.mint)));
     }
     default:
-      throw new Error(`unknown command ${String(command)}; see docs/devnet.md`);
+      throw new Error(`unknown command ${String(command)}; expected create-mints, schedule, snapshot or scenario`);
   }
 }
 

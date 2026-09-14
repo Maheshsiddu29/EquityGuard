@@ -37,13 +37,15 @@ The evidence uses devnet **test mints** (EQ-A, EQ-B; not issuer assets) and a
 system transfer as the downstream instruction. Each transaction below was sent
 as `[assert_safe_execution, system transfer]`:
 
-| Scenario | Result | Devnet transaction |
-| --- | --- | --- |
-| Fresh snapshot | succeeds; transfer settles | [`5RNgyfWj…TVuERX`](https://explorer.solana.com/tx/5RNgyfWjDmQYLwQtZr8jsHKLfqth1UewmNjrSsjuhZB4m3sxgf9kKBjvzfG3zugW1sdSCwspAwrXVdied3TVuERX?cluster=devnet) |
-| Stale stored state (multiplier changed) | fails `MultiplierChanged`; transfer does not settle | [`3NMHpzCc…6bKngJ`](https://explorer.solana.com/tx/3NMHpzCc1X5pFrebj5PR8aJiEV2q35xcGncqtaiGpRJqfNYhrpoJLEMq3nYVXi3XizttoBwG6X2VNJnwxE6bKngJ?cluster=devnet) |
-| Same mint bytes, clock inside transition window | fails `InsideTransitionWindow`; transfer does not settle | [`2LYSTjXg…v9bMsHm8`](https://explorer.solana.com/tx/2LYSTjXgzrMgCDapr7LQEuc2j5hpkxHq2BWHT82nzX4LbfzF3SjgunyaySf8y7A6GwWKDAtRdrqkCgpMv9bMsHm8?cluster=devnet) |
-| Same payload after activation | fails `ActivationPhaseChanged`; transfer does not settle | [`2z7xv8VJ…PGrPX6`](https://explorer.solana.com/tx/2z7xv8VJnXu75cK512qSLVQMc6DYMxVugqLD5bvubeSTNknUgeo7z9C1K2QiDAdajKKPS42E95hcrAJQZkPGrPX6?cluster=devnet) |
-| Fresh activated snapshot | succeeds; transfer settles | [`hySXRPu5…J3HA5`](https://explorer.solana.com/tx/hySXRPu5ennbRT2fyZsKWoZX1aR8Xue9BdYxpdMSWAYuhE5kgeNPqmqK6iB2pHHJGdBPwiBjroyTMPGWKYJ3HA5?cluster=devnet) |
+| # | Scenario | Result | Devnet transaction |
+| --- | --- | --- | --- |
+| 1 | Safe: fresh snapshot (EQ-B) | succeeds; transfer settles | [`5RNgyfWj…TVuERX`](https://explorer.solana.com/tx/5RNgyfWjDmQYLwQtZr8jsHKLfqth1UewmNjrSsjuhZB4m3sxgf9kKBjvzfG3zugW1sdSCwspAwrXVdied3TVuERX?cluster=devnet) |
+| 2 | Stale snapshot after multiplier changed (EQ-A) | fails `MultiplierChanged`; transfer does not settle | [`3NMHpzCc…6bKngJ`](https://explorer.solana.com/tx/3NMHpzCc1X5pFrebj5PR8aJiEV2q35xcGncqtaiGpRJqfNYhrpoJLEMq3nYVXi3XizttoBwG6X2VNJnwxE6bKngJ?cluster=devnet) |
+| 3 | Fresh snapshot recovery (EQ-A) | succeeds; transfer settles | [`46WaWA5q…BviaJDJ`](https://explorer.solana.com/tx/46WaWA5qC42p4vwhg1qYNzFpMqsPu1J3UYDTy1PaX6MckwwB5jTzzmzzW4mfZhjkrUQSSWgCoXfNcD99QBviaJDJ?cluster=devnet) |
+| 4 | Pending phase, before transition window (EQ-A) | succeeds; transfer settles | [`2NSvgdfc…iYd7Mbz`](https://explorer.solana.com/tx/2NSvgdfcDoiB28wjyY5aRm95orn3zuR5npu4x53RU6zRCPbN9Zs1Uh94Bi38yYnDSVPkeLcqwu51qBqANiYd7Mbz?cluster=devnet) |
+| 5 | Same payload, same mint bytes, clock inside transition window | fails `InsideTransitionWindow`; transfer does not settle | [`2LYSTjXg…v9bMsHm8`](https://explorer.solana.com/tx/2LYSTjXgzrMgCDapr7LQEuc2j5hpkxHq2BWHT82nzX4LbfzF3SjgunyaySf8y7A6GwWKDAtRdrqkCgpMv9bMsHm8?cluster=devnet) |
+| 6 | Same payload after the window (activation passed) | fails `ActivationPhaseChanged`; transfer does not settle | [`2z7xv8VJ…PGrPX6`](https://explorer.solana.com/tx/2z7xv8VJnXu75cK512qSLVQMc6DYMxVugqLD5bvubeSTNknUgeo7z9C1K2QiDAdajKKPS42E95hcrAJQZkPGrPX6?cluster=devnet) |
+| 7 | Fresh activated snapshot (EQ-A) | succeeds; transfer settles | [`hySXRPu5…J3HA5`](https://explorer.solana.com/tx/hySXRPu5ennbRT2fyZsKWoZX1aR8Xue9BdYxpdMSWAYuhE5kgeNPqmqK6iB2pHHJGdBPwiBjroyTMPGWKYJ3HA5?cluster=devnet) |
 
 EquityGuard has been composed into a real Jupiter Swap V2 mainnet transaction
 build for a real xStock. The composition was build-only: a USDC → KOx `/build`
