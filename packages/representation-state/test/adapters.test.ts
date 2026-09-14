@@ -124,3 +124,24 @@ test("Ondo: stateSource is chain, api, both-agree or conflict, and conflict is p
   const unknownApi = resolveOndoState(KOON, { chain: koonSafe, api: api("unknown") }, TEST_POLICY);
   assert.equal(unknownApi.stateSource, StateSource.CONFLICT, "UNKNOWN API vs SAFE chain is disagreement, kept distinct");
 });
+
+test("Ondo reconciliation matrix (fixture-only, no live API)", () => {
+  const time = 1_789_400_000n;
+  const chainSafe = observe("KOon", mainnetMint("KOon"), time);
+  const chainPaused = observe("KOon", withPaused(mainnetMint("KOon"), true), time);
+  // A KOon copy with a scheduled change whose activation is at the observed chain time.
+  const chainTransition = observe("KOon", withScaledUi(mainnetMint("KOon"), { newMultiplier: 1.03, effectiveTimestamp: time }), time);
+  const matrix: [string, ChainEvidence | null, ApiStatus | null, RepresentationState | null, StateSource | null][] = [
+    ["chain SAFE + api SAFE", chainSafe, "active", RepresentationState.SAFE, StateSource.BOTH_AGREE],
+    ["chain PAUSED + api PAUSED", chainPaused, "paused", RepresentationState.PAUSED, StateSource.BOTH_AGREE],
+    ["chain SAFE + api PAUSED", chainSafe, "paused", null, StateSource.CONFLICT],
+    ["chain TRANSITION + api SAFE", chainTransition, "active", null, StateSource.CONFLICT],
+    ["API only", null, "paused", RepresentationState.PAUSED, StateSource.API],
+    ["chain only", chainTransition, null, RepresentationState.TRANSITION, StateSource.CHAIN],
+  ];
+  for (const [label, chain, status, state, source] of matrix) {
+    const resolved = resolveOndoState(KOON, { chain, api: status ? api(status) : null }, TEST_POLICY);
+    assert.deepEqual([resolved.state, resolved.stateSource], [state, source], label);
+    if (source === StateSource.CONFLICT) assert.ok(resolved.chainState !== null && resolved.apiState !== null, label);
+  }
+});
