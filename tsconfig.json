@@ -17,5 +17,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "scripts/devnet/**/*.ts", "scripts/jupiter/**/*.ts"]
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "scripts/devnet/**/*.ts", "scripts/jupiter/**/*.ts", "scripts/observation/**/*.ts"]
 }

@@ -34,3 +34,16 @@ export {
 } from "./chain-observation.ts";
 export { resolveXStocksState } from "./xstocks-adapter.ts";
 export { resolveOndoState } from "./ondo-adapter.ts";
+export {
+  captureRecordToJson,
+  decodeCaptureLine,
+  type CaptureLineError,
+  type CaptureObservation,
+  type CaptureRecord,
+} from "./capture.ts";
+export {
+  ConflictEventDetector,
+  ObservationEventDetector,
+  type ObservationEvent,
+  type ObservationEventType,
+} from "./events.ts";
