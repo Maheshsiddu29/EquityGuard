@@ -5,6 +5,7 @@ import {
   ActivationPhase,
   GuardClientError,
   decodeClock,
+  decodeMintMetadata,
   decodeProtectedState,
   hasScheduledChange,
   phaseAt,
@@ -105,4 +106,31 @@ test("decodes the Clock sysvar layout", () => {
   view.setBigInt64(32, -5n, true);
   assert.deepEqual(decodeClock(data), { slot: 123n, unixTimestamp: -5n });
   expectCode(() => decodeClock(new Uint8Array(39)), "InvalidClockData", "short clock");
+});
+
+test("decodes decimals and the real Pausable flag from mainnet fixtures", () => {
+  // xStocks mints use 8 decimals and Ondo mints 9; all six carry Pausable, unpaused at capture.
+  const expected: Record<string, number> = { UNHx: 8, KOx: 8, CRMx: 8, UNHon: 9, KOon: 9, CRMon: 9 };
+  for (const [symbol, decimals] of Object.entries(expected)) {
+    assert.deepEqual(decodeMintMetadata(TOKEN_2022, mainnetMint(symbol)), { decimals, paused: false });
+  }
+});
+
+test("Pausable flag decoding fails closed and reports absence as null", () => {
+  const original = mainnetMint("KOx");
+  const view = new DataView(original.buffer, original.byteOffset);
+  let offset = ACCOUNT_TYPE_OFFSET + 1;
+  while (view.getUint16(offset, true) !== 26) offset += 4 + view.getUint16(offset + 2, true);
+  const pausedFlag = offset + 4 + 32;
+
+  const paused = original.slice();
+  paused[pausedFlag] = 1;
+  assert.equal(decodeMintMetadata(TOKEN_2022, paused).paused, true);
+
+  const invalid = original.slice();
+  invalid[pausedFlag] = 2;
+  expectCode(() => decodeMintMetadata(TOKEN_2022, invalid), "InvalidMintData", "non-boolean pause flag");
+
+  assert.equal(decodeMintMetadata(TOKEN_2022, original.slice(0, 82)).paused, null);
+  expectCode(() => decodeMintMetadata("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", original), "InvalidMintOwner", "owner");
 });

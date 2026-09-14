@@ -19,7 +19,7 @@ export {
   type GuardClientErrorCode,
 } from "./errors.ts";
 export { getAssertSafeExecutionInstruction, requestFromSnapshot } from "./instruction.ts";
-export { TOKEN_2022_PROGRAM_ADDRESS, decodeProtectedState } from "./mint-state.ts";
+export { TOKEN_2022_PROGRAM_ADDRESS, decodeMintMetadata, decodeProtectedState, type MintMetadata } from "./mint-state.ts";
 export {
   SYSVAR_CLOCK_ADDRESS,
   decodeClock,
