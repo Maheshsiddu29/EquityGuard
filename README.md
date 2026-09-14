@@ -33,8 +33,17 @@ EquityGuard executes on Solana devnet and atomically prevents later
 instructions from settling when protected ScaledUiAmount state is stale or
 transitioning. Devnet program:
 [`EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT`](https://explorer.solana.com/address/EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT?cluster=devnet).
-The evidence uses devnet **test mints** and a system transfer as the downstream
-instruction ([docs/devnet.md](docs/devnet.md)).
+The evidence uses devnet **test mints** (EQ-A, EQ-B; not issuer assets) and a
+system transfer as the downstream instruction. Each transaction below was sent
+as `[assert_safe_execution, system transfer]`:
+
+| Scenario | Result | Devnet transaction |
+| --- | --- | --- |
+| Fresh snapshot | succeeds; transfer settles | [`5RNgyfWj…TVuERX`](https://explorer.solana.com/tx/5RNgyfWjDmQYLwQtZr8jsHKLfqth1UewmNjrSsjuhZB4m3sxgf9kKBjvzfG3zugW1sdSCwspAwrXVdied3TVuERX?cluster=devnet) |
+| Stale stored state (multiplier changed) | fails `MultiplierChanged`; transfer does not settle | [`3NMHpzCc…6bKngJ`](https://explorer.solana.com/tx/3NMHpzCc1X5pFrebj5PR8aJiEV2q35xcGncqtaiGpRJqfNYhrpoJLEMq3nYVXi3XizttoBwG6X2VNJnwxE6bKngJ?cluster=devnet) |
+| Same mint bytes, clock inside transition window | fails `InsideTransitionWindow`; transfer does not settle | [`2LYSTjXg…v9bMsHm8`](https://explorer.solana.com/tx/2LYSTjXgzrMgCDapr7LQEuc2j5hpkxHq2BWHT82nzX4LbfzF3SjgunyaySf8y7A6GwWKDAtRdrqkCgpMv9bMsHm8?cluster=devnet) |
+| Same payload after activation | fails `ActivationPhaseChanged`; transfer does not settle | [`2z7xv8VJ…PGrPX6`](https://explorer.solana.com/tx/2z7xv8VJnXu75cK512qSLVQMc6DYMxVugqLD5bvubeSTNknUgeo7z9C1K2QiDAdajKKPS42E95hcrAJQZkPGrPX6?cluster=devnet) |
+| Fresh activated snapshot | succeeds; transfer settles | [`hySXRPu5…J3HA5`](https://explorer.solana.com/tx/hySXRPu5ennbRT2fyZsKWoZX1aR8Xue9BdYxpdMSWAYuhE5kgeNPqmqK6iB2pHHJGdBPwiBjroyTMPGWKYJ3HA5?cluster=devnet) |
 
 EquityGuard has been composed into a real Jupiter Swap V2 mainnet transaction
 build for a real xStock. The composition was build-only: a USDC → KOx `/build`
@@ -44,9 +53,26 @@ guarded transaction is 577 bytes against the 1232-byte limit, 70 bytes more
 than the unguarded one. Nothing was signed or submitted, and EquityGuard is not
 deployed on mainnet, so the guard has not executed alongside a Jupiter swap.
 
-Not yet demonstrated: mainnet EquityGuard execution, guard + Jupiter atomicity
-on mainnet, protection of live xStocks trades, Ondo support, and cross-issuer
-routing.
+### Claim boundary
+
+Proven:
+
+- real mainnet KOx (`XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ`) Token-2022
+  ScaledUiAmount state, read at one slot together with the chain Clock;
+- a real Jupiter Swap V2 `/build` route for USDC → KOx (single Orca Whirlpool
+  hop, recorded 2026-09-14);
+- real v0 composition of that route with an EquityGuard instruction encoded
+  from the KOx state, using Jupiter's address lookup table: 577 bytes guarded
+  vs 507 bytes baseline (+70 bytes, +1 static account, +1 instruction); no
+  `maxAccounts` reduction was needed;
+- guard execution and atomic rollback on **devnet** (table above).
+
+Not proven:
+
+- EquityGuard execution on mainnet (the program is deployed on devnet only);
+- guard + Jupiter atomicity on mainnet;
+- protection of live xStocks trades, or any real purchase;
+- Ondo support or cross-issuer routing.
 
 | Component | Status |
 | --- | --- |
@@ -63,15 +89,12 @@ routing.
 ## Repository layout
 
 ```
-AGENTS.md                 rules for coding agents (read first)
 programs/equity_guard/    on-chain guard program (native Rust)
 packages/guard-client/    TypeScript instruction builder used by clients
 packages/jupiter/         Jupiter /build client and guarded transaction composition
 scripts/jupiter/          live build-only mainnet composition (no submission)
 scripts/devnet/           devnet test mints, scenarios, deployment record
-scripts/evidence/         raw mainnet evidence capture
-evidence/                 capture instructions; generated data is gitignored
-docs/                     architecture, invariants, threat model, demo boundary, ADRs
+scripts/evidence/         raw mainnet evidence capture (output is local, gitignored)
 ```
 
 ## Development
@@ -96,15 +119,17 @@ node --env-file=.env scripts/jupiter/compose-mainnet.ts
 
 CI is credential-free and never calls Jupiter.
 
-Devnet deployment and scenarios are manual; see [docs/devnet.md](docs/devnet.md).
+Devnet deployment is manual and performed by the owner; scenarios run with an
+explicitly devnet-targeted wallet:
 
-## Documentation
+```sh
+export EQUITYGUARD_DEVNET_WALLET=<path to a devnet-only keypair file>
+npm run devnet -- scenario safe --label EQ-B
+npm run devnet -- scenario stale --label EQ-A
+npm run devnet -- scenario transition --label EQ-A
+```
 
-- [Architecture](docs/architecture.md)
-- [Invariants](docs/invariants.md)
-- [Threat model](docs/threat-model.md)
-- [Demo boundary: live mainnet vs devnet execution](docs/demo-boundary.md)
-- [Devnet runbook and evidence](docs/devnet.md)
-- [ADR 0001: minimal execution guard](docs/adr/0001-minimal-execution-guard.md)
-- [ADR 0002: clock-aware transition protection](docs/adr/0002-clock-aware-transition-protection.md)
-- [Evidence capture](evidence/README.md)
+The devnet program ID, deployment signature and test mint addresses are
+recorded in `scripts/devnet/devnet.json`. The on-chain ABI is documented in
+`programs/equity_guard/src/instruction.rs`, and error codes in
+`programs/equity_guard/src/error.rs`.

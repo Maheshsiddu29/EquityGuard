@@ -4,7 +4,7 @@
 test-ledger/
 
 # Keypairs and secrets: never commit. Program and wallet keypairs belong
-# outside the repository (see docs/devnet.md); these patterns are a backstop.
+# outside the repository; these patterns are a backstop.
 *keypair*.json
 id.json
 wallet*.json
@@ -15,19 +15,14 @@ wallet*.json
 # Node
 node_modules/
 
-# Generated evidence (keep evidence/README.md)
-evidence/*.jsonl
-evidence/*.log
-evidence/devnet/*.json
-
 # OS / editor
 .DS_Store
 .idea/
 .vscode/
 
-# Local documentation / development notes
+# Local documentation / development notes: only the root README is public
 *.md
-!README.md
+!/README.md
 
 # Evidence is local by default
 evidence/**
