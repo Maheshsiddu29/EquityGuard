@@ -174,7 +174,8 @@ function wallclockMs(record: { readonly wallclock: string | null }): number | nu
   return Number.isNaN(ms) ? null : ms;
 }
 
-interface PollPoint {
+/** One observed poll: line, captured wallclock and chain context. */
+export interface PollPoint {
   readonly line: number;
   readonly wallclock: string;
   readonly ms: number;

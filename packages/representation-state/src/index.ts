@@ -77,7 +77,9 @@ export {
   CAPTURE_GAP_THRESHOLD_SECS,
   QUALITY_THRESHOLDS,
   buildTimeline,
+  qualityMetrics,
   timelineJson,
+  type PollPoint,
   type QualityMetrics,
   type QualityStatus,
   type StateFields,
@@ -102,3 +104,13 @@ export {
   type XStocksApiObservation,
   type XStocksHistoricalRecord,
 } from "./xstocks-api.ts";
+export {
+  correlateKOx,
+  deltaBounds,
+  type ApiInterval,
+  type CorrelationEvent,
+  type CorrelationOutcome,
+  type DeltaBounds,
+  type KOxCorrelation,
+  type ObservedBoundary,
+} from "./kox-correlation.ts";
