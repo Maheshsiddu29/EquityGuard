@@ -29,17 +29,23 @@ protocols. EquityGuard is not primarily a retail product.
 
 ## Status
 
-Milestone 2: the guard is implemented, and LiteSVM tests show it atomically
-prevents a downstream instruction from settling when a ScaledUiAmount mint's
-protected state is unsafe. It is not yet deployed, and Jupiter composition is
-not yet demonstrated.
+Milestone 3: EquityGuard executes on Solana devnet and atomically prevents later
+instructions from settling when protected ScaledUiAmount state is stale or
+transitioning. Devnet program:
+[`EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT`](https://explorer.solana.com/address/EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT?cluster=devnet).
+The evidence uses devnet **test mints** and a system transfer as the downstream
+instruction ([docs/devnet.md](docs/devnet.md)).
+
+Not yet demonstrated: Jupiter composition, protection of live xStocks trades on
+mainnet, Ondo support, and cross-issuer routing.
 
 | Component | Status |
 | --- | --- |
-| `programs/equity_guard` — `assert_safe_execution` | implemented; host and LiteSVM tests |
-| Token-2022 ScaledUiAmount decoding | implemented; tested against real mainnet mint bytes |
+| `programs/equity_guard` — `assert_safe_execution` | deployed on devnet; host, LiteSVM and real devnet transactions |
+| Token-2022 ScaledUiAmount decoding | implemented in Rust and TypeScript; cross-checked on golden vectors and real mainnet mint bytes |
+| `packages/guard-client` | TypeScript instruction builder (chain-clock snapshot, ABI v1) |
+| `scripts/devnet/` | devnet test mints EQ-A/EQ-B, scenario runner, evidence |
 | `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
-| Devnet test mints | planned |
 | Mainnet watcher / xStocks adapter | planned |
 | Jupiter composition | planned |
 | Rerouting, demo UI | later |
@@ -49,6 +55,8 @@ not yet demonstrated.
 ```
 AGENTS.md                 rules for coding agents (read first)
 programs/equity_guard/    on-chain guard program (native Rust)
+packages/guard-client/    TypeScript instruction builder used by clients
+scripts/devnet/           devnet test mints, scenarios, deployment record
 scripts/evidence/         raw mainnet evidence capture
 evidence/                 capture instructions; generated data is gitignored
 docs/                     architecture, invariants, threat model, demo boundary, ADRs
@@ -56,18 +64,18 @@ docs/                     architecture, invariants, threat model, demo boundary,
 
 ## Development
 
-Requirements: Rust (pinned by `rust-toolchain.toml`), Node.js ≥ 22, and the
+Requirements: Rust (pinned by `rust-toolchain.toml`), Node.js ≥ 22.18, and the
 Agave CLI (validated with 4.2.2) for `cargo build-sbf`.
 
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --lib --locked                      # host unit tests
-cargo build-sbf --manifest-path programs/equity_guard/Cargo.toml
-cargo test --locked -p equity_guard --test litesvm_atomicity  # needs the .so
-node --check scripts/evidence/capture-equity-mints.mjs
-node --test 'scripts/evidence/*.test.mjs'
+cargo build-sbf --manifest-path programs/equity_guard/Cargo.toml -- --locked
+cargo test --workspace --locked        # unit, golden, deployment-ID, LiteSVM (needs the .so)
+npm ci && npm run typecheck && npm test
 ```
+
+Devnet deployment and scenarios are manual; see [docs/devnet.md](docs/devnet.md).
 
 ## Documentation
 
@@ -75,6 +83,7 @@ node --test 'scripts/evidence/*.test.mjs'
 - [Invariants](docs/invariants.md)
 - [Threat model](docs/threat-model.md)
 - [Demo boundary: live mainnet vs devnet execution](docs/demo-boundary.md)
+- [Devnet runbook and evidence](docs/devnet.md)
 - [ADR 0001: minimal execution guard](docs/adr/0001-minimal-execution-guard.md)
 - [ADR 0002: clock-aware transition protection](docs/adr/0002-clock-aware-transition-protection.md)
 - [Evidence capture](evidence/README.md)

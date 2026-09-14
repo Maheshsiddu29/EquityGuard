@@ -20,10 +20,11 @@ same change as the code it describes.
 
 | Component | Location | Status |
 | --- | --- | --- |
-| Guard program (`assert_safe_execution`) | `programs/equity_guard` | implemented; host + LiteSVM tested; not yet deployed |
+| Guard program (`assert_safe_execution`) | `programs/equity_guard` | deployed on devnet (`EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT`); host, LiteSVM and devnet tested |
 | ScaledUiAmount decoding | `programs/equity_guard/src/state.rs`; extract to `crates/equity-state` only if off-chain Rust needs it | implemented |
+| Client instruction builder | `packages/guard-client` (TypeScript, `@solana/kit`) | implemented |
 | Raw evidence capture | `scripts/evidence/capture-equity-mints.mjs` | implemented |
-| Devnet test-mint tooling | `scripts/devnet/` | planned |
+| Devnet test-mint tooling and scenarios | `scripts/devnet/` | implemented |
 | Mainnet watcher + xStocks adapter | `packages/watcher/` | planned |
 | Jupiter composition | TBD with watcher/client code | planned |
 | Rerouting | later | planned, gated on base guard |
@@ -180,7 +181,48 @@ bytes captured from mainnet:
   `ActivationPhaseChanged`.
 
 This proves execution-time protection composes atomically with a downstream
-instruction. It does **not** yet prove composition with Jupiter.
+instruction; [devnet.md](devnet.md) repeats it on devnet. It does **not** yet
+prove composition with Jupiter.
+
+### Out of scope for the guard: Pausable
+
+`assert_safe_execution` does not read the Pausable extension. Token-2022
+itself refuses transfers of a paused mint, so a downstream swap cannot settle
+while paused. Pause state matters for choosing a representation, which is the
+job of the off-chain state model (`PAUSED`), not of the multiplier guard.
+
+## Client instruction builder
+
+`packages/guard-client` is the TypeScript counterpart used by devnet tooling,
+and later by Jupiter composition and the web app. It is deliberately small, not
+a general SDK:
+
+| Module | Responsibility |
+| --- | --- |
+| `mint-state.ts` | the program's fail-closed decode rules, including TLV walk, extension combinations and multiplier validity |
+| `snapshot.ts` | one `getMultipleAccounts` call for `[mint, Clock sysvar]`, so state and chain time share a slot; derives the phase |
+| `abi.ts` | ABI v1 encoder and input validation |
+| `instruction.ts` | `assert_safe_execution` instruction, mint read-only |
+
+**Chain time, not local time.** The expected phase comes from the Clock
+sysvar's `unix_timestamp`, the same value the program reads. The laptop clock
+is never used for safety decisions.
+
+**Cross-language agreement.**
+`programs/equity_guard/tests/fixtures/abi_v1_golden.json` was generated
+independently with Python `struct`. The Rust program (`tests/abi_golden.rs`)
+and the client both must reproduce every vector, invalid-input error, error
+code, and the decoded values of the six mainnet fixtures.
+
+## Devnet
+
+Program `EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT` is deployed on devnet
+(BPF Upgradeable Loader, SBPF v0). The upgrade authority is the owner-held
+devnet wallet. Real signed transactions of `[guard, system transfer]` against
+test mints EQ-A and EQ-B show safe execution, a stale-state failure, an
+in-window failure, and a post-activation phase failure with identical mint
+bytes, each followed by recovery. Signatures, runbook and evidence format are
+in [devnet.md](devnet.md). CI builds and tests; it never deploys.
 
 ## Normalized state model (off-chain)
 

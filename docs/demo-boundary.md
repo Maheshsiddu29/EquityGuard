@@ -25,11 +25,19 @@ value is unavailable it is shown as unavailable, not substituted.
 
 ## DEVNET EXECUTION pane
 
-- controlled Token-2022 test mints with ScaledUiAmount
+- controlled Token-2022 test mints with ScaledUiAmount: EQ-A and EQ-B,
+  both labelled as representing the fictional stock `DEMO`
 - engineered pending transitions and activations
 - the real deployed EquityGuard program
+  (`EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT` on devnet)
 - actually signed transactions
 - actual atomic success/failure outcomes, linked to explorer
+
+Test assets carry no xStocks, Ondo or other issuer branding, and every listing
+shows the disclosure "DEVNET TEST ASSET … Not an xStocks, Ondo or any issuer
+asset; no real-world value" (enforced by `scripts/devnet/devnet-state.ts`).
+Evidence records name their cluster, so a local-validator rehearsal can never
+appear as a devnet result. See [devnet.md](devnet.md).
 
 ## Required disclosure
 

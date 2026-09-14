@@ -90,9 +90,16 @@ Account sizes and extension sets differ by issuer (xStocks mints carry
 PermanentDelegate; Ondo mints do not), which is one reason the adapters are
 built independently.
 
+## Devnet execution evidence
+
+`evidence/devnet/*.json` holds one schema-v1 record per guarded devnet
+transaction, written by `scripts/devnet/cli.ts scenario ...`. These records
+are evidence of executions against devnet **test** assets, not mainnet state.
+Format and curated signatures: [docs/devnet.md](../docs/devnet.md).
+
 ## Git policy
 
-`evidence/*.jsonl` and `evidence/*.log` are gitignored. Never commit generated
+`evidence/*.jsonl`, `evidence/*.log` and `evidence/devnet/*.json` are gitignored. Never commit generated
 captures. Archive them outside the repository if they need to be shared.
 
 ## Relationship to the external recorder

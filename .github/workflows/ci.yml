@@ -26,8 +26,8 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Unit and golden tests
-        run: cargo test --workspace --lib --test abi_golden --locked
+      - name: Unit, golden and deployment-ID tests
+        run: cargo test --workspace --lib --test abi_golden --test deployment --locked
 
   sbf:
     name: SBF build and LiteSVM tests

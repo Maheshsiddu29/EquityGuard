@@ -1,6 +1,6 @@
 # ADR 0002: Clock-aware transition protection
 
-- Status: proposed (Milestone 2, pending human review)
+- Status: accepted (approved with Milestone 2; exercised on devnet in Milestone 3)
 - Date: 2026-09-13
 
 ## Context
