@@ -61,3 +61,13 @@ export {
   type ShareInput,
 } from "./normalize.ts";
 export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
+export {
+  Decision,
+  decide,
+  type DecisionInput,
+  type DecisionReasonCode,
+  type DecisionResult,
+  type RepresentationSummary,
+  type RerouteDisclosure,
+  type ReroutePolicy,
+} from "./decision.ts";
