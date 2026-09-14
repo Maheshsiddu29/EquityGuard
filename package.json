@@ -19,7 +19,8 @@
     "observation:events": "node scripts/observation/detect-events.ts",
     "observation:snapshot": "node scripts/observation/snapshot-capture.ts",
     "observation:timeline": "node scripts/observation/timeline.ts",
-    "observation:extract": "node scripts/observation/extract-window.ts"
+    "observation:extract": "node scripts/observation/extract-window.ts",
+    "observation:snapshot-xstocks-api": "node scripts/observation/snapshot-xstocks-api.ts"
   },
   "dependencies": {
     "@solana-program/system": "0.14.1",

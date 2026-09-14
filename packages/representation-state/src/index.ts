@@ -85,3 +85,20 @@ export {
   type TimelineOptions,
   type TimelineResult,
 } from "./timeline.ts";
+export {
+  XStocksApiEventDetector,
+  XStocksApiParseError,
+  decodeXStocksApiLine,
+  f64Hex,
+  interpretActivationTime,
+  isExecutionRelevant,
+  parseXStocksHistoricalRecord,
+  type ActivationTime,
+  type ActivationTimeInterpretation,
+  type ApiDecodeStatus,
+  type ApiEvent,
+  type ApiEventType,
+  type EvidenceSource,
+  type XStocksApiObservation,
+  type XStocksHistoricalRecord,
+} from "./xstocks-api.ts";

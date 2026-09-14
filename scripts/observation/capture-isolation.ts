@@ -49,7 +49,7 @@ export const MANIFEST_SUFFIX = ".manifest.json";
 const READ_ONLY_MODE = 0o444;
 
 export interface SealedManifest {
-  readonly kind: "equityguard-capture-snapshot" | "equityguard-capture-window";
+  readonly kind: "equityguard-capture-snapshot" | "equityguard-capture-window" | "equityguard-xstocks-api-snapshot";
   readonly schemaVersion: 1;
   readonly sha256: string;
   readonly bytes: number;

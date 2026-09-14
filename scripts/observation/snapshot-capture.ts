@@ -39,9 +39,20 @@ export interface SnapshotHooks {
 }
 
 export async function runSnapshot(argv: string[], env: NodeJS.ProcessEnv, hooks: SnapshotHooks = {}): Promise<SnapshotResult> {
+  return sealSnapshot(argv, env, hooks, "equityguard-capture-snapshot", "--input <path to the BACKUP capture>");
+}
+
+/** Shared sealed-copy procedure for chain captures and API watcher files. */
+export async function sealSnapshot(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  hooks: SnapshotHooks,
+  kind: SealedManifest["kind"],
+  inputHelp: string,
+): Promise<SnapshotResult> {
   const now = hooks.now ?? (() => new Date());
   const { values } = parseArgs({ args: argv, options: { input: { type: "string" }, "output-dir": { type: "string" } } });
-  if (!values.input) throw new Error("--input <path to the BACKUP capture> is required; there is no default");
+  if (!values.input) throw new Error(`${inputHelp} is required; there is no default`);
   const source = await assertNotProtected(values.input, env);
 
   const statBefore = await stat(source);
@@ -55,8 +66,9 @@ export async function runSnapshot(argv: string[], env: NodeJS.ProcessEnv, hooks:
   const stamp = now().toISOString().replaceAll(":", "").replace(/\.\d+Z$/, "Z");
   const path = join(dir, `${stamp}-${basename(source)}`);
   const manifest = await writeSealedCopy(path, bytes, {
-    kind: "equityguard-capture-snapshot",
+    kind,
     source,
+    sourceSha256: shaBefore,
     createdAt: now().toISOString(),
     sourceMtimeMs: statBefore.mtimeMs,
     trailingNewline: countLines(bytes).trailingNewline,

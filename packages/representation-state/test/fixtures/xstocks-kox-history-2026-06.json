@@ -1,0 +1,9 @@
+{
+  "description": "Historical KOx xStocks multiplier record (June 2026 dividend), as returned by the xStocks public API and inspected by the project owner. Its multipliers and activation time match the KOx Token-2022 mint fixture captured at slot 446827429 (multiplier 1efbb6d57038f03f, new multiplier 73833748164bf03f, effective timestamp 1781481300).",
+  "record": {
+    "previousMultiplier": 1.013779482672994,
+    "multiplier": 1.0183317967386898,
+    "activationDateTime": "2026-06-14T23:55:00.000Z",
+    "reason": "Dividend"
+  }
+}
