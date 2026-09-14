@@ -11,6 +11,7 @@ import { test } from "node:test";
 import { address, type Address } from "@solana/kit";
 import {
   ActivationPhase,
+  EQUITY_GUARD_DEVNET_PROGRAM_ID,
   encodeAssertSafeExecutionV1,
   getAssertSafeExecutionInstruction,
   type AssertSafeExecutionRequest,
@@ -43,7 +44,7 @@ interface Fixture {
   response: unknown;
 }
 
-const PROGRAM_ID = address("EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT");
+const PROGRAM_ID = EQUITY_GUARD_DEVNET_PROGRAM_ID;
 const JUPITER_V6_PROGRAM = address("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
 const KOX_MINT = address("XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ");
 const USDC_MINT = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");

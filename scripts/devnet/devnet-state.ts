@@ -6,6 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 import { address, type Address } from "@solana/kit";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
 
 /** Committed devnet metadata; `EQUITYGUARD_DEVNET_STATE` redirects local rehearsals. */
 export function devnetStatePath(env: NodeJS.ProcessEnv = process.env): string | URL {
@@ -97,7 +98,13 @@ export function findAsset(state: DevnetState, label: string): TestAsset {
   return asset;
 }
 
+/** The recorded deployment, which must be the pinned program ID. */
 export function requireDeployment(state: DevnetState): DevnetDeployment {
   if (!state.deployment) throw new DevnetStateError("no devnet deployment recorded in devnet.json");
+  if (state.deployment.programId !== EQUITY_GUARD_DEVNET_PROGRAM_ID) {
+    throw new DevnetStateError(
+      `devnet.json program ID ${state.deployment.programId} diverges from the pinned ${EQUITY_GUARD_DEVNET_PROGRAM_ID}`,
+    );
+  }
   return state.deployment;
 }

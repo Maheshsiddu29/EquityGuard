@@ -20,6 +20,7 @@ import { parseArgs } from "node:util";
 
 import { address, createSolanaRpc, generateKeyPairSigner, type Address } from "@solana/kit";
 import {
+  EQUITY_GUARD_DEVNET_PROGRAM_ID as EQUITY_GUARD_PROGRAM_ID,
   fetchGuardSnapshot,
   getAssertSafeExecutionInstruction,
   requestFromSnapshot,
@@ -47,7 +48,6 @@ const MAX_ACCOUNTS_FALLBACKS = [48, 40, 32, 24, 16] as const;
  * none of the size metrics (the ABI is fixed-size) and is not an issuer policy.
  */
 const ILLUSTRATIVE_WINDOW = { beforeSecs: 900, afterSecs: 900 } as const;
-const EQUITY_GUARD_PROGRAM_ID = address("EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT");
 const WATCHLIST = new URL("../evidence/mints.example.json", import.meta.url);
 const FIXTURE_DIR = new URL("../../packages/jupiter/test/fixtures/", import.meta.url);
 

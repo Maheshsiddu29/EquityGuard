@@ -19,6 +19,7 @@ export {
   type GuardClientErrorCode,
 } from "./errors.ts";
 export { getAssertSafeExecutionInstruction, requestFromSnapshot } from "./instruction.ts";
+export { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "./program-id.ts";
 export { TOKEN_2022_PROGRAM_ADDRESS, decodeMintMetadata, decodeProtectedState, type MintMetadata } from "./mint-state.ts";
 export {
   SYSVAR_CLOCK_ADDRESS,

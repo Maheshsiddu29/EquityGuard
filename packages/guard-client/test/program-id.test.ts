@@ -1,0 +1,45 @@
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { test } from "node:test";
+
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "../src/index.ts";
+
+const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const APPROVED_DEVNET_PROGRAM_ID = "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT";
+
+test("pinned TypeScript program ID is the approved devnet deployment", () => {
+  assert.equal(EQUITY_GUARD_DEVNET_PROGRAM_ID, APPROVED_DEVNET_PROGRAM_ID);
+});
+
+test("Rust declare_id! matches the pinned ID", () => {
+  const lib = readFileSync(join(ROOT, "programs/equity_guard/src/lib.rs"), "utf8");
+  const declared = [...lib.matchAll(/declare_id!\("([1-9A-HJ-NP-Za-km-z]+)"\)/g)].map((m) => m[1]);
+  assert.deepEqual(declared, [EQUITY_GUARD_DEVNET_PROGRAM_ID]);
+});
+
+test("devnet deployment record matches the pinned ID", () => {
+  const state = JSON.parse(readFileSync(join(ROOT, "scripts/devnet/devnet.json"), "utf8")) as {
+    deployment: { programId: string } | null;
+  };
+  assert.equal(state.deployment?.programId, EQUITY_GUARD_DEVNET_PROGRAM_ID);
+});
+
+test("no other source file hardcodes the program ID", () => {
+  const allowed = new Set(["packages/guard-client/src/program-id.ts", "packages/guard-client/test/program-id.test.ts", "programs/equity_guard/src/lib.rs"]);
+  const scanned = ["packages", "scripts", "programs"];
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(join(ROOT, dir))) {
+      if (name === "node_modules" || name === "target" || name === "fixtures") continue;
+      const rel = join(dir, name);
+      if (statSync(join(ROOT, rel)).isDirectory()) walk(rel);
+      else if (/\.(ts|mjs|rs)$/.test(name) && !allowed.has(rel) && readFileSync(join(ROOT, rel), "utf8").includes(APPROVED_DEVNET_PROGRAM_ID)) {
+        offenders.push(rel);
+      }
+    }
+  };
+  scanned.forEach(walk);
+  assert.deepEqual(offenders, []);
+});

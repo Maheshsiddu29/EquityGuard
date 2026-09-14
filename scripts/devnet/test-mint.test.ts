@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { generateKeyPairSigner } from "@solana/kit";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import {
   TOKEN_2022_PROGRAM_ADDRESS,
@@ -18,7 +19,7 @@ import {
   parseKeypairFile,
   readDevnetConfig,
 } from "./config.ts";
-import { DevnetStateError, TEST_ASSET_DISCLOSURE, parseDevnetState } from "./devnet-state.ts";
+import { DevnetStateError, TEST_ASSET_DISCLOSURE, parseDevnetState, requireDeployment } from "./devnet-state.ts";
 import { parseCustomError } from "./send.ts";
 import {
   InvalidTestMintExtensionsError,
@@ -131,4 +132,16 @@ test("parses custom instruction errors from RPC transaction errors", () => {
   assert.deepEqual(parseCustomError({ InstructionError: [1n, { Custom: 9n }] }), { instructionIndex: 1, code: 9 });
   assert.equal(parseCustomError({ InstructionError: [0, "InvalidAccountData"] }), null);
   assert.equal(parseCustomError(null), null);
+});
+
+test("devnet tooling refuses a deployment record that diverges from the pinned program ID", () => {
+  const deployment = (programId: string) =>
+    parseDevnetState({
+      cluster: "devnet",
+      deployment: { programId, deploySignature: "sig", upgradeAuthority: "11111111111111111111111111111111" },
+      assets: [],
+    });
+  assert.equal(requireDeployment(deployment(EQUITY_GUARD_DEVNET_PROGRAM_ID)).programId, EQUITY_GUARD_DEVNET_PROGRAM_ID);
+  assert.throws(() => requireDeployment(deployment("11111111111111111111111111111112")), DevnetStateError);
+  assert.throws(() => requireDeployment({ cluster: "devnet", deployment: null, assets: [] }), DevnetStateError);
 });
