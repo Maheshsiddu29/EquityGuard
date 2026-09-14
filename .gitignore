@@ -24,3 +24,10 @@ evidence/devnet/*.json
 .DS_Store
 .idea/
 .vscode/
+
+# Local documentation / development notes
+*.md
+!README.md
+
+# Evidence is local by default
+evidence/**
