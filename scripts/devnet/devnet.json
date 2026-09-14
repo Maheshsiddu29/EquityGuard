@@ -1,5 +1,24 @@
 {
   "cluster": "devnet",
-  "deployment": null,
-  "assets": []
+  "deployment": {
+    "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+    "deploySignature": "4rc3JcJ7NHg3HmjNsfzmnTDcEXxR7k3gYvgFazJFfZ4chbwBaSU9nxp7P9yepJtxaEPtiGUXgQLHpoAezwtGBWRa",
+    "upgradeAuthority": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT"
+  },
+  "assets": [
+    {
+      "label": "EQ-A",
+      "mint": "5ikX5JLtRXxqARxsCfLyJ1gkz43bcYFCXnhPyfpmJeRt",
+      "decimals": 6,
+      "conceptualStock": "DEMO (fictional equity for EquityGuard devnet tests)",
+      "disclosure": "DEVNET TEST ASSET created by EquityGuard tooling. Not an xStocks, Ondo or any issuer asset; no real-world value."
+    },
+    {
+      "label": "EQ-B",
+      "mint": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+      "decimals": 6,
+      "conceptualStock": "DEMO (fictional equity for EquityGuard devnet tests)",
+      "disclosure": "DEVNET TEST ASSET created by EquityGuard tooling. Not an xStocks, Ondo or any issuer asset; no real-world value."
+    }
+  ]
 }
