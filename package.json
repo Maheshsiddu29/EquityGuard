@@ -6,7 +6,8 @@
     "node": ">=22.18.0"
   },
   "workspaces": [
-    "packages/guard-client"
+    "packages/guard-client",
+    "packages/jupiter"
   ],
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",

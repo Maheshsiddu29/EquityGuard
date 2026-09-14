@@ -1,0 +1,13 @@
+{
+  "name": "@equityguard/jupiter",
+  "version": "0.1.0",
+  "description": "Composes EquityGuard with Jupiter Swap V2 /build instructions (build-only, no submission)",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@solana/kit": "8.3.0"
+  }
+}
