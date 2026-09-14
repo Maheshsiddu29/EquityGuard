@@ -31,6 +31,7 @@ export type DecisionReasonCode =
   | "ALTERNATIVE_NOT_SAFE"
   | "ALTERNATIVE_NOT_SAME_UNDERLYING"
   | "ALTERNATIVE_QUOTE_UNAVAILABLE"
+  | "QUOTE_COMPARISON_MISMATCH"
   | "CONSENT_REQUIRED"
   | "CONSENT_GIVEN";
 
@@ -78,8 +79,35 @@ export interface DecisionInput {
   readonly preferred: ResolvedRepresentationState;
   readonly alternative: ResolvedRepresentationState | null;
   readonly policy: ReroutePolicy;
-  /** Normalized comparison of preferred vs alternative at identical notional. */
+  /** Input notional (smallest units) of the trade being decided. */
+  readonly inputRaw: bigint;
+  /**
+   * Normalized comparison of preferred vs alternative. It must be bound to
+   * this decision's underlying, both mints and `inputRaw`, or no reroute is
+   * authorized.
+   */
   readonly comparison: QuoteComparison | null;
+}
+
+/** Describes why a comparison does not belong to this decision, or null if it does. */
+export function comparisonBindingMismatch(
+  comparison: QuoteComparison,
+  preferred: ResolvedRepresentationState,
+  alternative: ResolvedRepresentationState,
+  inputRaw: bigint,
+): string | null {
+  const mismatches: string[] = [];
+  if (comparison.underlying !== preferred.underlying) {
+    mismatches.push(`underlying ${comparison.underlying} != ${preferred.underlying}`);
+  }
+  if (comparison.preferredMint !== preferred.mint) {
+    mismatches.push(`preferredMint ${comparison.preferredMint} != ${preferred.mint}`);
+  }
+  if (comparison.alternativeMint !== alternative.mint) {
+    mismatches.push(`alternativeMint ${comparison.alternativeMint} != ${alternative.mint}`);
+  }
+  if (comparison.inputRaw !== inputRaw) mismatches.push(`inputRaw ${comparison.inputRaw} != ${inputRaw}`);
+  return mismatches.length > 0 ? mismatches.join("; ") : null;
 }
 
 const NOT_IDENTICAL_NOTICE =
@@ -130,10 +158,15 @@ export function decide(input: DecisionInput): DecisionResult {
   if (alternative.state !== RepresentationState.SAFE) {
     return result(Decision.NO_SAFE_ROUTE, "ALTERNATIVE_NOT_SAFE", `${unsafeReason}; ${alternative.symbol} is ${alternative.state}`);
   }
-  // Without a normalized quote the cost of switching cannot be disclosed, so
-  // the alternative is not offered, even with consent.
+  // A SAFE alternative exists, but without a normalized quote the cost of
+  // switching is unknown and cannot be disclosed: not offered, even with consent.
   if (!comparison) {
-    return result(Decision.NO_SAFE_ROUTE, "ALTERNATIVE_QUOTE_UNAVAILABLE", `${unsafeReason}; ${alternative.symbol} is SAFE but has no normalized quote`);
+    return result(Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE", `${unsafeReason}; ${alternative.symbol} is SAFE but has no normalized quote`);
+  }
+  // A comparison computed for another trade must never authorize a reroute.
+  const mismatch = comparisonBindingMismatch(comparison, preferred, alternative, input.inputRaw);
+  if (mismatch) {
+    return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH", `${unsafeReason}; quote comparison does not match this decision: ${mismatch}`);
   }
 
   const disclosure: RerouteDisclosure = {

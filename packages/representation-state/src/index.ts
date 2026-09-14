@@ -63,6 +63,7 @@ export {
 export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
 export {
   Decision,
+  comparisonBindingMismatch,
   decide,
   type DecisionInput,
   type DecisionReasonCode,

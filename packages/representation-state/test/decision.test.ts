@@ -43,10 +43,14 @@ function f64(value: number): Uint8Array {
   return b;
 }
 
-const quoteBase = { inputRaw: 5_000_000n, decimals: 8, effectiveMultiplier: f64(1) };
+const INPUT_RAW = 5_000_000n;
+const KOX_MINT = "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ";
+const KOON_MINT = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
+const quoteBase = { underlying: "KO", inputRaw: INPUT_RAW, decimals: 8, effectiveMultiplier: f64(1) };
+/** Correctly bound comparison for KOx (preferred) vs KOon (alternative) at INPUT_RAW. */
 const COMPARISON: QuoteComparison = compareQuotes(
-  { ...quoteBase, issuer: "xStocks", mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", outputRaw: 10_000n } satisfies NormalizedQuote,
-  { ...quoteBase, issuer: "Ondo", mint: "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo", outputRaw: 99_800n, decimals: 9 },
+  { ...quoteBase, issuer: "xStocks", mint: KOX_MINT, outputRaw: 10_000n } satisfies NormalizedQuote,
+  { ...quoteBase, issuer: "Ondo", mint: KOON_MINT, outputRaw: 99_800n, decimals: 9 },
   { toleranceBps: 5n },
 );
 
@@ -55,7 +59,7 @@ const ON = { allowCrossIssuerReroute: true };
 
 test("preferred SAFE uses the preferred representation, regardless of alternatives", () => {
   for (const alternative of [null, resolved("KOon", RepresentationState.UNKNOWN), resolved("KOon", null, StateSource.CONFLICT)]) {
-    const result = decide({ preferred: resolved("KOx", RepresentationState.SAFE), alternative, policy: ON, comparison: null });
+    const result = decide({ preferred: resolved("KOx", RepresentationState.SAFE), alternative, policy: ON, inputRaw: INPUT_RAW, comparison: null });
     assert.equal(result.decision, Decision.USE_PREFERRED);
     assert.equal(result.disclosure, null);
   }
@@ -63,7 +67,7 @@ test("preferred SAFE uses the preferred representation, regardless of alternativ
 
 test("unsafe preferred with a SAFE quoted alternative requires consent when consent is off", () => {
   for (const unsafe of [RepresentationState.TRANSITION, RepresentationState.PAUSED]) {
-    const result = decide({ preferred: resolved("KOx", unsafe), alternative: resolved("KOon", RepresentationState.SAFE), policy: OFF, comparison: COMPARISON });
+    const result = decide({ preferred: resolved("KOx", unsafe), alternative: resolved("KOon", RepresentationState.SAFE), policy: OFF, inputRaw: INPUT_RAW, comparison: COMPARISON });
     assert.equal(result.decision, Decision.REQUIRES_CONSENT, unsafe);
     const d = result.disclosure;
     assert.ok(d);
@@ -77,7 +81,7 @@ test("unsafe preferred with a SAFE quoted alternative requires consent when cons
 });
 
 test("unsafe preferred with a SAFE quoted alternative uses it when consent is on, with the same disclosure", () => {
-  const input = { preferred: resolved("KOx", RepresentationState.TRANSITION), alternative: resolved("KOon", RepresentationState.SAFE), comparison: COMPARISON };
+  const input = { preferred: resolved("KOx", RepresentationState.TRANSITION), alternative: resolved("KOon", RepresentationState.SAFE), inputRaw: INPUT_RAW, comparison: COMPARISON };
   const withConsent = decide({ ...input, policy: ON });
   assert.equal(withConsent.decision, Decision.USE_ALTERNATIVE);
   assert.deepEqual(withConsent.disclosure, decide({ ...input, policy: OFF }).disclosure);
@@ -93,15 +97,49 @@ test("no SAFE alternative is NO_SAFE_ROUTE", () => {
     [resolved("KOx", RepresentationState.SAFE), "ALTERNATIVE_NOT_SAME_UNDERLYING"],
   ];
   for (const [alternative, reasonCode] of cases) {
-    const result = decide({ preferred, alternative, policy: ON, comparison: COMPARISON });
+    const result = decide({ preferred, alternative, policy: ON, inputRaw: INPUT_RAW, comparison: COMPARISON });
     assert.deepEqual([result.decision, result.reasonCode, result.disclosure], [Decision.NO_SAFE_ROUTE, reasonCode, null]);
   }
 });
 
-test("a SAFE alternative without a normalized quote is not offered, even with consent", () => {
-  for (const policy of [OFF, ON]) {
-    const result = decide({ preferred: resolved("KOx", RepresentationState.PAUSED), alternative: resolved("KOon", RepresentationState.SAFE), policy, comparison: null });
-    assert.deepEqual([result.decision, result.reasonCode, result.disclosure], [Decision.NO_SAFE_ROUTE, "ALTERNATIVE_QUOTE_UNAVAILABLE", null]);
+test("a SAFE alternative with a missing quote is UNKNOWN_STATE, never offered, even with consent", () => {
+  for (const unsafe of [RepresentationState.TRANSITION, RepresentationState.PAUSED]) {
+    for (const policy of [OFF, ON]) {
+      const result = decide({ preferred: resolved("KOx", unsafe), alternative: resolved("KOon", RepresentationState.SAFE), policy, inputRaw: INPUT_RAW, comparison: null });
+      assert.deepEqual([result.decision, result.reasonCode, result.disclosure], [Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE", null]);
+    }
+  }
+});
+
+test("NO_SAFE_ROUTE means no SAFE eligible alternative exists, independent of quotes", () => {
+  for (const comparison of [COMPARISON, null]) {
+    const result = decide({ preferred: resolved("KOx", RepresentationState.TRANSITION), alternative: resolved("KOon", RepresentationState.PAUSED), policy: ON, inputRaw: INPUT_RAW, comparison });
+    assert.equal(result.decision, Decision.NO_SAFE_ROUTE);
+  }
+});
+
+test("a correctly bound comparison authorizes consent outcomes", () => {
+  const base = { preferred: resolved("KOx", RepresentationState.TRANSITION), alternative: resolved("KOon", RepresentationState.SAFE), inputRaw: INPUT_RAW, comparison: COMPARISON };
+  assert.deepEqual([decide({ ...base, policy: OFF }).decision, decide({ ...base, policy: OFF }).reasonCode], [Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED"]);
+  assert.deepEqual([decide({ ...base, policy: ON }).decision, decide({ ...base, policy: ON }).reasonCode], [Decision.USE_ALTERNATIVE, "CONSENT_GIVEN"]);
+});
+
+test("a comparison bound to a different trade never authorizes a reroute", () => {
+  const preferred = resolved("KOx", RepresentationState.TRANSITION);
+  const alternative = resolved("KOon", RepresentationState.SAFE);
+  const cases: [string, QuoteComparison, bigint][] = [
+    ["wrong preferred mint", { ...COMPARISON, preferredMint: resolved("UNHx", null).mint }, INPUT_RAW],
+    ["wrong alternative mint", { ...COMPARISON, alternativeMint: resolved("CRMon", null).mint }, INPUT_RAW],
+    ["wrong underlying", { ...COMPARISON, underlying: "UNH" }, INPUT_RAW],
+    ["swapped mints", { ...COMPARISON, preferredMint: KOON_MINT, alternativeMint: KOX_MINT }, INPUT_RAW],
+    ["wrong input amount", COMPARISON, INPUT_RAW + 1n],
+  ];
+  for (const [label, comparison, inputRaw] of cases) {
+    for (const policy of [OFF, ON]) {
+      const result = decide({ preferred, alternative, policy, inputRaw, comparison });
+      assert.deepEqual([result.decision, result.reasonCode, result.disclosure], [Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH", null], label);
+      assert.match(result.reason, /does not match this decision/, label);
+    }
   }
 });
 
@@ -115,7 +153,7 @@ test("UNKNOWN or conflicting required observations yield UNKNOWN_STATE", () => {
     [resolved("KOx", RepresentationState.TRANSITION), resolved("KOon", null, StateSource.CONFLICT), "ALTERNATIVE_STATE_CONFLICT"],
   ];
   for (const [preferred, alternative, reasonCode] of cases) {
-    const result = decide({ preferred, alternative, policy: ON, comparison: COMPARISON });
+    const result = decide({ preferred, alternative, policy: ON, inputRaw: INPUT_RAW, comparison: COMPARISON });
     assert.deepEqual([result.decision, result.reasonCode], [Decision.UNKNOWN_STATE, reasonCode]);
   }
 });
@@ -128,7 +166,7 @@ test("decisions never throw for expected product states", () => {
         for (const comparison of [COMPARISON, null]) {
           const alternative = a === undefined ? null : resolved("KOon", a, a === null ? StateSource.CONFLICT : StateSource.CHAIN);
           const preferred = resolved("KOx", p, p === null ? StateSource.CONFLICT : StateSource.CHAIN);
-          assert.doesNotThrow(() => decide({ preferred, alternative, policy, comparison }));
+          assert.doesNotThrow(() => decide({ preferred, alternative, policy, inputRaw: INPUT_RAW, comparison }));
         }
       }
     }

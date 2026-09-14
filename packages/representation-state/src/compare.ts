@@ -21,6 +21,8 @@ import type { Issuer } from "./registry.ts";
 const BPS = 10_000n;
 
 export interface NormalizedQuote {
+  /** Underlying equity the quoted representation is associated with. */
+  readonly underlying: string;
   readonly issuer: Issuer;
   readonly mint: string;
   /** Input notional in the input token's smallest units. */
@@ -32,6 +34,12 @@ export interface NormalizedQuote {
 }
 
 export interface QuoteComparison {
+  /** Identity binding: which trade this comparison belongs to. */
+  readonly underlying: string;
+  readonly preferredMint: string;
+  readonly alternativeMint: string;
+  /** Identical input notional of both quotes. */
+  readonly inputRaw: bigint;
   readonly preferredSharesEquivalent: Rational;
   readonly alternativeSharesEquivalent: Rational;
   /** preferred − alternative; positive means the alternative delivers fewer shares. */
@@ -53,6 +61,9 @@ export function compareQuotes(
   options: { readonly toleranceBps: bigint },
 ): QuoteComparison {
   if (options.toleranceBps < 0n) throw new NormalizationError("InvalidTolerance", "tolerance must be non-negative");
+  if (preferred.underlying !== alternative.underlying) {
+    throw new NormalizationError("UnderlyingMismatch", "quotes must be for representations of the same underlying");
+  }
   if (preferred.inputRaw !== alternative.inputRaw) {
     throw new NormalizationError("NotionalMismatch", "quotes must be for identical input notional");
   }
@@ -66,6 +77,10 @@ export function compareQuotes(
   const sign = compareRationals(p, a);
   const rawDiff = p.num * a.den - a.num * p.den;
   return {
+    underlying: preferred.underlying,
+    preferredMint: preferred.mint,
+    alternativeMint: alternative.mint,
+    inputRaw: preferred.inputRaw,
     preferredSharesEquivalent: p,
     alternativeSharesEquivalent: a,
     difference: { sign, magnitude: rational(rawDiff < 0n ? -rawDiff : rawDiff, p.den * a.den) },

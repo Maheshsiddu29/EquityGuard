@@ -27,6 +27,7 @@ function f64(value: number): Uint8Array {
 
 function quote(partial: Partial<NormalizedQuote>): NormalizedQuote {
   return {
+    underlying: "KO",
     issuer: "xStocks",
     mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
     inputRaw: 5_000_000n,
@@ -131,6 +132,19 @@ test("quotes must share the same input notional and a positive preferred output"
   assert.throws(
     () => compareQuotes(quote({}), quote({}), { toleranceBps: -1n }),
     (e) => e instanceof NormalizationError && e.code === "InvalidTolerance",
+  );
+  assert.throws(
+    () => compareQuotes(quote({}), quote({ underlying: "UNH" }), { toleranceBps: 0n }),
+    (e) => e instanceof NormalizationError && e.code === "UnderlyingMismatch",
+  );
+});
+
+test("comparisons carry the identity of the quotes they were computed from", () => {
+  const koon = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
+  const comparison = compareQuotes(quote({}), quote({ issuer: "Ondo", mint: koon }), { toleranceBps: 0n });
+  assert.deepEqual(
+    [comparison.underlying, comparison.preferredMint, comparison.alternativeMint, comparison.inputRaw],
+    ["KO", "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", koon, 5_000_000n],
   );
 });
 

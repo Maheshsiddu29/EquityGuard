@@ -19,6 +19,7 @@ export type NormalizationErrorCode =
   | "InvalidDecimals"
   | "NegativeAmount"
   | "NotionalMismatch"
+  | "UnderlyingMismatch"
   | "NonPositiveOutput"
   | "InvalidTolerance";
 
