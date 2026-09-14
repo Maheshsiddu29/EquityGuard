@@ -5,6 +5,9 @@
  *   node scripts/devnet/cli.ts create-mints
  *   node scripts/devnet/cli.ts schedule --label EQ-A --multiplier 1.25 --in-seconds 120
  *   node scripts/devnet/cli.ts snapshot --label EQ-A
+ *   node scripts/devnet/cli.ts scenario safe --label EQ-B
+ *   node scripts/devnet/cli.ts scenario stale --label EQ-A
+ *   node scripts/devnet/cli.ts scenario transition --label EQ-A --lead-seconds 75
  */
 
 import { pathToFileURL } from "node:url";
@@ -18,9 +21,12 @@ import {
   TEST_ASSET_DISCLOSURE,
   findAsset,
   loadDevnetState,
+  requireDeployment,
   saveDevnetState,
   type TestAsset,
 } from "./devnet-state.ts";
+import { toJson, type EvidenceRecord } from "./evidence.ts";
+import { runSafe, runStale, runTransition, type ScenarioEnv } from "./scenarios.ts";
 import { sendInstructions } from "./send.ts";
 import {
   getCreateTestMintInstructions,
@@ -41,12 +47,19 @@ const TEST_MINT_SPECS: readonly TestMintSpec[] = [
   { label: "EQ-B", decimals: TEST_MINT_DECIMALS, initialMultiplier: INITIAL_MULTIPLIER },
 ];
 
-/** Prints bigint-safe JSON. */
-export function printJson(value: unknown): void {
-  console.log(JSON.stringify(value, (_key, v: unknown) => (typeof v === "bigint" ? v.toString() : v), 2));
+/**
+ * Demo protection window for devnet scenarios, in chain seconds. Short so a
+ * run completes in minutes; it is test policy, not an issuer value.
+ */
+const DEFAULT_WINDOW_SECS = 20;
+/** Chain seconds between scheduling and activation in the transition scenario. */
+const DEFAULT_TRANSITION_LEAD_SECS = 75n;
+
+function printJson(value: unknown): void {
+  console.log(toJson(value));
 }
 
-export function describeSnapshot(snapshot: GuardSnapshot) {
+function describeSnapshot(snapshot: GuardSnapshot) {
   const float = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, 8).getFloat64(0, true);
   return {
     mint: snapshot.mint,
@@ -122,6 +135,63 @@ async function schedule(ctx: DevnetContext, values: Record<string, string | bool
   });
 }
 
+async function scenario(
+  ctx: DevnetContext,
+  name: string | undefined,
+  values: Record<string, string | boolean | undefined>,
+): Promise<void> {
+  const state = await loadDevnetState();
+  const { programId } = requireDeployment(state);
+  const program = await ctx.rpc.getAccountInfo(programId, { encoding: "base64" }).send();
+  if (!program.value?.executable) {
+    throw new Error(`program ${programId} is not deployed on this cluster; see docs/devnet.md`);
+  }
+  const window = {
+    beforeSecs: Number(values.before ?? DEFAULT_WINDOW_SECS),
+    afterSecs: Number(values.after ?? DEFAULT_WINDOW_SECS),
+  };
+  const env: ScenarioEnv = {
+    ctx,
+    programId,
+    asset: findAsset(state, requireString(values, "label")),
+    runId: `${ctx.cluster}-${new Date().toISOString().replaceAll(":", "").replace(/\.\d+Z$/, "Z")}`,
+  };
+
+  let records: EvidenceRecord[];
+  switch (name) {
+    case "safe":
+      records = await runSafe(env, window);
+      break;
+    case "stale":
+      records = await runStale(env, window);
+      break;
+    case "transition": {
+      const lead = typeof values["lead-seconds"] === "string" ? BigInt(values["lead-seconds"]) : DEFAULT_TRANSITION_LEAD_SECS;
+      records = await runTransition(env, window, lead);
+      break;
+    }
+    default:
+      throw new Error("scenario must be one of: safe, stale, transition");
+  }
+
+  printJson(
+    records.map((r) => ({
+      step: `${r.scenario}/${r.step}`,
+      expected: r.expectedResult,
+      observed: r.observedResult,
+      matched: r.matchedExpectation,
+      signature: r.transactionSignature,
+      explorerUrl: r.explorerUrl,
+      slot: r.slot,
+      blockTime: r.blockTime,
+      recipientBalance: `${r.downstream.recipientBalanceBefore} -> ${r.downstream.recipientBalanceAfter}`,
+    })),
+  );
+  if (records.some((r) => !r.matchedExpectation)) {
+    throw new Error("at least one step did not match its expected result");
+  }
+}
+
 function requireString(values: Record<string, string | boolean | undefined>, name: string): string {
   const value = values[name];
   if (typeof value !== "string") throw new Error(`--${name} is required`);
@@ -135,15 +205,20 @@ async function main(): Promise<void> {
       label: { type: "string" },
       multiplier: { type: "string" },
       "in-seconds": { type: "string" },
+      "lead-seconds": { type: "string" },
+      before: { type: "string" },
+      after: { type: "string" },
     },
   });
-  const [command] = positionals;
+  const [command, subcommand] = positionals;
   const ctx = await connectDevnet(readDevnetConfig(process.env));
   switch (command) {
     case "create-mints":
       return createMints(ctx);
     case "schedule":
       return schedule(ctx, values);
+    case "scenario":
+      return scenario(ctx, subcommand, values);
     case "snapshot": {
       const asset = findAsset(await loadDevnetState(), requireString(values, "label"));
       return printJson(describeSnapshot(await fetchGuardSnapshot(ctx.rpc, asset.mint)));

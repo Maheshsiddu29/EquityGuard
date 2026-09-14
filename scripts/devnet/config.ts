@@ -37,6 +37,8 @@ export interface DevnetConfig {
 export interface DevnetContext {
   readonly rpc: Rpc<SolanaRpcApiDevnet>;
   readonly payer: KeyPairSigner;
+  /** Recorded in evidence so rehearsals are never presented as devnet runs. */
+  readonly cluster: "devnet" | "localnet";
 }
 
 /** Reads configuration from the environment. */
@@ -85,5 +87,5 @@ export async function connectDevnet(config: DevnetConfig): Promise<DevnetContext
     throw new DevnetConfigError(`wallet not found at ${config.walletPath} (set EQUITYGUARD_DEVNET_WALLET)`);
   }
   const payer = await createKeyPairSignerFromBytes(parseKeypairFile(contents, config.walletPath));
-  return { rpc, payer };
+  return { rpc, payer, cluster: genesisHash === DEVNET_GENESIS_HASH ? "devnet" : "localnet" };
 }
