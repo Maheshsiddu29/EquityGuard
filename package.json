@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",
-    "test": "node --test \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\" \"scripts/evidence/*.test.mjs\""
+    "test": "node --test \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\" \"scripts/evidence/*.test.mjs\"",
+    "devnet": "node scripts/devnet/cli.ts"
   },
   "dependencies": {
     "@solana-program/system": "0.14.1",
