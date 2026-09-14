@@ -1,0 +1,14 @@
+{
+  "name": "@equityguard/representation-state",
+  "version": "0.1.0",
+  "description": "Canonical equity registry, issuer state observation, share-equivalent normalization and reroute decisions (off-chain, no execution)",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@equityguard/guard-client": "0.1.0",
+    "@solana/kit": "8.3.0"
+  }
+}
