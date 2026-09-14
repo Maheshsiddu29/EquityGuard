@@ -74,7 +74,29 @@ Not proven:
 - EquityGuard execution on mainnet (the program is deployed on devnet only);
 - guard + Jupiter atomicity on mainnet;
 - protection of live xStocks trades, or any real purchase;
-- Ondo support or cross-issuer routing.
+- automatic cross-issuer rerouting (the decision engine decides; nothing
+  executes the alternative), a UI, or calibrated issuer transition policies.
+
+### Off-chain representation state
+
+Implemented without any execution path:
+
+- a canonical registry of KO, UNH and CRM representations (xStocks KOx, UNHx,
+  CRMx; Ondo KOon, UNHon, CRMon). These are representations associated with
+  the same underlying equity, not fungible or legally identical instruments;
+- state resolution to SAFE, TRANSITION, PAUSED or UNKNOWN, with state source
+  `chain`, `api`, `both-agree` or `conflict`. xStocks is chain-primary. Ondo
+  chain and API evidence are observed independently, and disagreement is kept
+  as a conflict. There is no live Ondo API client yet, and issuer transition
+  policies are uncalibrated;
+- read-only capture decoding and change detection that only analyse copies
+  of captures and never write to the input;
+- exact share-equivalent normalization (`outAmountRaw × multiplier /
+  10^decimals` in bigint rationals) with a switching cost that is never
+  understated;
+- a pure decision engine returning `USE_PREFERRED`, `REQUIRES_CONSENT`,
+  `USE_ALTERNATIVE`, `NO_SAFE_ROUTE` or `UNKNOWN_STATE`, with a disclosure
+  for any cross-issuer outcome.
 
 | Component | Status |
 | --- | --- |
@@ -85,7 +107,8 @@ Not proven:
 | `packages/jupiter` | Jupiter Swap V2 `/build` client and guarded v0 composition (build-only) |
 | `scripts/jupiter/compose-mainnet.ts` | live build-only composition for a real xStock; needs `JUPITER_API_KEY` |
 | `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
-| Mainnet watcher / xStocks adapter | planned |
+| `packages/representation-state` | registry, issuer state adapters, capture decoding, normalization, decision engine (no execution) |
+| `scripts/observation/` | read-only decoding and event detection over capture copies |
 | Rerouting, demo UI | later |
 
 ## Repository layout
@@ -94,7 +117,9 @@ Not proven:
 programs/equity_guard/    on-chain guard program (native Rust)
 packages/guard-client/    TypeScript instruction builder used by clients
 packages/jupiter/         Jupiter /build client and guarded transaction composition
+packages/representation-state/  representation registry, state, normalization, decisions
 scripts/jupiter/          live build-only mainnet composition (no submission)
+scripts/observation/      read-only capture decoding and event detection
 scripts/devnet/           devnet test mints, scenarios, deployment record
 scripts/evidence/         raw mainnet evidence capture (output is local, gitignored)
 ```
@@ -120,6 +145,16 @@ node --env-file=.env scripts/jupiter/compose-mainnet.ts
 ```
 
 CI is credential-free and never calls Jupiter.
+
+Capture analysis reads only a copy of a capture file. The tools require
+`--input`, open it read-only, refuse files modified in the last 90 seconds or
+listed in `EQUITYGUARD_PROTECTED_CAPTURE_PATHS`, and write only to stdout or a
+new file:
+
+```sh
+npm run observation:decode -- --input <copy.jsonl> [--output <new.jsonl>]
+npm run observation:events -- --input <copy.jsonl> [--output <new.jsonl>]
+```
 
 Devnet deployment is manual and performed by the owner; scenarios run with an
 explicitly devnet-targeted wallet:
