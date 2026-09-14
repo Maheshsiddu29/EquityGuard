@@ -3,9 +3,11 @@
 **/*.so
 test-ledger/
 
-# Keypairs and secrets: never commit
-*-keypair.json
+# Keypairs and secrets: never commit. Program and wallet keypairs belong
+# outside the repository (see docs/devnet.md); these patterns are a backstop.
+*keypair*.json
 id.json
+wallet*.json
 .env
 .env.*
 !.env.example
@@ -16,6 +18,7 @@ node_modules/
 # Generated evidence (keep evidence/README.md)
 evidence/*.jsonl
 evidence/*.log
+evidence/devnet/*.json
 
 # OS / editor
 .DS_Store

@@ -33,8 +33,8 @@ use spl_token_2022_interface::extension::{
     BaseStateWithExtensionsMut, StateWithExtensionsMut,
 };
 
-/// Arbitrary address the test loads the program at.
-const PROGRAM_ID: Address = Address::new_from_array([0xe9; 32]);
+/// Load at the declared program ID, as on devnet.
+const PROGRAM_ID: Address = equity_guard::ID;
 /// Real UNHx mint address; its account bytes come from the mainnet fixture.
 const MINT: Address = Address::from_str_const("XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe");
 const LEGACY_TOKEN_PROGRAM: Address =

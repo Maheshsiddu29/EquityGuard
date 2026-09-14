@@ -13,7 +13,7 @@ repository = "https://github.com/Maheshsiddu29/EquityGuard"
 # universe for addresses, clocks and instructions.
 [workspace.dependencies]
 solana-account-info = "3.1"
-solana-address = "2.6"
+solana-address = { version = "2.6", features = ["decode"] }
 solana-clock = { version = "3.1", features = ["sysvar"] }
 solana-get-sysvar = "1"
 solana-msg = "3"

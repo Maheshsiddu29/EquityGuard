@@ -17,6 +17,10 @@ mod test_fixtures;
 
 pub use error::EquityGuardError;
 
+// Devnet program ID. The keypair lives outside the repository (docs/devnet.md);
+// only the public address is committed.
+solana_address::declare_id!("EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT");
+
 #[cfg(target_os = "solana")]
 use processor::process_instruction;
 // The macro only accepts a bare identifier, not a path.
