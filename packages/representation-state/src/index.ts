@@ -47,3 +47,17 @@ export {
   type ObservationEvent,
   type ObservationEventType,
 } from "./events.ts";
+export {
+  NormalizationError,
+  ceilDiv,
+  compareRationals,
+  formatRationalFloor,
+  multiplierToRational,
+  rational,
+  sharesEquivalent,
+  withinToleranceBps,
+  type NormalizationErrorCode,
+  type Rational,
+  type ShareInput,
+} from "./normalize.ts";
+export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
