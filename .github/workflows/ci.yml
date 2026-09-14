@@ -26,8 +26,8 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Unit tests
-        run: cargo test --workspace --lib --locked
+      - name: Unit and golden tests
+        run: cargo test --workspace --lib --test abi_golden --locked
 
   sbf:
     name: SBF build and LiteSVM tests
@@ -50,15 +50,21 @@ jobs:
       - name: LiteSVM atomicity tests
         run: cargo test --locked -p equity_guard --test litesvm_atomicity
 
-  evidence-script:
-    name: Evidence capture script (syntax, tests)
+  typescript:
+    name: TypeScript and JS (typecheck, tests)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
+          # Type stripping (running .ts directly) is enabled by default from 22.18.
           node-version: 22.x
-      - name: Syntax check
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Evidence script syntax
         run: node --check scripts/evidence/capture-equity-mints.mjs
       - name: Test
-        run: node --test 'scripts/evidence/*.test.mjs'
+        run: npm test

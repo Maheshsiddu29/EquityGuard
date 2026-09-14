@@ -1,0 +1,58 @@
+import { readFileSync } from "node:fs";
+
+/** Shared fixtures owned by the Rust program crate, so both languages test the same bytes. */
+const FIXTURES = new URL("../../../programs/equity_guard/tests/fixtures/", import.meta.url);
+
+export interface GoldenVector {
+  name: string;
+  request: {
+    multiplierHex: string;
+    newMultiplierHex: string;
+    newMultiplierEffectiveTimestamp: string;
+    expectedPhase: number;
+    protectionBeforeSecs: number;
+    protectionAfterSecs: number;
+  };
+  encodedHex: string;
+}
+
+export interface Golden {
+  abiVersion: number;
+  encodedLength: number;
+  errorCodes: Record<string, number>;
+  vectors: GoldenVector[];
+  invalid: { name: string; dataHex: string; error: string }[];
+}
+
+export interface DecodedMint {
+  symbol: string;
+  multiplierHex: string;
+  newMultiplierHex: string;
+  newMultiplierEffectiveTimestamp: string;
+}
+
+export const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+export function readGolden(): Golden {
+  return JSON.parse(readFileSync(new URL("abi_v1_golden.json", FIXTURES), "utf8")) as Golden;
+}
+
+export function readDecodedMints(): DecodedMint[] {
+  const parsed = JSON.parse(readFileSync(new URL("mainnet/decoded.json", FIXTURES), "utf8")) as {
+    mints: DecodedMint[];
+  };
+  return parsed.mints;
+}
+
+export function mainnetMint(symbol: string): Uint8Array {
+  const encoded = readFileSync(new URL(`mainnet/${symbol}.base64`, FIXTURES), "utf8").trim();
+  return Uint8Array.from(Buffer.from(encoded, "base64"));
+}
+
+export function hex(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("hex");
+}
+
+export function fromHex(value: string): Uint8Array {
+  return Uint8Array.from(Buffer.from(value, "hex"));
+}

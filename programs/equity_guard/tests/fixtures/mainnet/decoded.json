@@ -1,0 +1,41 @@
+{
+  "description": "Protected ScaledUiAmount fields of the mainnet fixtures (slot 446827429), extracted independently with Python. Rust and TypeScript decoders must both reproduce them.",
+  "mints": [
+    {
+      "symbol": "UNHx",
+      "multiplierHex": "9e0dd41d115ef03f",
+      "newMultiplierEffectiveTimestamp": "1789173000",
+      "newMultiplierHex": "d0b18f510470f03f"
+    },
+    {
+      "symbol": "UNHon",
+      "multiplierHex": "16ee8a5b6f4cf03f",
+      "newMultiplierEffectiveTimestamp": "1788344044",
+      "newMultiplierHex": "16ee8a5b6f4cf03f"
+    },
+    {
+      "symbol": "KOx",
+      "multiplierHex": "1efbb6d57038f03f",
+      "newMultiplierEffectiveTimestamp": "1781481300",
+      "newMultiplierHex": "73833748164bf03f"
+    },
+    {
+      "symbol": "KOon",
+      "multiplierHex": "1082459c7750f03f",
+      "newMultiplierEffectiveTimestamp": "1788344044",
+      "newMultiplierHex": "1082459c7750f03f"
+    },
+    {
+      "symbol": "CRMx",
+      "multiplierHex": "908b9c00010ff03f",
+      "newMultiplierEffectiveTimestamp": "1781137800",
+      "newMultiplierHex": "2cbd9b786916f03f"
+    },
+    {
+      "symbol": "CRMon",
+      "multiplierHex": "e9198df62418f03f",
+      "newMultiplierEffectiveTimestamp": "1788344044",
+      "newMultiplierHex": "e9198df62418f03f"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "equityguard",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "workspaces": [
+    "packages/guard-client"
+  ],
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "node --test \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\" \"scripts/evidence/*.test.mjs\""
+  },
+  "dependencies": {
+    "@solana-program/system": "0.14.1",
+    "@solana-program/token-2022": "0.17.0",
+    "@solana/kit": "8.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "7.0.2"
+  }
+}

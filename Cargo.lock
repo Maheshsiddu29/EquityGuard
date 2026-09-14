@@ -1007,6 +1007,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "litesvm",
+ "serde_json",
  "solana-account",
  "solana-account-info",
  "solana-address 2.6.1",
