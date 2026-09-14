@@ -152,9 +152,18 @@ listed in `EQUITYGUARD_PROTECTED_CAPTURE_PATHS`, and write only to stdout or a
 new file:
 
 ```sh
+npm run observation:snapshot -- --input <backup.jsonl>          # sealed read-only copy + SHA-256 manifest
+npm run observation:extract -- --input <snapshot> --start <ISO-Z> --end <ISO-Z> [--symbols KOx,KOon] --output <new.jsonl>
+npm run observation:timeline -- --input <snapshot> [--symbols KOx,KOon] [--verbose]
 npm run observation:decode -- --input <copy.jsonl> [--output <new.jsonl>]
 npm run observation:events -- --input <copy.jsonl> [--output <new.jsonl>]
 ```
+
+The timeline compresses unchanged periods, reports state changes (including
+phase changes with identical bytes), decode errors and capture gaps, and ends
+with evidence-quality metrics (coverage at the 30-second cadence, largest gaps,
+GOOD/DEGRADED/INSUFFICIENT). Window extraction copies lines byte-for-byte.
+Snapshots and extracts live in the gitignored `tmp/`.
 
 Devnet deployment is manual and performed by the owner; scenarios run with an
 explicitly devnet-targeted wallet:
