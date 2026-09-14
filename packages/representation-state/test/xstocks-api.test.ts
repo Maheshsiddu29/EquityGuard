@@ -10,7 +10,9 @@ import {
   f64Hex,
   findRepresentationBySymbol,
   interpretActivationTime,
-  isExecutionRelevant,
+  EVIDENCE_AUTHORITY,
+  authoritativeForOnchainGuard,
+  relevantToExecutionPolicy,
   parseXStocksHistoricalRecord,
   type XStocksApiObservation,
 } from "../src/index.ts";
@@ -139,9 +141,20 @@ test("historical June 2026 KOx record matches the on-chain KOx fixture exactly",
   }
 });
 
-test("only live chain state is execution-relevant", () => {
-  assert.equal(isExecutionRelevant("LIVE_CHAIN_STATE"), true);
-  for (const source of ["DOCUMENTED_SCHEDULE", "HISTORICAL_API_STATE", "LIVE_API_STATE"] as const) {
-    assert.equal(isExecutionRelevant(source), false, source);
+test("evidence authority separates on-chain guard authority from execution-policy relevance", () => {
+  const table = [
+    ["LIVE_CHAIN_STATE", true, true],
+    ["LIVE_API_STATE", false, true],
+    ["HISTORICAL_API_STATE", false, false],
+    ["DOCUMENTED_SCHEDULE", false, false],
+  ] as const;
+  for (const [source, guard, policy] of table) {
+    assert.equal(authoritativeForOnchainGuard(source), guard, `${source} guard`);
+    assert.equal(relevantToExecutionPolicy(source), policy, `${source} policy`);
+  }
+  // Every source is classified, and anything authoritative for the guard is also policy-relevant.
+  assert.deepEqual(Object.keys(EVIDENCE_AUTHORITY).sort(), table.map(([s]) => s).sort());
+  for (const authority of Object.values(EVIDENCE_AUTHORITY)) {
+    assert.ok(!authority.authoritativeForOnchainGuard || authority.relevantToExecutionPolicy);
   }
 });

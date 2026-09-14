@@ -12,15 +12,37 @@
  * is preserved on every observation as evidence.
  */
 
-/**
- * Where a piece of timing or multiplier evidence came from. Only live chain
- * state is execution-relevant: documentation and API statements, historical or
- * live, never override what the mint says.
- */
+/** Where a piece of timing or multiplier evidence came from. */
 export type EvidenceSource = "DOCUMENTED_SCHEDULE" | "HISTORICAL_API_STATE" | "LIVE_API_STATE" | "LIVE_CHAIN_STATE";
 
-export function isExecutionRelevant(source: EvidenceSource): boolean {
-  return source === "LIVE_CHAIN_STATE";
+export interface EvidenceAuthority {
+  /**
+   * Whether the on-chain guard can enforce it atomically. Only live mint state
+   * qualifies: the program reads the mint, not any API or document.
+   */
+  readonly authoritativeForOnchainGuard: boolean;
+  /**
+   * Whether off-chain execution policy (preflight, transition avoidance) may
+   * act on it. Live issuer API signals qualify even though the guard cannot
+   * enforce them. Historical records and documentation are calibration and
+   * context only, never live execution authority.
+   */
+  readonly relevantToExecutionPolicy: boolean;
+}
+
+export const EVIDENCE_AUTHORITY: Readonly<Record<EvidenceSource, EvidenceAuthority>> = {
+  LIVE_CHAIN_STATE: { authoritativeForOnchainGuard: true, relevantToExecutionPolicy: true },
+  LIVE_API_STATE: { authoritativeForOnchainGuard: false, relevantToExecutionPolicy: true },
+  HISTORICAL_API_STATE: { authoritativeForOnchainGuard: false, relevantToExecutionPolicy: false },
+  DOCUMENTED_SCHEDULE: { authoritativeForOnchainGuard: false, relevantToExecutionPolicy: false },
+};
+
+export function authoritativeForOnchainGuard(source: EvidenceSource): boolean {
+  return EVIDENCE_AUTHORITY[source].authoritativeForOnchainGuard;
+}
+
+export function relevantToExecutionPolicy(source: EvidenceSource): boolean {
+  return EVIDENCE_AUTHORITY[source].relevantToExecutionPolicy;
 }
 
 /** How a raw `activationDateTime` value was turned into a time. */
