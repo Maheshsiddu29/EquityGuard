@@ -12,3 +12,19 @@ export {
   type BuildResponse,
   type RoutePlanStep,
 } from "./build-client.ts";
+export {
+  COMPUTE_BUDGET_PROGRAM_ADDRESS,
+  CompositionError,
+  GuardBindingError,
+  MAX_TRANSACTION_BYTES,
+  UNSIMULATED_COMPUTE_UNIT_LIMIT,
+  assertGuardBoundToOutput,
+  compileAndMeasure,
+  composeWithGuard,
+  getSetComputeUnitLimitInstruction,
+  orderInstructions,
+  toKitInstruction,
+  type CompositionResult,
+  type GuardComponent,
+  type TransactionMetrics,
+} from "./compose.ts";

@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@equityguard/guard-client": "0.1.0",
     "@solana/kit": "8.3.0"
   }
 }
