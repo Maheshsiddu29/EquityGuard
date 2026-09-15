@@ -25,7 +25,12 @@ export type CorrelationOutcome =
   | "API_PENDING_CHAIN_NOT_YET_PENDING"
   | "API_AND_CHAIN_PENDING_AGREE"
   | "API_AND_CHAIN_PENDING_CONFLICT"
-  | "CHAIN_CHANGED_WITHOUT_API_PREANNOUNCEMENT"
+  /**
+   * The Token-2022 pending state was first observed before the public API
+   * exposed a pending update. Says nothing about whether the eventual
+   * activation was announced by the API.
+   */
+  | "CHAIN_PENDING_OBSERVED_BEFORE_API_PENDING"
   | "INSUFFICIENT_API_COVERAGE"
   | "API_ACTIVATION_MATCHES_CHAIN_WITHIN_RESOLUTION"
   | "API_ACTIVATION_DIFFERS_FROM_CHAIN";
@@ -289,13 +294,16 @@ export function correlateKOx(input: {
     outcomes.push(multiplierAgrees && activationAgrees ? "API_AND_CHAIN_PENDING_AGREE" : "API_AND_CHAIN_PENDING_CONFLICT");
   }
 
-  if (chainChange) {
-    const announcedBefore = ok.some((o) => o.hasPendingUpdate && o.wallclockMs !== null && o.wallclockMs <= chainChange.firstObservedMs);
-    if (!announcedBefore) {
+  // Only a chain PENDING state is compared with API pending publication; an
+  // immediate update with no pending phase does not qualify.
+  if (chainPendingFirstObservedAt) {
+    const chainPendingMs = chainPendingFirstObservedAt.firstObservedMs;
+    const apiPendingNoLater = ok.some((o) => o.hasPendingUpdate && o.wallclockMs !== null && o.wallclockMs <= chainPendingMs);
+    if (!apiPendingNoLater) {
       const coveredBefore = api.some(
-        (o) => o.wallclockMs !== null && o.wallclockMs <= chainChange.firstObservedMs && chainChange.firstObservedMs - o.wallclockMs <= API_COVERAGE_MAX_LAG_MS,
+        (o) => o.wallclockMs !== null && o.wallclockMs <= chainPendingMs && chainPendingMs - o.wallclockMs <= API_COVERAGE_MAX_LAG_MS,
       );
-      outcomes.push(coveredBefore ? "CHAIN_CHANGED_WITHOUT_API_PREANNOUNCEMENT" : "INSUFFICIENT_API_COVERAGE");
+      outcomes.push(coveredBefore ? "CHAIN_PENDING_OBSERVED_BEFORE_API_PENDING" : "INSUFFICIENT_API_COVERAGE");
     }
   }
 

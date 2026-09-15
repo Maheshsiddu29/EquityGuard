@@ -95,9 +95,9 @@ test("API pending before chain pending: published first, then agreement", () => 
   assert.deepEqual(result.crossSourceEvents.map((e) => e.type), ["API_PENDING_UPDATE_PUBLISHED", "CHAIN_STATE_CHANGE"]);
 });
 
-test("chain pending before API: order and missing preannouncement are reported", () => {
+test("chain pending before API: order and earlier chain pending observation are reported", () => {
   const result = correlate(apiSeries(0, 600, 300, PUBLISHED), chainSeries(0, 600, 60));
-  assert.ok(result.outcomes.includes("CHAIN_CHANGED_WITHOUT_API_PREANNOUNCEMENT"));
+  assert.ok(result.outcomes.includes("CHAIN_PENDING_OBSERVED_BEFORE_API_PENDING"));
   assert.ok(!result.outcomes.includes("API_PENDING_CHAIN_NOT_YET_PENDING"));
   assert.equal(result.timingDeltas.apiPublicationLead?.order, "CHAIN_BEFORE_API");
 });
@@ -136,9 +136,9 @@ test("disagreement greater than polling resolution", () => {
   assert.ok(result.outcomes.includes("API_AND_CHAIN_PENDING_CONFLICT"));
 });
 
-test("chain change without any observed API publication", () => {
+test("chain pending observed with no API pending publication observed", () => {
   const covered = correlate(apiSeries(0, 600, null, null), chainSeries(0, 600, 300));
-  assert.deepEqual(covered.outcomes, ["CHAIN_CHANGED_WITHOUT_API_PREANNOUNCEMENT"]);
+  assert.deepEqual(covered.outcomes, ["CHAIN_PENDING_OBSERVED_BEFORE_API_PENDING"]);
   // No API observation close before the chain change: no preannouncement claim can be made.
   const uncovered = correlate(apiSeries(0, 120, null, null), chainSeries(0, 600, 300));
   assert.deepEqual(uncovered.outcomes, ["INSUFFICIENT_API_COVERAGE"]);
@@ -147,4 +147,16 @@ test("chain change without any observed API publication", () => {
 test("correlation output is deterministic", () => {
   const run = () => timelineJson(correlate(apiSeries(0, 600, 60, PUBLISHED), chainSeries(0, 600, 300)));
   assert.equal(run(), run());
+});
+
+test("an immediate chain update with no pending phase is not reported as chain pending before API", () => {
+  // KOon-style: stored multiplier, new multiplier and timestamp change together, already activated.
+  const immediate = withScaledUi(mainnetMint("KOx"), { multiplier: NEW, newMultiplier: NEW, effectiveTimestamp: BigInt(S + 290) });
+  const chain: CaptureRecord[] = [];
+  for (let offset = 0, line = 1; offset <= 600; offset += 30, line += 1) chain.push(...chainPoll(offset, offset >= 300 ? immediate : CHAIN_BEFORE, line));
+  const result = correlate(apiSeries(0, 600, null, null), chain);
+  assert.equal(result.derived.chainPendingFirstObservedAt, null);
+  assert.ok(result.derived.chainMultiplierChangeFirstObservedAt);
+  assert.ok(!result.outcomes.includes("CHAIN_PENDING_OBSERVED_BEFORE_API_PENDING"));
+  assert.ok(!result.outcomes.includes("NO_PENDING_UPDATE_OBSERVED"));
 });
