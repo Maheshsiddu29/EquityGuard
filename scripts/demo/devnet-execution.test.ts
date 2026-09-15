@@ -216,9 +216,9 @@ test("no execution plan exists for a non-executable decision, and execution cons
   await assert.rejects(executeGuardedPlan(ctx, { ...base, plan: { ...executionPlan, expectedOutputRaw: 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_NOT_ISSUED");
   // A hand-built context is refused (before RPC) even for a valid plan.
   await assert.rejects(executeGuardedPlan(ctx, base), DevnetConfigError);
-  // The rejection probe refuses SAFE representations.
+  // The rejection probe also refuses a hand-built context before reading any state.
   await assert.rejects(
-    submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, representation: p.alternative, boundState: p.comparison!.alternativeQuote.state, asset: EQ_B, amount: 1n, recipient: payer.address }),
+    submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, boundState: p.comparison!.alternativeQuote.state, asset: EQ_B, amount: 1n, recipient: payer.address, policy: DEVNET_DEMO_POLICY }),
     DevnetConfigError,
   );
 });

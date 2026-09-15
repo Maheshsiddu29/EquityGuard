@@ -408,20 +408,48 @@ export async function executeGuardedPlan(
   return submitGuardedDelivery(ctx, input.programId, input.asset, input.plan.economicState, input.plan.policy, input.plan.expectedOutputRaw, input.recipient);
 }
 
+/** The demo stopped because a safety expectation failed; nothing after this point runs. */
+export class DevnetDemoAbortError extends Error {
+  readonly evidence: DevnetTransactionEvidence | null;
+
+  constructor(message: string, evidence: DevnetTransactionEvidence | null = null) {
+    super(message);
+    this.name = "DevnetDemoAbortError";
+    this.evidence = evidence;
+  }
+}
+
 /**
- * NOT an execution of a decision: deliberately submits a guarded delivery for
- * a representation the state engine did NOT classify SAFE, to prove the
- * on-chain guard rejects it atomically. Refuses to run for a SAFE state.
+ * NOT an execution of a decision: deliberately submits a guarded delivery
+ * that the on-chain guard must reject, to prove atomic rejection.
+ *
+ * It trusts no caller label. It re-reads the asset's live chain state and
+ * refuses to submit unless that state is currently not SAFE under `policy`.
+ * If the probe transaction nevertheless SUCCEEDS, it throws
+ * `DevnetDemoAbortError`, so the caller (the demo) stops immediately.
  */
 export async function submitRejectionProbe(
   ctx: DevnetContext,
-  input: { readonly programId: Address; readonly representation: ResolvedRepresentationState; readonly boundState: EconomicState; readonly asset: TestAsset; readonly amount: bigint; readonly recipient: Address },
+  input: {
+    readonly programId: Address;
+    readonly asset: TestAsset;
+    readonly boundState: EconomicState;
+    readonly policy: TransitionPolicy;
+    readonly amount: bigint;
+    readonly recipient: Address;
+  },
 ): Promise<DevnetTransactionEvidence> {
   requireDevnet(ctx, input.programId);
-  if (input.representation.state === RepresentationState.SAFE || input.representation.mint !== input.asset.mint) {
-    throw new DevnetDemoEnvironmentError("a rejection probe is only for a non-SAFE representation of the probed asset");
+  if (input.boundState.mint !== input.asset.mint) throw new DevnetDemoEnvironmentError("probe state is for a different mint than the probed asset");
+  const live = classifyChainEvidence(await fetchChainObservation(ctx.rpc, input.asset.mint), input.policy);
+  if (live.state === RepresentationState.SAFE) {
+    throw new DevnetDemoAbortError(`${input.asset.label} is currently SAFE (${live.reason}); a rejection probe would deliver tokens, so nothing was submitted`);
   }
-  return submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, DEVNET_DEMO_POLICY, input.amount, input.recipient);
+  const evidence = await submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, input.policy, input.amount, input.recipient);
+  if (evidence.succeeded) {
+    throw new DevnetDemoAbortError(`rejection probe ${evidence.signature} unexpectedly SUCCEEDED; aborting the demo before any further execution`, evidence);
+  }
+  return evidence;
 }
 
 export interface SetupTransaction {
@@ -511,9 +539,10 @@ export async function runDevnetDemo(
   // Immutable plan from the EXECUTABLE consented decision: exact quote, route, state and comparison.
   const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION", { currentSlot, freshness: DEVNET_PLAN_FRESHNESS });
   // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
+  // It re-reads live state itself and throws (aborting the run) if it ever succeeds.
   const rejectedPreferredAttempt =
     plan.preferred.state !== RepresentationState.SAFE && plan.comparison
-      ? await submitRejectionProbe(ctx, { programId, representation: plan.preferred, boundState: plan.comparison.preferredQuote.state, asset: preferredAsset, amount: amountFor(preferredAsset), recipient: options.recipient })
+      ? await submitRejectionProbe(ctx, { programId, asset: preferredAsset, boundState: plan.comparison.preferredQuote.state, policy: DEVNET_DEMO_POLICY, amount: amountFor(preferredAsset), recipient: options.recipient })
       : null;
   // Execution consumes the plan; the presented quote is the selected route's quote.
   const selected = executionPlan.selectedRepresentation.mint === alternativeAsset.mint ? { asset: alternativeAsset, route: plan.routes.alternative } : { asset: preferredAsset, route: plan.routes.preferred };

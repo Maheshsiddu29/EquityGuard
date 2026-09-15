@@ -18,9 +18,12 @@ import {
   DEVNET_DEMO_POLICY,
   DEVNET_DEMO_REROUTE_POLICY,
   DEVNET_PLAN_FRESHNESS,
+  DevnetDemoAbortError,
   executeGuardedPlan,
   loadDevnetQuoteFixture,
   planDevnetDemo,
+  runDevnetDemo,
+  submitRejectionProbe,
 } from "./devnet-execution.ts";
 
 const EQ_A: TestAsset = { label: "EQ-A", mint: address("5ikX5JLtRXxqARxsCfLyJ1gkz43bcYFCXnhPyfpmJeRt"), decimals: 6, conceptualStock: "DEMO", disclosure: TEST_ASSET_DISCLOSURE };
@@ -166,5 +169,110 @@ test("M04: the submitted guard window is the plan's policy, not a module default
     assert.deepEqual(plan.policy, custom);
     await executeGuardedPlan(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: custom });
     assert.deepEqual(submittedGuardWindow(rpc, EQUITY_GUARD_DEVNET_PROGRAM_ID), [1_200, 60]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full product path against a stateful fake devnet: M02 and L04.
+// ---------------------------------------------------------------------------
+
+const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const CLOCK = "SysvarC1ock11111111111111111111111111111111";
+
+/** Minimal initialized Token-2022 mint with a ScaledUiAmount extension. */
+function mintData(decimals: number, multiplier: number, newMultiplier: number, t: bigint): string {
+  const data = new Uint8Array(166 + 4 + 56);
+  const view = new DataView(data.buffer);
+  data[44] = decimals;
+  data[45] = 1;
+  data[165] = 1; // account type: Mint
+  view.setUint16(166, 25, true); // ScaledUiAmount
+  view.setUint16(168, 56, true);
+  view.setFloat64(170 + 32, multiplier, true);
+  view.setBigInt64(170 + 40, t, true);
+  view.setFloat64(170 + 48, newMultiplier, true);
+  return Buffer.from(data).toString("base64");
+}
+function clockData(unixTimestamp: bigint): string {
+  const data = new Uint8Array(40);
+  new DataView(data.buffer).setBigInt64(32, unixTimestamp, true);
+  return Buffer.from(data).toString("base64");
+}
+const account = (data: string, owner: string) => ({ data: [data, "base64"], executable: false, lamports: 1_000_000, owner, rentEpoch: 0, space: Buffer.from(data, "base64").length });
+
+/**
+ * A devnet whose mints are already at the demo target (EQ-A 1.5 -> 1.75 in
+ * 600 s, EQ-B 1.0). `outcomes[n]` is the landed result of the n-th submitted
+ * transaction: setup, probe, execution.
+ */
+function demoDevnet(outcomes: readonly ("ok" | "guard-rejected")[], eqa = { multiplier: 1.5, newMultiplier: 1.75, t: NOW + 600n }) {
+  return withGenesis(devnetGenesis, (method, params, index) => {
+    switch (method) {
+      case "getMultipleAccounts": {
+        const [mint] = params[0] as string[];
+        const data = mint === EQ_A.mint ? mintData(6, eqa.multiplier, eqa.newMultiplier, eqa.t) : mintData(6, 1, 1, 0n);
+        return { context: { slot: Number(SLOT) }, value: [account(data, TOKEN_2022), account(clockData(NOW), CLOCK)] };
+      }
+      case "getSlot":
+        return Number(SLOT + 1n);
+      case "getAccountInfo":
+        return { context: { slot: 1 }, value: null };
+      case "getLatestBlockhash":
+        return { context: { slot: 1 }, value: { blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 1_000 } };
+      case "sendTransaction":
+        return "1111111111111111111111111111111111111111111111111111111111111111";
+      case "getSignatureStatuses":
+        return { context: { slot: 2 }, value: [{ slot: 2, confirmations: 1, err: null, confirmationStatus: "confirmed" }] };
+      case "getTransaction": {
+        const err = outcomes[index] === "guard-rejected" ? { InstructionError: [0, { Custom: 13 }] } : null;
+        return { slot: 2 + index, blockTime: 3, meta: { err, logMessages: [] }, transaction: {} };
+      }
+      default:
+        throw new Error(`unexpected ${method}`);
+    }
+  });
+}
+
+const DEMO_STATE = {
+  cluster: "devnet" as const,
+  deployment: { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, deploySignature: "sig", upgradeAuthority: address("JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT") },
+  assets: [EQ_A, EQ_B],
+};
+
+test("M02: the product path runs setup, consent, a single plan, the probe and exactly one planned execution", async () => {
+  await withDevnet(demoDevnet(["ok", "guard-rejected", "ok"]), async (ctx, rpc) => {
+    const run = await runDevnetDemo(ctx, DEMO_STATE, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: (await generateKeyPairSigner()).address });
+    assert.equal(rpc.calls.filter((c) => c === "sendTransaction").length, 3);
+    assert.deepEqual([run.consentOff.executionEligibility, run.consentOn.executionEligibility], ["CONSENT_REQUIRED", "EXECUTABLE"]);
+    assert.deepEqual([run.consentOn.preferredSharesEquivalent, run.consentOn.alternativeSharesEquivalent, run.consentOn.conservativeCostDeltaBps], ["6.000000000000", "5.990000000000", 17n]);
+    assert.equal(run.consentOn.execution?.rejectedPreferredAttempt?.customErrorName, "InsideTransitionWindow");
+    assert.equal(run.consentOn.executionPlanDigest, run.executionPlan?.planDigest);
+    assert.ok(run.consent && run.executionPlan && run.executionPlan.consentId === run.consent.consentId);
+    // Every signature was preceded by a fresh genesis check.
+    for (let i = 0; i < rpc.calls.length; i += 1) {
+      if (rpc.calls[i] === "sendTransaction") assert.equal(rpc.calls[i - 1], "getGenesisHash");
+    }
+  });
+});
+
+test("L04: a rejection probe that unexpectedly succeeds aborts the demo before any execution", async () => {
+  await withDevnet(demoDevnet(["ok", "ok", "ok"]), async (ctx, rpc) => {
+    await assert.rejects(
+      runDevnetDemo(ctx, DEMO_STATE, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: (await generateKeyPairSigner()).address }),
+      (e) => e instanceof DevnetDemoAbortError && /unexpectedly SUCCEEDED/.test(e.message) && e.evidence?.succeeded === true,
+    );
+    // Setup and the probe only: the planned execution never happened.
+    assert.equal(rpc.calls.filter((c) => c === "sendTransaction").length, 2);
+  });
+});
+
+test("L04: the probe re-reads live state and refuses a currently SAFE asset without submitting", async () => {
+  await withDevnet(demoDevnet(["ok"], { multiplier: 1, newMultiplier: 1, t: 0n }), async (ctx, rpc) => {
+    const boundState = { mint: EQ_A.mint, decimals: 6, multiplierHex: "000000000000f83f", newMultiplierHex: "0000000000001c40", effectiveTimestamp: NOW + 600n, phase: 0 as const, paused: null };
+    await assert.rejects(
+      submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, asset: EQ_A, boundState, policy: DEVNET_DEMO_POLICY, amount: 1n, recipient: (await generateKeyPairSigner()).address }),
+      (e) => e instanceof DevnetDemoAbortError && /currently SAFE/.test(e.message),
+    );
+    assert.ok(!rpc.calls.includes("sendTransaction"));
   });
 });
