@@ -14,6 +14,7 @@
     "typecheck": "tsc --project tsconfig.json",
     "test": "node --test \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\" \"scripts/evidence/*.test.mjs\"",
     "devnet": "node scripts/devnet/cli.ts",
+    "devnet:guard-v2-proof": "node scripts/devnet/guard-v2-live-proof.ts",
     "observation:decode": "node scripts/observation/decode-capture.ts",
     "observation:events": "node scripts/observation/detect-events.ts",
     "observation:snapshot": "node scripts/observation/snapshot-capture.ts",

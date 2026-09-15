@@ -4,7 +4,12 @@
     "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
     "deploySignature": "4rc3JcJ7NHg3HmjNsfzmnTDcEXxR7k3gYvgFazJFfZ4chbwBaSU9nxp7P9yepJtxaEPtiGUXgQLHpoAezwtGBWRa",
     "upgradeAuthority": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
-    "abiVersion": 1
+    "abiVersion": 2,
+    "sbfSha256": "337becb9b5b8f9332fca64bba27c24529fb44da79871c17618c92776feac2795",
+    "programDataAddress": "4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3",
+    "upgradeSignature": "3J4GS9PymxP5v3NVeQZBdgR54wXhkRHaES9bbwKg4hdEbaqbGdEBC9w6pdnkKzQStWXkBZWgHrRDPKFecZjiDHRZ",
+    "deploymentSlot": 499010040,
+    "verifiedAt": "2026-09-15T23:36:11Z"
   },
   "assets": [
     {

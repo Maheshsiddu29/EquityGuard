@@ -32,9 +32,18 @@ export interface DevnetDeployment {
   readonly upgradeAuthority: Address;
   /**
    * `assert_safe_execution` ABI the deployed binary accepts. This client only
-   * builds ABI v2; update this record (to 2) only after the program upgrade.
+   * builds ABI v2; update this record (to 2) only after the program upgrade
+   * and only once the deployed ELF hash has been verified.
    */
   readonly abiVersion: 1 | 2;
+  /** SHA-256 of the deployed ProgramData ELF, verified after the upgrade. */
+  readonly sbfSha256?: string;
+  readonly programDataAddress?: Address;
+  /** Signature of the upgrade that put `sbfSha256` on chain. */
+  readonly upgradeSignature?: string;
+  readonly deploymentSlot?: number;
+  /** When the deployed binary was last verified against the reviewed candidate. */
+  readonly verifiedAt?: string;
 }
 
 export interface DevnetState {
@@ -82,11 +91,22 @@ export function parseDevnetState(value: unknown): DevnetState {
     }
     const abiVersion = d.abiVersion ?? 1;
     if (abiVersion !== 1 && abiVersion !== 2) throw new DevnetStateError("deployment abiVersion must be 1 or 2");
+    for (const [key, kind] of [["sbfSha256", "string"], ["upgradeSignature", "string"], ["verifiedAt", "string"], ["deploymentSlot", "number"], ["programDataAddress", "string"]] as const) {
+      if (d[key] !== undefined && typeof d[key] !== kind) throw new DevnetStateError(`deployment ${key} must be a ${kind}`);
+    }
+    if (d.sbfSha256 !== undefined && !/^[0-9a-f]{64}$/.test(d.sbfSha256 as string)) {
+      throw new DevnetStateError("deployment sbfSha256 must be 64 lowercase hex digits");
+    }
     deployment = {
       programId: address(d.programId),
       deploySignature: d.deploySignature,
       upgradeAuthority: address(d.upgradeAuthority),
       abiVersion,
+      ...(d.sbfSha256 === undefined ? {} : { sbfSha256: d.sbfSha256 as string }),
+      ...(d.programDataAddress === undefined ? {} : { programDataAddress: address(d.programDataAddress as string) }),
+      ...(d.upgradeSignature === undefined ? {} : { upgradeSignature: d.upgradeSignature as string }),
+      ...(d.deploymentSlot === undefined ? {} : { deploymentSlot: d.deploymentSlot as number }),
+      ...(d.verifiedAt === undefined ? {} : { verifiedAt: d.verifiedAt as string }),
     };
   }
   return { cluster: "devnet", deployment, assets };
