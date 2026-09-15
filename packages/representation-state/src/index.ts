@@ -15,6 +15,7 @@ export {
   RepresentationState,
   StateSource,
   type ApiObservation,
+  type ApiSourceClass,
   type ApiStatus,
   type Calibration,
   type ChainDecodeFailure,

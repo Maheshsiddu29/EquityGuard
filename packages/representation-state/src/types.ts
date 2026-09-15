@@ -88,6 +88,13 @@ export type ChainEvidence = ChainObservation | ChainDecodeFailure;
  */
 export type ApiStatus = "active" | "paused" | "transition" | "unknown";
 
+/**
+ * Source class of issuer/API evidence. Only LIVE_API_STATE that is still
+ * fresh may influence a state; HISTORICAL_API_STATE is audit evidence and
+ * never live policy input.
+ */
+export type ApiSourceClass = "LIVE_API_STATE" | "HISTORICAL_API_STATE";
+
 export interface ApiObservation {
   readonly issuer: Issuer;
   readonly symbol: string;
@@ -95,6 +102,9 @@ export interface ApiObservation {
   readonly status: ApiStatus;
   readonly detail: string | null;
   readonly calibration: Calibration;
+  readonly sourceClass: ApiSourceClass;
+  /** ISO time after which a live observation is stale; required for LIVE_API_STATE. */
+  readonly validUntil: string | null;
 }
 
 export interface ResolvedRepresentationState {

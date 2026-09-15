@@ -27,8 +27,10 @@ function observe(symbol: string, data: Uint8Array, chainUnixTimestamp: bigint | 
   return observeMintAccount({ mint, owner, data, slot: 1n, blockTime: 2n, observedAt: "2026-09-14T00:00:00Z", chainUnixTimestamp });
 }
 
+const EVALUATED_AT = "2026-09-14T00:00:30Z";
+
 function api(status: ApiStatus): ApiObservation {
-  return { issuer: "Ondo", symbol: "KOon", observedAt: "2026-09-14T00:00:00Z", status, detail: null, calibration: "UNCALIBRATED" };
+  return { issuer: "Ondo", symbol: "KOon", observedAt: "2026-09-14T00:00:00Z", status, detail: null, calibration: "UNCALIBRATED", sourceClass: "LIVE_API_STATE", validUntil: "2026-09-14T00:01:00Z" };
 }
 
 test("xStocks: no pending economic change is SAFE regardless of chain time", () => {
@@ -101,27 +103,27 @@ test("Ondo: stateSource is chain, api, both-agree or conflict, and conflict is p
   const chainOnly = resolveOndoState(KOON, { chain: koonSafe, api: null }, TEST_POLICY);
   assert.deepEqual([chainOnly.state, chainOnly.stateSource], [RepresentationState.SAFE, StateSource.CHAIN]);
 
-  const apiOnly = resolveOndoState(KOON, { chain: null, api: api("paused") }, TEST_POLICY);
+  const apiOnly = resolveOndoState(KOON, { chain: null, evaluatedAt: EVALUATED_AT, api: api("paused") }, TEST_POLICY);
   assert.deepEqual([apiOnly.state, apiOnly.stateSource], [RepresentationState.PAUSED, StateSource.API]);
 
-  const agree = resolveOndoState(KOON, { chain: koonSafe, api: api("active") }, TEST_POLICY);
+  const agree = resolveOndoState(KOON, { chain: koonSafe, evaluatedAt: EVALUATED_AT, api: api("active") }, TEST_POLICY);
   assert.deepEqual([agree.state, agree.stateSource], [RepresentationState.SAFE, StateSource.BOTH_AGREE]);
 
   // API reports a pause the mint does not (yet) show: kept as a conflict, not reconciled.
-  const conflict = resolveOndoState(KOON, { chain: koonSafe, api: api("paused") }, TEST_POLICY);
+  const conflict = resolveOndoState(KOON, { chain: koonSafe, evaluatedAt: EVALUATED_AT, api: api("paused") }, TEST_POLICY);
   assert.equal(conflict.stateSource, StateSource.CONFLICT);
   assert.equal(conflict.state, null);
   assert.equal(conflict.chainState, RepresentationState.SAFE);
   assert.equal(conflict.apiState, RepresentationState.PAUSED);
   assert.ok(conflict.chainObservation && conflict.apiObservation);
 
-  const reverseConflict = resolveOndoState(KOON, { chain: koonPaused, api: api("active") }, TEST_POLICY);
+  const reverseConflict = resolveOndoState(KOON, { chain: koonPaused, evaluatedAt: EVALUATED_AT, api: api("active") }, TEST_POLICY);
   assert.deepEqual([reverseConflict.chainState, reverseConflict.apiState], [RepresentationState.PAUSED, RepresentationState.SAFE]);
 
   const none = resolveOndoState(KOON, { chain: null, api: null }, TEST_POLICY);
   assert.deepEqual([none.state, none.stateSource], [RepresentationState.UNKNOWN, null]);
 
-  const unknownApi = resolveOndoState(KOON, { chain: koonSafe, api: api("unknown") }, TEST_POLICY);
+  const unknownApi = resolveOndoState(KOON, { chain: koonSafe, evaluatedAt: EVALUATED_AT, api: api("unknown") }, TEST_POLICY);
   assert.equal(unknownApi.stateSource, StateSource.CONFLICT, "UNKNOWN API vs SAFE chain is disagreement, kept distinct");
 });
 
@@ -140,7 +142,7 @@ test("Ondo reconciliation matrix (fixture-only, no live API)", () => {
     ["chain only", chainTransition, null, RepresentationState.TRANSITION, StateSource.CHAIN],
   ];
   for (const [label, chain, status, state, source] of matrix) {
-    const resolved = resolveOndoState(KOON, { chain, api: status ? api(status) : null }, TEST_POLICY);
+    const resolved = resolveOndoState(KOON, { chain, evaluatedAt: EVALUATED_AT, api: status ? api(status) : null }, TEST_POLICY);
     assert.deepEqual([resolved.state, resolved.stateSource], [state, source], label);
     if (source === StateSource.CONFLICT) assert.ok(resolved.chainState !== null && resolved.apiState !== null, label);
   }

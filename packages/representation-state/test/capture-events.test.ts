@@ -152,9 +152,9 @@ test("conflict detector emits when a resolved state enters conflict", () => {
   const koon = findRepresentationBySymbol("KOon")!;
   const chain = decode(pollLine([{ symbol: "KOon", data: mainnetMint("KOon") }], 1, 1_789_400_000))[0];
   assert.ok(chain?.kind === "observation");
-  const api = (status: "active" | "paused") => ({ issuer: "Ondo" as const, symbol: "KOon", observedAt: "t", status, detail: null, calibration: "UNCALIBRATED" as const });
+  const api = (status: "active" | "paused") => ({ issuer: "Ondo" as const, symbol: "KOon", observedAt: "t", status, detail: null, calibration: "UNCALIBRATED" as const, sourceClass: "LIVE_API_STATE" as const, validUntil: "2026-09-14T00:01:00Z" });
   const d = new ConflictEventDetector();
-  const agree = resolveOndoState(koon, { chain: chain.evidence, api: api("active") }, TEST_POLICY);
-  const conflict = resolveOndoState(koon, { chain: chain.evidence, api: api("paused") }, TEST_POLICY);
+  const agree = resolveOndoState(koon, { chain: chain.evidence, evaluatedAt: "2026-09-14T00:00:30Z", api: api("active") }, TEST_POLICY);
+  const conflict = resolveOndoState(koon, { chain: chain.evidence, evaluatedAt: "2026-09-14T00:00:30Z", api: api("paused") }, TEST_POLICY);
   assert.deepEqual([agree, conflict, conflict].flatMap((r) => d.push(r)).map((e) => e.type), ["STATE_SOURCE_CONFLICT"]);
 });

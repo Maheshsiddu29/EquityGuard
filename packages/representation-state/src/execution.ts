@@ -180,6 +180,10 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
   switch (stateDecision.decision) {
     case Decision.USE_PREFERRED: {
       const selectedRepresentation = summary(preferred);
+      // API or historical evidence is never executable economic state: live chain state is required.
+      if (!economicStateOf(preferred.chainObservation)) {
+        return result(ExecutionEligibility.STATE_UNKNOWN, `${preferred.symbol} has no authoritative live chain state (state source ${preferred.stateSource})`, { selectedRepresentation });
+      }
       if (!preferredRoute || preferredRoute.status !== "AVAILABLE") {
         return result(ExecutionEligibility.ROUTE_UNAVAILABLE, `${preferred.symbol} is SAFE but has no available route${preferredRoute?.detail ? `: ${preferredRoute.detail}` : ""}`, { selectedRepresentation, selectedRouteAvailable: false });
       }
@@ -205,6 +209,9 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       // `decide` already verified the comparison's identity and state binding.
       const chosen = alternative as ResolvedRepresentationState;
       const selectedRepresentation = summary(chosen);
+      if (!economicStateOf(chosen.chainObservation) || !economicStateOf(preferred.chainObservation)) {
+        return result(ExecutionEligibility.STATE_UNKNOWN, "a reroute needs authoritative live chain state for both representations", { selectedRepresentation });
+      }
       const comparison = input.comparison as QuoteComparison;
       if (!alternativeRoute || alternativeRoute.status !== "AVAILABLE") {
         return result(ExecutionEligibility.ROUTE_UNAVAILABLE, `${chosen.symbol} has no available route`, { selectedRepresentation, selectedRouteAvailable: false, quoteAvailable: true });
