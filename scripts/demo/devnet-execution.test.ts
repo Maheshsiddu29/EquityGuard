@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { address, AccountRole, generateKeyPairSigner } from "@solana/kit";
-import { TOKEN_2022_PROGRAM_ADDRESS, Token2022Instruction, identifyToken2022Instruction } from "@solana-program/token-2022";
+import { TOKEN_2022_PROGRAM_ADDRESS, Token2022Instruction, getTransferCheckedInstructionDataDecoder, identifyToken2022Instruction } from "@solana-program/token-2022";
 import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
 import {
   Decision,
@@ -13,6 +13,7 @@ import {
   ExecutionEligibility,
   ExecutionPlanError,
   createExecutionPlan,
+  verifyExecutionPlan,
   devnetExecutionResult,
   economicStateOf,
   type ChainObservation,
@@ -291,3 +292,19 @@ test("setup uses absolute targets only: no step depends on the previous multipli
   assert.deepEqual(demoSetupMismatches(drifted, bAtTarget, NOW + 600n), ["preferred multiplier", "preferred newMultiplier"]);
 });
 
+test("the devnet plan pins the fixture quote, and the guarded transaction consumes exactly the plan", async () => {
+  const p = plan();
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION");
+  assert.deepEqual(
+    [executionPlan.selectedRepresentation.symbol, executionPlan.expectedOutputRaw, executionPlan.inputRaw, executionPlan.route.legs[0]?.venue, executionPlan.comparisonKey === p.comparison?.comparisonKey],
+    ["EQ-B", 5_990_000n, 5_000_000n, "DEVNET_GUARDED_TRANSFER_CHECKED", true],
+  );
+  assert.deepEqual(executionPlan.economicState, economicStateOf(ALTERNATIVE));
+  const payer = await generateKeyPairSigner();
+  const [guard, , transfer] = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient: payer.address, asset: EQ_B, boundState: executionPlan.economicState, policy: DEVNET_DEMO_POLICY, amount: executionPlan.expectedOutputRaw });
+  const data = Uint8Array.from(guard?.data ?? []);
+  assert.equal(Buffer.from(data.subarray(1, 9)).toString("hex"), executionPlan.economicState.multiplierHex);
+  assert.equal(getTransferCheckedInstructionDataDecoder().decode(Uint8Array.from(transfer?.data ?? [])).amount, executionPlan.expectedOutputRaw);
+  // The fixture route for EQ-A is a different quote: it cannot stand in for the planned EQ-B quote.
+  assert.throws(() => verifyExecutionPlan(executionPlan, { quote: p.routes.preferred.quote!, comparison: p.comparison }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");
+});

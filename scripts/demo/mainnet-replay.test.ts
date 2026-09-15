@@ -110,7 +110,7 @@ test("every replay result is MAINNET_OBSERVATION with hashed evidence and no tra
 test("the mainnet observation path contains no signing, sending or RPC code", () => {
   for (const file of ["mainnet-replay.ts", "ko-fixtures.ts"]) {
     const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
-    for (const forbidden of [/devnet\//, /send\.ts/, /sendTransaction/, /signTransaction/, /KeyPairSigner/, /createSolanaRpc/, /fetchChainObservation/, /fetch\(/, /devnet-execution/, /executeGuardedDecision/, /submitRejectionProbe/]) {
+    for (const forbidden of [/devnet\//, /send\.ts/, /sendTransaction/, /signTransaction/, /KeyPairSigner/, /createSolanaRpc/, /fetchChainObservation/, /fetch\(/, /devnet-execution/, /executeGuardedDecision/, /submitRejectionProbe/, /createExecutionPlan/, /executeGuardedPlan/]) {
       assert.ok(!forbidden.test(source), `${file} must not match ${forbidden}`);
     }
   }
