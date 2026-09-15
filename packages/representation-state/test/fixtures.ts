@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import type { TransitionPolicy } from "../src/index.ts";
+import { routeIdentity, type TransitionPolicy } from "../src/index.ts";
 
 export const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 const ACCOUNT_TYPE_OFFSET = 165;
@@ -48,3 +48,12 @@ export const TEST_POLICY: TransitionPolicy = {
   calibration: "UNCALIBRATED",
   basis: "unit-test value",
 };
+
+/** Test-only quote context: a single-leg test route spending USDC. */
+export const TEST_QUOTE_CONTEXT = {
+  inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  minOutputRaw: null,
+  route: routeIdentity("TEST_ROUTE", [{ venue: "TestVenue", poolId: "TestPool1111111111111111111111111111111111", inputMint: null, outputMint: null, percent: 100 }]),
+  quotedAt: null,
+  contextSlot: null,
+} as const;

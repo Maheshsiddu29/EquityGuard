@@ -24,7 +24,7 @@ import {
   type QuoteComparison,
   type ResolvedRepresentationState,
 } from "../src/index.ts";
-import { TEST_POLICY, TOKEN_2022, mainnetMint, withPaused, withScaledUi } from "./fixtures.ts";
+import { TEST_POLICY, TEST_QUOTE_CONTEXT, TOKEN_2022, mainnetMint, withPaused, withScaledUi } from "./fixtures.ts";
 
 const KOX = findRepresentationBySymbol("KOx")!;
 const KOON = findRepresentationBySymbol("KOon")!;
@@ -55,7 +55,7 @@ function comparisonFor(preferred: ResolvedRepresentationState, alternative: Reso
   const quote = (r: ResolvedRepresentationState, outputRaw: bigint) => {
     const state = economicStateOf(r.chainObservation);
     assert.ok(state);
-    return { underlying: r.underlying, issuer: r.issuer, mint: r.mint, inputRaw, outputRaw, state };
+    return { ...TEST_QUOTE_CONTEXT, underlying: r.underlying, issuer: r.issuer, mint: r.mint, inputRaw, outputRaw, state };
   };
   return compareQuotes(quote(preferred, 5_450_395n), quote(alternative, 5_400_000n), { toleranceBps: 0n });
 }
@@ -128,8 +128,8 @@ test("paused and decimals are part of the binding", () => {
   const comparison = comparisonFor(built.kox, built.koon);
   const pausedState = economicStateOf(observe(KOX.mint, withPaused(KOX_SCHEDULED, true), BEFORE));
   assert.ok(pausedState);
-  assert.deepEqual(economicStateMismatches(comparison.preferredState, pausedState), ["paused false != true"]);
-  assert.deepEqual(economicStateMismatches(comparison.preferredState, { ...comparison.preferredState, decimals: 9 }), ["decimals 8 != 9"]);
+  assert.deepEqual(economicStateMismatches(comparison.preferredQuote.state, pausedState), ["paused false != true"]);
+  assert.deepEqual(economicStateMismatches(comparison.preferredQuote.state, { ...comparison.preferredQuote.state, decimals: 9 }), ["decimals 8 != 9"]);
 });
 
 test("12-13. a comparison cannot be reused for another mint or another input notional", () => {

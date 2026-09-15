@@ -20,6 +20,7 @@ import {
   withinToleranceBps,
   type NormalizedQuote,
 } from "../src/index.ts";
+import { TEST_QUOTE_CONTEXT } from "./fixtures.ts";
 
 function f64(value: number): Uint8Array {
   const bytes = new Uint8Array(8);
@@ -30,7 +31,7 @@ function f64(value: number): Uint8Array {
 /** Quote whose bound state is activated with `effectiveMultiplier` and no scheduled change. */
 function quote(partial: Partial<Omit<NormalizedQuote, "state">> & { decimals?: number; effectiveMultiplier?: Uint8Array }): NormalizedQuote {
   const { decimals = 8, effectiveMultiplier = f64(1), ...rest } = partial;
-  const base = { underlying: "KO", issuer: "xStocks" as const, mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", inputRaw: 5_000_000n, outputRaw: 100_000_000n, ...rest };
+  const base = { ...TEST_QUOTE_CONTEXT, underlying: "KO", issuer: "xStocks" as const, mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", inputRaw: 5_000_000n, outputRaw: 100_000_000n, ...rest };
   const multiplierHex = Buffer.from(effectiveMultiplier).toString("hex");
   return {
     ...base,
@@ -148,7 +149,7 @@ test("comparisons carry the identity and economic states of the quotes they were
     [comparison.underlying, comparison.preferredMint, comparison.alternativeMint, comparison.inputRaw],
     ["KO", "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", koon, 5_000_000n],
   );
-  assert.deepEqual([comparison.preferredState, comparison.alternativeState], [preferred.state, alternative.state]);
+  assert.deepEqual([comparison.preferredQuote.state, comparison.alternativeQuote.state], [preferred.state, alternative.state]);
 });
 
 test("a quote cannot be normalized with another mint's state", () => {

@@ -59,7 +59,7 @@ export interface LiquidityQuote {
   readonly priceImpactPct: string | null;
   readonly venues: readonly { readonly label?: string; readonly ammKey?: string; readonly percent?: number }[];
   readonly error: string | null;
-  readonly chainAtQuote: { readonly decimals: number; readonly effectiveMultiplierHex: string; readonly phase: string | null };
+  readonly chainAtQuote: { readonly slot: string | null; readonly decimals: number; readonly effectiveMultiplierHex: string; readonly phase: string | null };
 }
 
 export interface LiquiditySnapshot {

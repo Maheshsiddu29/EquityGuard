@@ -21,6 +21,7 @@ export type NormalizationErrorCode =
   | "NotionalMismatch"
   | "UnderlyingMismatch"
   | "StateMismatch"
+  | "InputMintMismatch"
   | "NonPositiveOutput"
   | "InvalidTolerance";
 

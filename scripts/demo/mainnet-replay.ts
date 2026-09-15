@@ -18,6 +18,7 @@ import {
   mainnetObservationResult,
   resolveOndoState,
   resolveXStocksState,
+  routeIdentity,
   type ChainObservation,
   type EconomicState,
   type EvidenceReference,
@@ -140,7 +141,24 @@ function routesFromSnapshot(
     if (!state || q.chainAtQuote.decimals !== state.decimals || q.chainAtQuote.effectiveMultiplierHex !== effectiveHex || q.chainAtQuote.phase !== recordedPhase) {
       return { ...base, quote: null, detail: "recorded quote was observed against a different chain state than the replayed one" };
     }
-    const quote: NormalizedQuote = { underlying: resolved.underlying, issuer: resolved.issuer, mint: resolved.mint, inputRaw: BigInt(snapshot.inputRaw), outputRaw: BigInt(q.outAmountRaw), state };
+    // Jupiter /build returned no route id: the identity is derived from the recorded route plan.
+    const route = routeIdentity(
+      "JUPITER_MAINNET_SNAPSHOT",
+      q.venues.map((v) => ({ venue: v.label ?? "unknown", poolId: v.ammKey ?? null, inputMint: snapshot.inputMint, outputMint: resolved.mint, percent: v.percent ?? 100 })),
+    );
+    const quote: NormalizedQuote = {
+      underlying: resolved.underlying,
+      issuer: resolved.issuer,
+      inputMint: snapshot.inputMint,
+      mint: resolved.mint,
+      inputRaw: BigInt(snapshot.inputRaw),
+      outputRaw: BigInt(q.outAmountRaw),
+      minOutputRaw: null,
+      route,
+      quotedAt: q.observedAt,
+      contextSlot: q.chainAtQuote.slot === null ? null : BigInt(q.chainAtQuote.slot),
+      state,
+    };
     return { ...base, quote, detail: null };
   };
   const routes = { preferred: route(p, preferred), alternative: route(a, alternative) };

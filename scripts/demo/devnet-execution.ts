@@ -45,12 +45,16 @@ import {
   economicStateOf,
   fetchChainObservation,
   protectedStateOf,
+  routeIdentity,
+  verifyExecutionPlan,
+  createExecutionPlan,
   type ChainEvidence,
   type DevnetExecutionResult,
   type DevnetTransactionEvidence,
   type EconomicState,
   type EvidenceReference,
   type ExecutionDecision,
+  type ExecutionPlan,
   type NormalizedQuote,
   type QuoteAvailability,
   type QuoteComparison,
@@ -126,6 +130,20 @@ export function resolveDevnetAsset(asset: TestAsset, underlying: string, evidenc
   };
 }
 
+/**
+ * The fixture has no input token: the demo delivers the quoted output with
+ * transferChecked. This label makes that explicit in every quote identity.
+ */
+export const DEVNET_DEMO_INPUT = "DEVNET_DEMO_FIXTURE_INPUT";
+
+/**
+ * Route identity of a fixture quote: one leg, the fixture itself, for this
+ * asset. Delivery is a guarded transferChecked, not a DEX swap.
+ */
+export function devnetFixtureRoute(asset: TestAsset, fixture: DevnetDemoQuoteFixture): ReturnType<typeof routeIdentity> {
+  return routeIdentity(fixture.label, [{ venue: "DEVNET_GUARDED_TRANSFER_CHECKED", poolId: null, inputMint: DEVNET_DEMO_INPUT, outputMint: asset.mint, percent: 100 }]);
+}
+
 /** Route observation for a devnet asset: AVAILABLE only when the demo fixture lists an output for it. */
 export function fixtureRoute(asset: TestAsset, underlying: string, evidence: ChainEvidence, fixture: DevnetDemoQuoteFixture): RouteObservation {
   const output = fixture.outputsRaw[asset.label];
@@ -133,7 +151,19 @@ export function fixtureRoute(asset: TestAsset, underlying: string, evidence: Cha
   if (output === undefined) return { ...base, status: "UNAVAILABLE", quote: null, detail: `${asset.label} is not in the DEVNET DEMO QUOTE / FIXTURE` };
   const state = economicStateOf(evidence);
   if (!state) return { ...base, status: "AVAILABLE", quote: null, detail: `${asset.label} chain state could not be bound` };
-  const quote: NormalizedQuote = { underlying, issuer: "DEVNET_TEST", mint: asset.mint, inputRaw: BigInt(fixture.inputRaw), outputRaw: BigInt(output), state };
+  const quote: NormalizedQuote = {
+    underlying,
+    issuer: "DEVNET_TEST",
+    inputMint: DEVNET_DEMO_INPUT,
+    mint: asset.mint,
+    inputRaw: BigInt(fixture.inputRaw),
+    outputRaw: BigInt(output),
+    minOutputRaw: BigInt(output),
+    route: devnetFixtureRoute(asset, fixture),
+    quotedAt: null,
+    contextSlot: evidence.slot,
+    state,
+  };
   return { ...base, status: "AVAILABLE", quote, detail: null };
 }
 
@@ -310,20 +340,29 @@ function requireDevnet(ctx: DevnetContext, programId: Address): void {
 }
 
 /**
- * The only path that executes a decision. The eligibility gate runs first,
- * before any RPC call: anything but EXECUTABLE is refused, and the guard
- * asserts the decision's executable state.
+ * The only path that executes. It consumes an `ExecutionPlan` (which can only
+ * exist for an EXECUTABLE devnet decision) and verifies it first, before any
+ * RPC call: `quote` is the quote about to be delivered and `comparison` the
+ * one consent was given to; any substitution fails closed. The guard asserts
+ * `plan.economicState` and the delivered amount is `plan.expectedOutputRaw`.
  */
-export async function executeGuardedDecision(
+export async function executeGuardedPlan(
   ctx: DevnetContext,
-  input: { readonly programId: Address; readonly decision: ExecutionDecision; readonly asset: TestAsset; readonly amount: bigint; readonly recipient: Address },
+  input: {
+    readonly programId: Address;
+    readonly plan: ExecutionPlan;
+    readonly quote: NormalizedQuote;
+    readonly comparison: QuoteComparison | null;
+    readonly asset: TestAsset;
+    readonly recipient: Address;
+  },
 ): Promise<DevnetTransactionEvidence> {
-  assertExecutable(input.decision);
+  verifyExecutionPlan(input.plan, { quote: input.quote, comparison: input.comparison });
   requireDevnet(ctx, input.programId);
-  if (input.decision.selectedRepresentation.mint !== input.asset.mint) {
-    throw new DevnetDemoEnvironmentError("execution asset differs from the decision's selected representation");
+  if (input.plan.selectedRepresentation.mint !== input.asset.mint || input.plan.economicState.decimals !== input.asset.decimals) {
+    throw new DevnetDemoEnvironmentError("execution asset differs from the plan's selected representation");
   }
-  return submitGuardedDelivery(ctx, input.programId, input.asset, input.decision.executableState, input.amount, input.recipient);
+  return submitGuardedDelivery(ctx, input.programId, input.asset, input.plan.economicState, input.plan.expectedOutputRaw, input.recipient);
 }
 
 /**
@@ -376,6 +415,7 @@ export interface DevnetDemoRun {
   readonly recipient: Address;
   readonly consentOff: DevnetExecutionResult;
   readonly consentOn: DevnetExecutionResult;
+  readonly executionPlan: ExecutionPlan | null;
 }
 
 export async function runDevnetDemo(
@@ -410,17 +450,20 @@ export async function runDevnetDemo(
 
   const consentOff = devnetExecutionResult({ decision: plan.consentOff, evidenceSources, quoteAvailability });
   if (plan.consentOn.executionEligibility !== "EXECUTABLE") {
-    return { setupTransactions, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }) };
+    return { setupTransactions, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }), executionPlan: null };
   }
 
+  // Immutable plan from the EXECUTABLE consented decision: exact quote, route, state and comparison.
+  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION");
   // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
   const rejectedPreferredAttempt =
     plan.preferred.state !== RepresentationState.SAFE && plan.comparison
-      ? await submitRejectionProbe(ctx, { programId, representation: plan.preferred, boundState: plan.comparison.preferredState, asset: preferredAsset, amount: amountFor(preferredAsset), recipient: options.recipient })
+      ? await submitRejectionProbe(ctx, { programId, representation: plan.preferred, boundState: plan.comparison.preferredQuote.state, asset: preferredAsset, amount: amountFor(preferredAsset), recipient: options.recipient })
       : null;
-  // Execution of the consented decision, through the eligibility gate.
-  const selectedAsset = plan.consentOn.selectedRepresentation?.mint === alternativeAsset.mint ? alternativeAsset : preferredAsset;
-  const executed = await executeGuardedDecision(ctx, { programId, decision: plan.consentOn, asset: selectedAsset, amount: amountFor(selectedAsset), recipient: options.recipient });
-  const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt } });
-  return { setupTransactions, recipient: options.recipient, consentOff, consentOn };
+  // Execution consumes the plan; the presented quote is the selected route's quote.
+  const selected = executionPlan.selectedRepresentation.mint === alternativeAsset.mint ? { asset: alternativeAsset, route: plan.routes.alternative } : { asset: preferredAsset, route: plan.routes.preferred };
+  if (!selected.route.quote) throw new DevnetDemoEnvironmentError("selected route has no quote");
+  const executed = await executeGuardedPlan(ctx, { programId, plan: executionPlan, quote: selected.route.quote, comparison: plan.comparison, asset: selected.asset, recipient: options.recipient });
+  const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt }, executionPlanId: executionPlan.planId });
+  return { setupTransactions, recipient: options.recipient, consentOff, consentOn, executionPlan };
 }

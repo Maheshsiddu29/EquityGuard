@@ -67,6 +67,27 @@ export {
   protectedStateOf,
   type EconomicState,
 } from "./economic-state.ts";
+export {
+  QuoteIdentityError,
+  canonicalKey,
+  quoteIdentityOf,
+  quoteKey,
+  quoteMismatches,
+  routeIdentity,
+  type QuoteIdentity,
+  type QuoteMismatch,
+  type QuoteMismatchCode,
+  type RouteIdentity,
+  type RouteLeg,
+} from "./quote-identity.ts";
+export {
+  ExecutionPlanError,
+  createExecutionPlan,
+  verifyExecutionPlan,
+  type ExecutionPlan,
+  type ExecutionPlanContent,
+  type ExecutionPlanErrorCode,
+} from "./execution-plan.ts";
 export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
 export {
   ExecutionEligibility,

@@ -28,7 +28,7 @@ import {
   type ResolvedRepresentationState,
   type RouteObservation,
 } from "../src/index.ts";
-import { TEST_POLICY, TOKEN_2022, mainnetMint, withScaledUi } from "./fixtures.ts";
+import { TEST_POLICY, TEST_QUOTE_CONTEXT, TOKEN_2022, mainnetMint, withScaledUi } from "./fixtures.ts";
 
 const KOX = findRepresentationBySymbol("KOx")!;
 const KOON = findRepresentationBySymbol("KOon")!;
@@ -46,7 +46,7 @@ const koon = (time: bigint, data = KOON_SAFE) => resolveOndoState(KOON, { chain:
 function quote(r: ResolvedRepresentationState, outputRaw: bigint, inputRaw = INPUT_RAW): NormalizedQuote {
   const state = economicStateOf(r.chainObservation);
   assert.ok(state);
-  return { underlying: r.underlying, issuer: r.issuer, mint: r.mint, inputRaw, outputRaw, state };
+  return { ...TEST_QUOTE_CONTEXT, underlying: r.underlying, issuer: r.issuer, mint: r.mint, inputRaw, outputRaw, state };
 }
 const available = (r: ResolvedRepresentationState, q: NormalizedQuote | null = quote(r, 5_000_000n)): RouteObservation => ({ mint: r.mint, status: "AVAILABLE", quote: q, source: "test", detail: null });
 const unavailable = (r: ResolvedRepresentationState): RouteObservation => ({ mint: r.mint, status: "UNAVAILABLE", quote: null, source: "test", detail: "No routes found" });
@@ -80,7 +80,7 @@ test("1. SAFE preferred with a route and a state-bound quote is EXECUTABLE", () 
   const d = run({ preferred, alternative: koon(SAFE_TIME), preferredRoute: available(preferred) });
   assert.deepEqual(eligibility(d), [Decision.USE_PREFERRED, ExecutionEligibility.EXECUTABLE]);
   assert.deepEqual([d.selectedRepresentation?.symbol, d.selectedRouteAvailable, d.quoteAvailable], ["KOx", true, true]);
-  assert.deepEqual(d.executableState, economicStateOf(preferred.chainObservation));
+  assert.deepEqual(d.executableQuote?.state, economicStateOf(preferred.chainObservation));
   assert.doesNotThrow(() => assertExecutable(d));
 });
 
@@ -90,7 +90,7 @@ test("2. SAFE preferred without a route keeps the SAFE state choice but is ROUTE
     const d = run({ preferred, alternative: kox(SAFE_TIME), preferredRoute });
     assert.deepEqual(eligibility(d), [Decision.USE_PREFERRED, ExecutionEligibility.ROUTE_UNAVAILABLE]);
     assert.equal(d.stateDecision.preferred.state, RepresentationState.SAFE);
-    assert.deepEqual([d.selectedRepresentation?.symbol, d.selectedRouteAvailable, d.quoteAvailable, d.executableState], ["KOon", false, false, null]);
+    assert.deepEqual([d.selectedRepresentation?.symbol, d.selectedRouteAvailable, d.quoteAvailable, d.executableQuote], ["KOon", false, false, null]);
   }
   // A route for another mint is not a route for this representation.
   const other = run({ preferred, alternative: kox(SAFE_TIME), preferredRoute: available(kox(SAFE_TIME)) });
@@ -121,17 +121,17 @@ test("4. REQUIRES_CONSENT is never executable", () => {
   const alternative = koon(TRANSITION_TIME);
   const d = run({ preferred, alternative, preferredRoute: available(preferred), alternativeRoute: available(alternative), withComparison: true, consent: false });
   assert.deepEqual(eligibility(d), [Decision.REQUIRES_CONSENT, ExecutionEligibility.CONSENT_REQUIRED]);
-  assert.deepEqual([d.consentRequired, d.selectedRepresentation, d.executableState, d.quoteAvailable], [true, null, null, true]);
+  assert.deepEqual([d.consentRequired, d.selectedRepresentation, d.executableQuote, d.quoteAvailable], [true, null, null, true]);
   assert.throws(() => assertExecutable(d), /refusing to execute: CONSENT_REQUIRED/);
 });
 
 test("5. USE_ALTERNATIVE with consent and a route is EXECUTABLE on the alternative's bound state", () => {
   const preferred = kox(TRANSITION_TIME);
   const alternative = koon(TRANSITION_TIME);
-  const d = run({ preferred, alternative, preferredRoute: unavailable(preferred), alternativeRoute: available(alternative), withComparison: true, consent: true });
+  const d = run({ preferred, alternative, preferredRoute: unavailable(preferred), alternativeRoute: available(alternative, quote(alternative, 4_990_000n)), withComparison: true, consent: true });
   assert.deepEqual(eligibility(d), [Decision.USE_ALTERNATIVE, ExecutionEligibility.EXECUTABLE]);
   assert.deepEqual([d.selectedRepresentation?.symbol, d.selectedRouteAvailable], ["KOon", true]);
-  assert.deepEqual(d.executableState, d.comparison?.alternativeState);
+  assert.deepEqual(d.executableQuote, d.comparison?.alternativeQuote);
   // The same consented decision without an available route is not executable.
   const noRoute = run({ preferred, alternative, alternativeRoute: unavailable(alternative), withComparison: true, consent: true });
   assert.deepEqual(eligibility(noRoute), [Decision.USE_ALTERNATIVE, ExecutionEligibility.ROUTE_UNAVAILABLE]);
@@ -169,8 +169,8 @@ test("7. the execution gate rejects every non-executable eligibility and forged 
   for (const e of Object.values(ExecutionEligibility).filter((v) => v !== ExecutionEligibility.EXECUTABLE)) {
     assert.throws(() => assertExecutable({ ...executable, executionEligibility: e }), (err) => err instanceof ExecutionEligibilityError && err.eligibility === e, e);
   }
-  assert.throws(() => assertExecutable({ ...executable, executableState: null }), ExecutionEligibilityError);
-  assert.throws(() => assertExecutable({ ...executable, executableState: { ...executable.executableState!, mint: KOON.mint } }), /different mint/);
+  assert.throws(() => assertExecutable({ ...executable, executableQuote: null }), ExecutionEligibilityError);
+  assert.throws(() => assertExecutable({ ...executable, executableQuote: { ...executable.executableQuote!, mint: KOON.mint } }), /different mint/);
 });
 
 test("8. a mainnet observation result carries eligibility but can never carry a submission", () => {

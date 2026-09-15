@@ -12,7 +12,8 @@
 
 import type { NormalizedQuote, QuoteComparison } from "./compare.ts";
 import { Decision, decide, type DecisionInput, type DecisionResult, type RepresentationSummary } from "./decision.ts";
-import { economicStateMismatches, economicStateOf, type EconomicState } from "./economic-state.ts";
+import { economicStateMismatches, economicStateOf } from "./economic-state.ts";
+import { quoteIdentityOf, quoteMismatches, type QuoteIdentity, type QuoteMismatch } from "./quote-identity.ts";
 import type { ResolvedRepresentationState } from "./types.ts";
 
 export const ExecutionEligibility = {
@@ -30,7 +31,11 @@ export const ExecutionEligibility = {
   CONSENT_REQUIRED: "CONSENT_REQUIRED",
   /** A quote or comparison was built against a different economic state. */
   STALE_COMPARISON: "STALE_COMPARISON",
-  /** A quote or comparison belongs to a different trade (mint, underlying or notional). */
+  /**
+   * A quote or comparison belongs to a different trade (mint, underlying or
+   * notional), or the route's quote is not the exact quote the comparison
+   * was built from; `quoteMismatches` carries the precise reasons.
+   */
   QUOTE_MISMATCH: "QUOTE_MISMATCH",
 } as const;
 export type ExecutionEligibility = (typeof ExecutionEligibility)[keyof typeof ExecutionEligibility];
@@ -65,14 +70,19 @@ export interface ExecutionDecision {
   /** Whether a quote usable for the selected (or proposed) representation exists. */
   readonly quoteAvailable: boolean;
   readonly consentRequired: boolean;
-  /** The exact state a transaction must assert; non-null only when EXECUTABLE. */
-  readonly executableState: EconomicState | null;
+  /**
+   * The exact quote (route, raw amounts, economic state) execution must use;
+   * non-null only when EXECUTABLE. Its `state` is what the guard asserts.
+   */
+  readonly executableQuote: QuoteIdentity | null;
+  /** Precise reasons when a presented quote differs from the bound one. */
+  readonly quoteMismatches: readonly QuoteMismatch[];
 }
 
 export type ExecutableDecision = ExecutionDecision & {
   readonly executionEligibility: "EXECUTABLE";
   readonly selectedRepresentation: RepresentationSummary;
-  readonly executableState: EconomicState;
+  readonly executableQuote: QuoteIdentity;
 };
 
 export class ExecutionEligibilityError extends Error {
@@ -101,7 +111,7 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
   const result = (
     executionEligibility: ExecutionEligibility,
     executionReason: string,
-    fields: Partial<Pick<ExecutionDecision, "selectedRepresentation" | "selectedRouteAvailable" | "quoteAvailable" | "executableState">> = {},
+    fields: Partial<Pick<ExecutionDecision, "selectedRepresentation" | "selectedRouteAvailable" | "quoteAvailable" | "executableQuote" | "quoteMismatches">> = {},
   ): ExecutionDecision => ({
     stateDecision,
     comparison: input.comparison,
@@ -111,7 +121,8 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
     selectedRouteAvailable: fields.selectedRouteAvailable ?? null,
     quoteAvailable: fields.quoteAvailable ?? false,
     consentRequired: stateDecision.decision === Decision.REQUIRES_CONSENT,
-    executableState: fields.executableState ?? null,
+    executableQuote: fields.executableQuote ?? null,
+    quoteMismatches: fields.quoteMismatches ?? [],
   });
 
   switch (stateDecision.decision) {
@@ -133,7 +144,7 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       if (stale.length > 0) {
         return result(ExecutionEligibility.STALE_COMPARISON, `${preferred.symbol} quote was built against a different economic state: ${stale.join("; ")}`, fields);
       }
-      return result(ExecutionEligibility.EXECUTABLE, `${preferred.symbol} is SAFE, routable, and quoted against its current state`, { ...fields, executableState: quote.state });
+      return result(ExecutionEligibility.EXECUTABLE, `${preferred.symbol} is SAFE, routable, and quoted against its current state`, { ...fields, executableQuote: quoteIdentityOf(quote) });
     }
     case Decision.USE_ALTERNATIVE: {
       // `decide` already verified the comparison's identity and state binding.
@@ -143,11 +154,18 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       if (!alternativeRoute || alternativeRoute.status !== "AVAILABLE") {
         return result(ExecutionEligibility.ROUTE_UNAVAILABLE, `${chosen.symbol} has no available route`, { selectedRepresentation, selectedRouteAvailable: false, quoteAvailable: true });
       }
-      return result(ExecutionEligibility.EXECUTABLE, `consented reroute to ${chosen.symbol}: SAFE, routable, and compared against its current state`, {
-        selectedRepresentation,
-        selectedRouteAvailable: true,
-        quoteAvailable: true,
-        executableState: comparison.alternativeState,
+      if (!alternativeRoute.quote) {
+        return result(ExecutionEligibility.QUOTE_UNAVAILABLE, `${chosen.symbol} is routable but the route carries no quote to execute`, { selectedRepresentation, selectedRouteAvailable: true });
+      }
+      // The route's quote must be exactly the quote that was normalized, compared and disclosed.
+      const substituted = quoteMismatches(comparison.alternativeQuote, alternativeRoute.quote);
+      const fields = { selectedRepresentation, selectedRouteAvailable: true, quoteAvailable: true };
+      if (substituted.length > 0) {
+        return result(ExecutionEligibility.QUOTE_MISMATCH, `${chosen.symbol} route quote is not the compared quote: ${substituted.map((m) => m.code).join(", ")}`, { ...fields, quoteMismatches: substituted });
+      }
+      return result(ExecutionEligibility.EXECUTABLE, `consented reroute to ${chosen.symbol}: SAFE, routable, and the route quote is the compared quote`, {
+        ...fields,
+        executableQuote: comparison.alternativeQuote,
       });
     }
     case Decision.REQUIRES_CONSENT:
@@ -175,10 +193,10 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
  * call this first; it throws unless the decision is EXECUTABLE.
  */
 export function assertExecutable(decision: ExecutionDecision): asserts decision is ExecutableDecision {
-  if (decision.executionEligibility !== ExecutionEligibility.EXECUTABLE || !decision.selectedRepresentation || !decision.executableState) {
+  if (decision.executionEligibility !== ExecutionEligibility.EXECUTABLE || !decision.selectedRepresentation || !decision.executableQuote) {
     throw new ExecutionEligibilityError(decision.executionEligibility, `refusing to execute: ${decision.executionEligibility} (${decision.executionReason})`);
   }
-  if (decision.executableState.mint !== decision.selectedRepresentation.mint) {
-    throw new ExecutionEligibilityError(decision.executionEligibility, "refusing to execute: executable state is for a different mint");
+  if (decision.executableQuote.mint !== decision.selectedRepresentation.mint || decision.executableQuote.state.mint !== decision.selectedRepresentation.mint) {
+    throw new ExecutionEligibilityError(decision.executionEligibility, "refusing to execute: executable quote is for a different mint");
   }
 }

@@ -14,6 +14,7 @@
  *   npm run demo:equityguard [-- --skip-devnet]
  */
 
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -116,6 +117,14 @@ async function part3(): Promise<DevnetDemoRun> {
   line();
   line("Consent ON (explicit demo consent: allowCrossIssuerReroute = true):");
   formatDecision(run.consentOn);
+  if (run.executionPlan) {
+    const plan = run.executionPlan;
+    line();
+    line(`  EXECUTION PLAN (sha256 of planId ${createHash("sha256").update(plan.planId).digest("hex").slice(0, 16)}…):`);
+    line(`    ${plan.decision} → ${plan.selectedRepresentation.symbol}; input ${plan.inputRaw}; expected output ${plan.expectedOutputRaw}; min output ${plan.minOutputRaw}`);
+    line(`    route ${plan.route.source} via ${plan.route.legs.map((l) => l.venue).join(" + ")}; guard state multiplier ${plan.economicState.multiplierHex} phase ${plan.economicState.phase}`);
+    line(`    consent bound to comparison: ${plan.comparisonKey !== null && plan.disclosure?.comparisonKey === plan.comparisonKey}`);
+  }
   const exec = run.consentOn.execution;
   if (exec?.rejectedPreferredAttempt) {
     const r = exec.rejectedPreferredAttempt;

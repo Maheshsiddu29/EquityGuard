@@ -57,6 +57,8 @@ export interface RerouteDisclosure {
   readonly toleranceBps: bigint;
   readonly withinTolerance: boolean;
   readonly notice: string;
+  /** The exact comparison this disclosure (and any consent to it) describes. */
+  readonly comparisonKey: string;
 }
 
 export interface RepresentationSummary {
@@ -129,8 +131,8 @@ export function comparisonStateMismatch(
     if (!current) mismatches.push(`${role} ${state.symbol}: no decoded chain state to bind`);
     else mismatches.push(...economicStateMismatches(bound, current).map((m) => `${role} ${state.symbol}: ${m}`));
   };
-  check("preferred", comparison.preferredState, preferred);
-  check("alternative", comparison.alternativeState, alternative);
+  check("preferred", comparison.preferredQuote.state, preferred);
+  check("alternative", comparison.alternativeQuote.state, alternative);
   return mismatches.length > 0 ? mismatches.join("; ") : null;
 }
 
@@ -209,6 +211,7 @@ export function decide(input: DecisionInput): DecisionResult {
     toleranceBps: comparison.toleranceBps,
     withinTolerance: comparison.withinTolerance,
     notice: NOT_IDENTICAL_NOTICE,
+    comparisonKey: comparison.comparisonKey,
   };
   if (!policy.allowCrossIssuerReroute) {
     return result(Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED", `${unsafeReason}; ${alternative.symbol} (${alternative.issuer}) is SAFE`, disclosure);

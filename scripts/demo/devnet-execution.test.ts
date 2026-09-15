@@ -11,7 +11,8 @@ import {
   buildRegistry,
   decide,
   ExecutionEligibility,
-  ExecutionEligibilityError,
+  ExecutionPlanError,
+  createExecutionPlan,
   devnetExecutionResult,
   economicStateOf,
   type ChainObservation,
@@ -27,7 +28,7 @@ import {
   DevnetDemoEnvironmentError,
   PREFERRED_TRANSITION_LEAD_SECS,
   demoSetupMismatches,
-  executeGuardedDecision,
+  executeGuardedPlan,
   guardedDeliveryInstructions,
   loadDevnetQuoteFixture,
   planDemoSetup,
@@ -119,7 +120,7 @@ test("guarded delivery puts the guard first and asserts exactly the decision's b
   const recipient = (await generateKeyPairSigner()).address;
   const p = plan();
   assert.ok(p.comparison);
-  const instructions = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, boundState: p.comparison.alternativeState, policy: DEVNET_DEMO_POLICY, amount: 5_990_000n });
+  const instructions = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, boundState: p.comparison.alternativeQuote.state, policy: DEVNET_DEMO_POLICY, amount: 5_990_000n });
   assert.equal(instructions.length, 3);
   const [guard, , transfer] = instructions;
   assert.equal(guard?.programAddress, EQUITY_GUARD_DEVNET_PROGRAM_ID);
@@ -127,7 +128,7 @@ test("guarded delivery puts the guard first and asserts exactly the decision's b
   // ABI v1: multiplier bytes, new multiplier bytes, T, phase, then the policy window (900, 300).
   const data = Uint8Array.from(guard?.data ?? []);
   const view = new DataView(data.buffer);
-  const bound = p.comparison.alternativeState;
+  const bound = p.comparison.alternativeQuote.state;
   assert.deepEqual(
     [Buffer.from(data.subarray(1, 9)).toString("hex"), Buffer.from(data.subarray(9, 17)).toString("hex"), view.getBigInt64(17, true), data[25]],
     [bound.multiplierHex, bound.newMultiplierHex, bound.effectiveTimestamp, bound.phase],
@@ -149,7 +150,7 @@ test("a devnet comparison built before a state change cannot authorize execution
   const alternative = { ...p.alternative, chainObservation: updated };
   const result = decide({ preferred: p.preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw, comparison: p.comparison });
   assert.deepEqual([result.decision, result.reasonCode], [Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_STALE_STATE"]);
-  assert.deepEqual(p.comparison?.alternativeState, economicStateOf(ALTERNATIVE));
+  assert.deepEqual(p.comparison?.alternativeQuote.state, economicStateOf(ALTERNATIVE));
 });
 
 test("execution results are DEVNET_EXECUTION and cannot claim execution for unsafe decisions", () => {
@@ -159,7 +160,7 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   const evidence = [{ kind: "DEVNET_DEMO_QUOTE_FIXTURE" as const, description: "fixture", sha256, observedAt: null }];
   const rejected = { signature: "r", slot: 1n, succeeded: false, customErrorName: "InsideTransitionWindow", downstreamBalanceBefore: 0n, downstreamBalanceAfter: 0n, explorerUrl: null };
   const executed = { signature: "e", slot: 2n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 5_990_000n, explorerUrl: null };
-  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected } });
+  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanId: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION").planId });
   assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.conservativeCostDeltaBps], ["DEVNET_EXECUTION", "e", 17n]);
   assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
@@ -181,7 +182,7 @@ test("devnet test assets can never enter the mainnet registry", () => {
 
 const NO_RPC = new Proxy({}, { get: () => { throw new Error("RPC must not be called"); } });
 
-test("the execution function refuses every non-executable decision before any RPC call", async () => {
+test("no execution plan exists for a non-executable decision, and execution consumes only a verified plan", async () => {
   const payer = await generateKeyPairSigner();
   const ctx = { rpc: NO_RPC, payer, cluster: "devnet" } as unknown as DevnetContext;
   const p = plan();
@@ -192,24 +193,27 @@ test("the execution function refuses every non-executable decision before any RP
     ["ROUTE_UNAVAILABLE", missingQuote.consentOn],
     ["STALE_COMPARISON", { ...p.consentOn, stateDecision: stale, executionEligibility: ExecutionEligibility.STALE_COMPARISON }],
     ["QUOTE_UNAVAILABLE", { ...p.consentOn, executionEligibility: ExecutionEligibility.QUOTE_UNAVAILABLE }],
+    ["QUOTE_MISMATCH", { ...p.consentOn, executionEligibility: ExecutionEligibility.QUOTE_MISMATCH }],
     ["STATE_UNSAFE", { ...p.consentOn, executionEligibility: ExecutionEligibility.STATE_UNSAFE }],
     ["STATE_UNKNOWN", { ...p.consentOn, executionEligibility: ExecutionEligibility.STATE_UNKNOWN }],
   ];
   for (const [label, decision] of cases) {
     assert.equal(decision.executionEligibility, label);
-    await assert.rejects(
-      executeGuardedDecision(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, decision, asset: EQ_B, amount: 1n, recipient: payer.address }),
-      (e) => e instanceof ExecutionEligibilityError && e.eligibility === label,
-      label,
-    );
+    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
   }
-  // An executable decision still refuses a non-devnet cluster or a different asset before any RPC.
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION");
+  const quote = p.routes.alternative.quote!;
+  const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan: executionPlan, quote, comparison: p.comparison, asset: EQ_B, recipient: payer.address };
+  // Plan checks, cluster and asset checks all run before any RPC call.
+  await assert.rejects(executeGuardedPlan(ctx, { ...base, quote: { ...quote, outputRaw: quote.outputRaw + 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");
+  await assert.rejects(executeGuardedPlan(ctx, { ...base, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
+  await assert.rejects(executeGuardedPlan(ctx, { ...base, plan: { ...executionPlan, expectedOutputRaw: 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_TAMPERED");
   const local = { ...ctx, cluster: "localnet" } as unknown as DevnetContext;
-  await assert.rejects(executeGuardedDecision(local, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, decision: p.consentOn, asset: EQ_B, amount: 1n, recipient: payer.address }), DevnetDemoEnvironmentError);
-  await assert.rejects(executeGuardedDecision(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, decision: p.consentOn, asset: EQ_A, amount: 1n, recipient: payer.address }), /selected representation/);
+  await assert.rejects(executeGuardedPlan(local, base), DevnetDemoEnvironmentError);
+  await assert.rejects(executeGuardedPlan(ctx, { ...base, asset: EQ_A }), /selected representation/);
   // The rejection probe refuses SAFE representations.
   await assert.rejects(
-    submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, representation: p.alternative, boundState: p.comparison!.alternativeState, asset: EQ_B, amount: 1n, recipient: payer.address }),
+    submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, representation: p.alternative, boundState: p.comparison!.alternativeQuote.state, asset: EQ_B, amount: 1n, recipient: payer.address }),
     /only for a non-SAFE representation/,
   );
 });
@@ -286,3 +290,4 @@ test("setup uses absolute targets only: no step depends on the previous multipli
   const drifted: ProtectedState = { multiplier: f64(1.75), newMultiplier: f64(2), newMultiplierEffectiveTimestamp: NOW + 600n };
   assert.deepEqual(demoSetupMismatches(drifted, bAtTarget, NOW + 600n), ["preferred multiplier", "preferred newMultiplier"]);
 });
+

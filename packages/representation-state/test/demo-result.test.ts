@@ -54,8 +54,10 @@ test("devnet execution results cannot cite mainnet quotes or evidence, or execut
   assert.equal(safeDecision.executionEligibility, "ROUTE_UNAVAILABLE");
   assert.throws(() => devnetExecutionResult({ decision: safeDecision, evidenceSources: [], quoteAvailability: devnetQuotes, execution: { executed: tx, rejectedPreferredAttempt: null } }), /nothing may execute when eligibility is ROUTE_UNAVAILABLE/);
   const okResult = devnetExecutionResult({ decision: safeDecision, evidenceSources: [], quoteAvailability: devnetQuotes });
-  const forged = { ...okResult, executionEligibility: "EXECUTABLE" as const, execution: { executed: tx, rejectedPreferredAttempt: null }, transactionSignature: "s" };
+  const forged = { ...okResult, executionEligibility: "EXECUTABLE" as const, execution: { executed: tx, rejectedPreferredAttempt: null }, transactionSignature: "s", executionPlanId: "plan" };
   assert.doesNotThrow(() => assertDemoResult(forged));
+  const { executionPlanId: _planId, ...withoutPlan } = forged;
+  assert.throws(() => assertDemoResult(withoutPlan), /must record the execution plan/);
   assert.throws(() => assertDemoResult({ ...forged, consentRequired: true }), DemoResultError);
   assert.throws(() => assertDemoResult({ ...forged, decision: "REQUIRES_CONSENT", reasonCode: "CONSENT_REQUIRED", consentRequired: true }), DemoResultError);
 });

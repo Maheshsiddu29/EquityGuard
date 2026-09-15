@@ -16,6 +16,7 @@ import {
   type QuoteComparison,
   type ResolvedRepresentationState,
 } from "../src/index.ts";
+import { TEST_QUOTE_CONTEXT } from "./fixtures.ts";
 
 /** Decimals of the synthetic chain states: KOon uses 9 to exercise normalization. */
 const DECIMALS: Record<string, number> = { KOon: 9 };
@@ -82,8 +83,8 @@ const stateOf = (mint: string, decimals: number): EconomicState => ({
 });
 /** Correctly bound comparison for KOx (preferred) vs KOon (alternative) at INPUT_RAW, on the states `resolved` carries. */
 const COMPARISON: QuoteComparison = compareQuotes(
-  { underlying: "KO", inputRaw: INPUT_RAW, issuer: "xStocks", mint: KOX_MINT, outputRaw: 10_000n, state: stateOf(KOX_MINT, 8) } satisfies NormalizedQuote,
-  { underlying: "KO", inputRaw: INPUT_RAW, issuer: "Ondo", mint: KOON_MINT, outputRaw: 99_800n, state: stateOf(KOON_MINT, 9) },
+  { ...TEST_QUOTE_CONTEXT, underlying: "KO", inputRaw: INPUT_RAW, issuer: "xStocks", mint: KOX_MINT, outputRaw: 10_000n, state: stateOf(KOX_MINT, 8) } satisfies NormalizedQuote,
+  { ...TEST_QUOTE_CONTEXT, underlying: "KO", inputRaw: INPUT_RAW, issuer: "Ondo", mint: KOON_MINT, outputRaw: 99_800n, state: stateOf(KOON_MINT, 9) },
   { toleranceBps: 5n },
 );
 
