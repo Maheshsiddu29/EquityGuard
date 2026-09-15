@@ -15,7 +15,6 @@ import {
 import {
   DevnetConfigError,
   PUBLIC_DEVNET_RPC_URL,
-  isLoopbackRpcUrl,
   parseKeypairFile,
   readDevnetConfig,
 } from "./config.ts";
@@ -99,16 +98,11 @@ test("keypair files are validated", () => {
   }
 });
 
-test("config defaults to the public devnet endpoint", () => {
-  assert.equal(readDevnetConfig({}).rpcUrl, PUBLIC_DEVNET_RPC_URL);
-  assert.equal(readDevnetConfig({ EQUITYGUARD_DEVNET_RPC_URL: "http://x" }).rpcUrl, "http://x");
-});
-
-test("only loopback URLs bypass the devnet genesis check", () => {
-  assert.ok(isLoopbackRpcUrl("http://127.0.0.1:8899"));
-  assert.ok(isLoopbackRpcUrl("http://localhost:8899"));
-  assert.ok(!isLoopbackRpcUrl("https://api.mainnet-beta.solana.com"));
-  assert.ok(!isLoopbackRpcUrl("http://127.0.0.1.example.com:8899"));
+test("config defaults to the public devnet endpoint and requires an explicit wallet", () => {
+  const wallet = { EQUITYGUARD_DEVNET_WALLET: "/somewhere/wallet.json" };
+  assert.equal(readDevnetConfig(wallet).rpcUrl, PUBLIC_DEVNET_RPC_URL);
+  assert.equal(readDevnetConfig({ ...wallet, EQUITYGUARD_DEVNET_RPC_URL: "http://x" }).rpcUrl, "http://x");
+  assert.throws(() => readDevnetConfig({}), DevnetConfigError);
 });
 
 test("devnet state requires the test-asset disclosure", () => {

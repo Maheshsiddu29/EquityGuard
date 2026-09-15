@@ -166,7 +166,9 @@ GOOD/DEGRADED/INSUFFICIENT). Window extraction copies lines byte-for-byte.
 Snapshots and extracts live in the gitignored `tmp/`.
 
 Devnet deployment is manual and performed by the owner; scenarios run with an
-explicitly devnet-targeted wallet:
+explicitly devnet-targeted wallet. `EQUITYGUARD_DEVNET_WALLET` is required (there
+is no default wallet), and nothing is signed unless the RPC reports the exact
+devnet genesis hash, checked at connect and again before every signature:
 
 ```sh
 export EQUITYGUARD_DEVNET_WALLET=<path to a devnet-only keypair file>

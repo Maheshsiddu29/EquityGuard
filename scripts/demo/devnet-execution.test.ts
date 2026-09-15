@@ -21,7 +21,7 @@ import {
 } from "@equityguard/representation-state";
 import type { ProtectedState } from "@equityguard/guard-client";
 
-import type { DevnetContext } from "../devnet/config.ts";
+import { DevnetConfigError, type DevnetContext } from "../devnet/config.ts";
 import { TEST_ASSET_DISCLOSURE, type DevnetState, type TestAsset } from "../devnet/devnet-state.ts";
 import {
   DEVNET_DEMO_POLICY,
@@ -166,12 +166,14 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
 
-test("the devnet demo refuses non-devnet clusters before any network call", async () => {
+test("the devnet demo refuses contexts that did not come from connectDevnet, before any network call", async () => {
   const rpc = new Proxy({}, { get: () => { throw new Error("RPC must not be called"); } });
   const payer = await generateKeyPairSigner();
   const state: DevnetState = { cluster: "devnet", deployment: { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, deploySignature: "sig", upgradeAuthority: payer.address }, assets: [EQ_A, EQ_B] };
   const ctx = { rpc, payer, cluster: "localnet" } as unknown as DevnetContext;
-  await assert.rejects(runDevnetDemo(ctx, state, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: payer.address }), DevnetDemoEnvironmentError);
+  await assert.rejects(runDevnetDemo(ctx, state, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: payer.address }), DevnetConfigError);
+  const claimsDevnet = { rpc, payer, cluster: "devnet", genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG" } as unknown as DevnetContext;
+  await assert.rejects(runDevnetDemo(claimsDevnet, state, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: payer.address }), DevnetConfigError);
 });
 
 test("devnet test assets can never enter the mainnet registry", () => {
@@ -209,13 +211,12 @@ test("no execution plan exists for a non-executable decision, and execution cons
   await assert.rejects(executeGuardedPlan(ctx, { ...base, quote: { ...quote, outputRaw: quote.outputRaw + 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");
   await assert.rejects(executeGuardedPlan(ctx, { ...base, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
   await assert.rejects(executeGuardedPlan(ctx, { ...base, plan: { ...executionPlan, expectedOutputRaw: 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_TAMPERED");
-  const local = { ...ctx, cluster: "localnet" } as unknown as DevnetContext;
-  await assert.rejects(executeGuardedPlan(local, base), DevnetDemoEnvironmentError);
-  await assert.rejects(executeGuardedPlan(ctx, { ...base, asset: EQ_A }), /selected representation/);
+  // A hand-built context is refused (before RPC) even for a valid plan.
+  await assert.rejects(executeGuardedPlan(ctx, base), DevnetConfigError);
   // The rejection probe refuses SAFE representations.
   await assert.rejects(
     submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, representation: p.alternative, boundState: p.comparison!.alternativeQuote.state, asset: EQ_B, amount: 1n, recipient: payer.address }),
-    /only for a non-SAFE representation/,
+    DevnetConfigError,
   );
 });
 

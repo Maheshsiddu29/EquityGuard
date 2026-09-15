@@ -63,7 +63,7 @@ import {
   type TransitionPolicy,
 } from "@equityguard/representation-state";
 
-import type { DevnetContext } from "../devnet/config.ts";
+import { assertVerifiedDevnetContext, type DevnetContext } from "../devnet/config.ts";
 import { findAsset, requireDeployment, type DevnetState, type TestAsset } from "../devnet/devnet-state.ts";
 import { explorerUrl } from "../devnet/evidence.ts";
 import { sendInstructions } from "../devnet/send.ts";
@@ -334,8 +334,9 @@ async function submitGuardedDelivery(ctx: DevnetContext, programId: Address, ass
   };
 }
 
+/** Opaque verified devnet context (genesis re-checked again before signing) and the pinned program. No RPC. */
 function requireDevnet(ctx: DevnetContext, programId: Address): void {
-  if (ctx.cluster !== "devnet") throw new DevnetDemoEnvironmentError(`the devnet execution demo only runs on devnet, not ${ctx.cluster}`);
+  assertVerifiedDevnetContext(ctx);
   if (programId !== EQUITY_GUARD_DEVNET_PROGRAM_ID) throw new DevnetDemoEnvironmentError("deployment is not the pinned devnet program");
 }
 

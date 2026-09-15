@@ -1,7 +1,12 @@
 /**
- * Transaction submission and outcome retrieval. Failed transactions can be
+ * The single transaction-submission primitive. Failed transactions can be
  * submitted with preflight disabled so they land on-chain and their failure
  * is independently verifiable by signature.
+ *
+ * Internal transport, not an integration API: product execution reaches it
+ * only through `executeGuardedPlan` (scripts/demo/devnet-execution.ts);
+ * devnet admin tooling (cli.ts, scenarios.ts) uses it directly. A source scan
+ * test pins that import allowlist.
  */
 
 import {
@@ -17,7 +22,7 @@ import {
   type Signature,
 } from "@solana/kit";
 
-import type { DevnetContext } from "./config.ts";
+import { assertDevnetGenesis, assertVerifiedDevnetContext, type DevnetContext } from "./config.ts";
 
 const CONFIRMATION_POLL_MS = 1_000;
 
@@ -47,12 +52,17 @@ export interface TransactionOutcome {
  * Signs, sends and waits for confirmation, then fetches the landed
  * transaction. With `skipPreflight`, a failing transaction still lands and
  * returns `succeeded: false` instead of being rejected by simulation.
+ *
+ * Refuses a context that did not come from `connectDevnet`, and re-queries
+ * the genesis hash immediately before signing: an RPC whose identity changed
+ * after connect gets nothing signed.
  */
 export async function sendInstructions(
   ctx: DevnetContext,
   instructions: readonly Instruction[],
   options: { readonly skipPreflight: boolean },
 ): Promise<TransactionOutcome> {
+  assertVerifiedDevnetContext(ctx);
   const { value: blockhash } = await ctx.rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
@@ -60,6 +70,7 @@ export async function sendInstructions(
     (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
     (m) => appendTransactionMessageInstructions(instructions, m),
   );
+  await assertDevnetGenesis(ctx.rpc, "before signing");
   const transaction = await signTransactionMessageWithSigners(message);
   const signature = getSignatureFromTransaction(transaction);
 
