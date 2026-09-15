@@ -1,0 +1,11 @@
+{
+  "label": "DEVNET DEMO QUOTE / FIXTURE",
+  "notice": "Deterministic devnet demo quote inputs. NOT a live Jupiter quote and NOT a mainnet market price. EQ-A and EQ-B are DEVNET TEST ASSETS representing the fictional DEMO stock.",
+  "environment": "DEVNET_EXECUTION",
+  "underlying": "DEMO",
+  "inputRaw": "5000000",
+  "outputsRaw": {
+    "EQ-A": "4000000",
+    "EQ-B": "5990000"
+  }
+}

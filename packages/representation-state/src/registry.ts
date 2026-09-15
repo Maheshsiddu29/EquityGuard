@@ -10,7 +10,11 @@
 
 import { isAddress, type Address } from "@solana/kit";
 
-export type Issuer = "xStocks" | "Ondo";
+/**
+ * `DEVNET_TEST` labels controlled devnet test assets used only by the devnet
+ * execution demo; no registry entry may use it.
+ */
+export type Issuer = "xStocks" | "Ondo" | "DEVNET_TEST";
 
 export interface Representation {
   readonly underlying: string;
@@ -83,6 +87,9 @@ export function buildRegistry(entries: readonly RawEntry[]): ReadonlyMap<string,
   const symbols = new Set<string>();
   for (const entry of entries) {
     if (byUnderlying.has(entry.underlying)) throw new RegistryError(`duplicate underlying ${entry.underlying}`);
+    if (entry.representations.some((r) => r.issuer === "DEVNET_TEST")) {
+      throw new RegistryError(`${entry.underlying}: devnet test assets cannot be registry representations`);
+    }
     const issuers = new Set<Issuer>();
     const representations = entry.representations.map((r): Representation => {
       if (!isAddress(r.mint)) throw new RegistryError(`${r.symbol}: invalid mint address`);

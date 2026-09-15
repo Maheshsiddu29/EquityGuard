@@ -21,7 +21,8 @@
     "observation:timeline": "node scripts/observation/timeline.ts",
     "observation:extract": "node scripts/observation/extract-window.ts",
     "observation:snapshot-xstocks-api": "node scripts/observation/snapshot-xstocks-api.ts",
-    "observation:correlate-kox": "node scripts/observation/correlate-kox.ts"
+    "observation:correlate-kox": "node scripts/observation/correlate-kox.ts",
+    "demo:equityguard": "node scripts/demo/equityguard-demo.ts"
   },
   "dependencies": {
     "@solana-program/system": "0.14.1",
