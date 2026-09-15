@@ -69,6 +69,17 @@ export {
 } from "./economic-state.ts";
 export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
 export {
+  ExecutionEligibility,
+  ExecutionEligibilityError,
+  assertExecutable,
+  decideExecution,
+  type ExecutableDecision,
+  type ExecutionDecision,
+  type ExecutionInput,
+  type RouteObservation,
+  type RouteStatus,
+} from "./execution.ts";
+export {
   Decision,
   comparisonBindingMismatch,
   comparisonStateMismatch,

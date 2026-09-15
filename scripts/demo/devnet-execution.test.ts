@@ -82,10 +82,11 @@ test("devnet quotes normalize to share-equivalents and compare conservatively", 
 
 test("consent OFF requires consent; consent ON uses the alternative with the same disclosure", () => {
   const p = plan();
-  assert.deepEqual([p.consentOff.decision, p.consentOff.reasonCode], [Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED"]);
-  assert.deepEqual([p.consentOn.decision, p.consentOn.reasonCode], [Decision.USE_ALTERNATIVE, "CONSENT_GIVEN"]);
-  assert.deepEqual(p.consentOff.disclosure, p.consentOn.disclosure);
-  assert.equal(p.consentOn.disclosure?.alternative.symbol, "EQ-B");
+  assert.deepEqual([p.consentOff.stateDecision.decision, p.consentOff.stateDecision.reasonCode, p.consentOff.executionEligibility], [Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED", "CONSENT_REQUIRED"]);
+  assert.deepEqual([p.consentOn.stateDecision.decision, p.consentOn.stateDecision.reasonCode, p.consentOn.executionEligibility], [Decision.USE_ALTERNATIVE, "CONSENT_GIVEN", "EXECUTABLE"]);
+  assert.deepEqual(p.consentOff.stateDecision.disclosure, p.consentOn.stateDecision.disclosure);
+  assert.equal(p.consentOn.selectedRepresentation?.symbol, "EQ-B");
+  assert.equal(p.consentOff.selectedRepresentation, null);
 });
 
 test("quote identity binding: a comparison for another notional or pair never authorizes execution", () => {
@@ -99,7 +100,7 @@ test("quote identity binding: a comparison for another notional or pair never au
 test("a missing devnet quote yields UNKNOWN_STATE, never execution", () => {
   const p = plan({ outputsRaw: { "EQ-A": "4000000" } });
   assert.equal(p.comparison, null);
-  assert.deepEqual([p.consentOn.decision, p.consentOn.reasonCode], [Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE"]);
+  assert.deepEqual([p.consentOn.stateDecision.decision, p.consentOn.stateDecision.reasonCode, p.consentOn.executionEligibility], [Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE", "ROUTE_UNAVAILABLE"]);
 });
 
 test("guarded delivery puts the guard first and asserts exactly the decision's bound state", async () => {
@@ -147,9 +148,9 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   const evidence = [{ kind: "DEVNET_DEMO_QUOTE_FIXTURE" as const, description: "fixture", sha256, observedAt: null }];
   const rejected = { signature: "r", slot: 1n, succeeded: false, customErrorName: "InsideTransitionWindow", downstreamBalanceBefore: 0n, downstreamBalanceAfter: 0n, explorerUrl: null };
   const executed = { signature: "e", slot: 2n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 5_990_000n, explorerUrl: null };
-  const on = devnetExecutionResult({ decision: p.consentOn, comparison: p.comparison, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected } });
+  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected } });
   assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.conservativeCostDeltaBps], ["DEVNET_EXECUTION", "e", 17n]);
-  assert.throws(() => devnetExecutionResult({ decision: p.consentOff, comparison: p.comparison, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
+  assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
 
 test("the devnet demo refuses non-devnet clusters before any network call", async () => {
@@ -166,3 +167,4 @@ test("devnet test assets can never enter the mainnet registry", () => {
     RegistryError,
   );
 });
+

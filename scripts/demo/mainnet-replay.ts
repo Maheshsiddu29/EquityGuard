@@ -3,15 +3,15 @@
  *
  * Consumes only the curated, hash-traceable KOx/KOon observations and the
  * point-in-time Jupiter liquidity snapshot. It resolves state with the
- * product state engine and decides with the product decision engine. It has
+ * product state engine, decides with the product decision engine and
+ * evaluates execution eligibility against the recorded routes. It has
  * no RPC, signer or transaction code: this path cannot submit anything.
  */
 
 import { ActivationPhase, bytesEqual, checkGuardOffline, type EquityGuardErrorName, type ProtectionWindow } from "@equityguard/guard-client";
 import {
-  Decision,
   compareQuotes,
-  decide,
+  decideExecution,
   economicStateMismatches,
   economicStateOf,
   findRepresentationBySymbol,
@@ -26,6 +26,7 @@ import {
   type QuoteAvailability,
   type QuoteComparison,
   type ResolvedRepresentationState,
+  type RouteObservation,
   type TransitionPolicy,
 } from "@equityguard/representation-state";
 
@@ -52,13 +53,8 @@ export interface ScenarioResult {
   readonly id: "A" | "B" | "C";
   readonly title: string;
   readonly evaluatedAt: { readonly preferred: string; readonly alternative: string };
+  /** State decision and execution eligibility, kept as separate fields. Never submitted. */
   readonly result: MainnetObservationResult;
-  /**
-   * Route availability, at discovery time, of the representation the decision
-   * selects; null when the decision selects nothing. A state decision is not
-   * a claim that the selected representation was routable.
-   */
-  readonly selectedRouteAtDiscovery: "AVAILABLE" | "UNAVAILABLE" | null;
 }
 
 /** A guard payload built from one recorded state and evaluated against a later one, offline. */
@@ -114,16 +110,17 @@ function resolve(fixture: CuratedKoFixture, key: ObservationKey, policy: Transit
 }
 
 /**
- * Quote pair from the liquidity snapshot, normalized against the replayed
- * states. Null unless BOTH routes were available AND each quote's recorded
- * chain state (decimals, phase, effective multiplier) matches the replayed
- * state: a quote observed against another state is not usable for this one.
+ * Route observations from the liquidity snapshot, with quotes normalized
+ * against the replayed states. A recorded quote is usable only when its
+ * recorded chain state (decimals, phase, effective multiplier) matches the
+ * replayed state: a quote observed against another state is not usable for
+ * this one. The comparison exists only when both quotes are usable.
  */
-function quotePair(
+function routesFromSnapshot(
   snapshot: LiquiditySnapshot,
   preferred: ResolvedRepresentationState,
   alternative: ResolvedRepresentationState,
-): { comparison: QuoteComparison | null; availability: QuoteAvailability } {
+): { routes: { preferred: RouteObservation; alternative: RouteObservation }; comparison: QuoteComparison | null; availability: QuoteAvailability } {
   const p = snapshot.quotes[preferred.symbol];
   const a = snapshot.quotes[alternative.symbol];
   if (!p || !a) throw new Error("liquidity snapshot missing a representation");
@@ -134,17 +131,21 @@ function quotePair(
     alternative: a.route,
     note: `Point-in-time Jupiter /build discovery at ${p.observedAt} for ${snapshot.inputRaw} USDC units; route availability is dynamic and was observed after the corporate action, not at the replayed moment.`,
   };
-  const quote = (q: typeof p, resolved: ResolvedRepresentationState): NormalizedQuote | null => {
+  const route = (q: typeof p, resolved: ResolvedRepresentationState): RouteObservation => {
+    const base = { mint: resolved.mint, status: q.route, source: `JUPITER_MAINNET_SNAPSHOT@${q.observedAt}` };
+    if (q.route !== "AVAILABLE" || !q.outAmountRaw) return { ...base, quote: null, detail: q.error };
     const state = economicStateOf(resolved.chainObservation);
-    if (q.route !== "AVAILABLE" || !q.outAmountRaw || !state) return null;
-    const effectiveHex = state.phase === ActivationPhase.Activated ? state.newMultiplierHex : state.multiplierHex;
-    const recordedPhase = state.phase === ActivationPhase.Activated ? "activated" : "pending";
-    if (q.chainAtQuote.decimals !== state.decimals || q.chainAtQuote.effectiveMultiplierHex !== effectiveHex || q.chainAtQuote.phase !== recordedPhase) return null;
-    return { underlying: resolved.underlying, issuer: resolved.issuer, mint: resolved.mint, inputRaw: BigInt(snapshot.inputRaw), outputRaw: BigInt(q.outAmountRaw), state };
+    const effectiveHex = state?.phase === ActivationPhase.Activated ? state.newMultiplierHex : state?.multiplierHex;
+    const recordedPhase = state?.phase === ActivationPhase.Activated ? "activated" : "pending";
+    if (!state || q.chainAtQuote.decimals !== state.decimals || q.chainAtQuote.effectiveMultiplierHex !== effectiveHex || q.chainAtQuote.phase !== recordedPhase) {
+      return { ...base, quote: null, detail: "recorded quote was observed against a different chain state than the replayed one" };
+    }
+    const quote: NormalizedQuote = { underlying: resolved.underlying, issuer: resolved.issuer, mint: resolved.mint, inputRaw: BigInt(snapshot.inputRaw), outputRaw: BigInt(q.outAmountRaw), state };
+    return { ...base, quote, detail: null };
   };
-  const pq = quote(p, preferred);
-  const aq = quote(a, alternative);
-  return { comparison: pq && aq ? compareQuotes(pq, aq, { toleranceBps: 0n }) : null, availability };
+  const routes = { preferred: route(p, preferred), alternative: route(a, alternative) };
+  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: 0n }) : null;
+  return { routes, comparison, availability };
 }
 
 function evidence(fixture: CuratedKoFixture, snapshot: LiquiditySnapshot, keys: readonly ObservationKey[]): EvidenceReference[] {
@@ -168,16 +169,13 @@ function scenario(
 ): ScenarioResult {
   const preferred = resolve(fixture, preferredKey, policy);
   const alternative = resolve(fixture, alternativeKey, policy);
-  const { comparison, availability } = quotePair(snapshot, preferred, alternative);
-  const decision = decide({ preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: SNAPSHOT_INPUT_RAW, comparison });
-  const selectedRouteAtDiscovery =
-    decision.decision === Decision.USE_PREFERRED ? availability.preferred : decision.decision === Decision.USE_ALTERNATIVE ? availability.alternative : null;
+  const { routes, comparison, availability } = routesFromSnapshot(snapshot, preferred, alternative);
+  const decision = decideExecution({ preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: SNAPSHOT_INPUT_RAW, comparison, routes });
   return {
     id,
     title,
     evaluatedAt: { preferred: fixture.observations[preferredKey].wallclock, alternative: fixture.observations[alternativeKey].wallclock },
-    result: mainnetObservationResult({ decision, comparison, evidenceSources: evidence(fixture, snapshot, [preferredKey, alternativeKey]), quoteAvailability: availability }),
-    selectedRouteAtDiscovery: selectedRouteAtDiscovery === "NOT_APPLICABLE" ? null : selectedRouteAtDiscovery,
+    result: mainnetObservationResult({ decision, evidenceSources: evidence(fixture, snapshot, [preferredKey, alternativeKey]), quoteAvailability: availability }),
   };
 }
 
@@ -186,7 +184,7 @@ export function replayKoScenarios(policy: TransitionPolicy = KO_DEMO_POLICY): Sc
   const snapshot = loadLiquiditySnapshot();
   return [
     scenario("A", "KOx inside its scheduled transition; KOon observed but unroutable", fixture, snapshot, "koxLastPendingBeforeT", "koonAtKoxLastPending", policy),
-    scenario("B", "Fresh KOon state right after its immediate update: SAFE, no cooldown", fixture, snapshot, "koonPostEventFirst", "koxAtKoonPostEvent", policy),
+    scenario("B", "Fresh KOon state right after its immediate update: SAFE, but KOon had no route", fixture, snapshot, "koonPostEventFirst", "koxAtKoonPostEvent", policy),
     scenario("C", "Both representations SAFE after the event window", fixture, snapshot, "windowEndKOx", "windowEndKOon", policy),
   ];
 }

@@ -44,8 +44,13 @@ function formatDecision(result: DemoResult): void {
     line(`  normalized:   preferred ${result.preferredSharesEquivalent} vs alternative ${result.alternativeSharesEquivalent} share-equivalents (INV-VAL-01)`);
     line(`  cost delta:   ${result.conservativeCostDeltaBps} bps (conservative, rounded against the alternative)`);
   }
-  line(`  DECISION:     ${result.decision} (${result.reasonCode})${result.consentRequired ? "  ← consent required" : ""}`);
+  line(`  STATE:        ${result.decision} (${result.reasonCode})${result.consentRequired ? "  ← consent required" : ""}`);
   line(`  reason:       ${result.reason}`);
+  const selected = result.selectedRepresentation;
+  const observationOnly = result.executionEnvironment === "MAINNET_OBSERVATION" ? " [evaluated against the recorded route snapshot; observation only, never submitted]" : "";
+  line(`  EXECUTION:    ${result.executionEligibility}${observationOnly}`);
+  line(`  selected:     ${selected ? `${selected.symbol} (${selected.issuer}); route ${result.selectedRouteAvailable ? "available" : "UNAVAILABLE"}` : "none"}; quote ${result.quoteAvailable ? "available" : "unavailable"}`);
+  line(`  why:          ${result.executionReason}`);
 }
 
 function part1(): ReturnType<typeof koDivergenceFacts> {
@@ -89,9 +94,6 @@ function part2(): ScenarioResult[] {
     line(`Scenario ${s.id}: ${s.title}`);
     line(`  state evaluated at ${s.evaluatedAt.preferred}`);
     formatDecision(s.result);
-    if (s.selectedRouteAtDiscovery === "UNAVAILABLE") {
-      line("  route:        the selected representation had NO Jupiter route at discovery time; this is a state decision only and nothing was executable.");
-    }
   }
   line();
   line("EquityGuard does not fabricate a reroute: at discovery time no underlying (KO, UNH, CRM) had both issuer representations routable.");
@@ -117,14 +119,14 @@ async function part3(): Promise<DevnetDemoRun> {
   if (exec?.rejectedPreferredAttempt) {
     const r = exec.rejectedPreferredAttempt;
     line();
-    line(`  UNSAFE PREFERRED ATTEMPT (EQ-A): ${r.succeeded ? "SUCCEEDED (unexpected)" : `REJECTED by EquityGuard: ${r.customErrorName}`}`);
+    line(`  REJECTION PROBE, non-SAFE preferred (EQ-A), not an execution of the decision: ${r.succeeded ? "SUCCEEDED (unexpected)" : `REJECTED by EquityGuard: ${r.customErrorName}`}`);
     line(`    signature ${r.signature} slot ${r.slot}`);
     line(`    recipient EQ-A balance ${r.downstreamBalanceBefore} → ${r.downstreamBalanceAfter} (downstream delivery ${r.downstreamBalanceAfter === r.downstreamBalanceBefore ? "did not settle" : "SETTLED"})`);
     if (r.explorerUrl) line(`    ${r.explorerUrl}`);
   }
   if (exec?.executed) {
     const e = exec.executed;
-    line(`  SAFE ALTERNATIVE EXECUTION (EQ-B): ${e.succeeded ? "SUCCEEDED, guard passed" : `FAILED: ${e.customErrorName}`}`);
+    line(`  EXECUTION of the EXECUTABLE decision (EQ-B): ${e.succeeded ? "SUCCEEDED, guard passed" : `FAILED: ${e.customErrorName}`}`);
     line(`    signature ${e.signature} slot ${e.slot}`);
     line(`    recipient EQ-B balance ${e.downstreamBalanceBefore} → ${e.downstreamBalanceAfter}`);
     if (e.explorerUrl) line(`    ${e.explorerUrl}`);

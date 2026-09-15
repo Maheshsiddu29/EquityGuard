@@ -1,14 +1,14 @@
 /**
- * DEVNET_EXECUTION demo: the same state engine and decision engine as the
- * mainnet replay, executed against the deployed EquityGuard devnet program and
- * the EQ-A / EQ-B devnet test assets.
+ * DEVNET_EXECUTION demo: the same state engine, decision engine and
+ * execution-eligibility layer as the mainnet replay, executed against the
+ * deployed EquityGuard devnet program and the EQ-A / EQ-B devnet test assets.
  *
  * Every transaction is `[assert_safe_execution(asset), create recipient ATA,
  * transferChecked(asset)]`: the token delivery settles only if the guard
  * passes. The guard asserts exactly the economic state the decision and the
  * quote comparison were built against, so a state change between decision
- * and landing fails the transaction instead of executing on stale economics. Quotes come from the DEVNET DEMO QUOTE / FIXTURE, never from a live
- * market.
+ * and landing fails the transaction instead of executing on stale economics.
+ * Quotes come from the DEVNET DEMO QUOTE / FIXTURE, never from a live market.
  */
 
 import { readFileSync } from "node:fs";
@@ -28,26 +28,27 @@ import {
   getAssertSafeExecutionInstruction,
 } from "@equityguard/guard-client";
 import {
-  Decision,
   RepresentationState,
   StateSource,
+  assertExecutable,
   classifyChainEvidence,
   compareQuotes,
-  decide,
+  decideExecution,
   devnetExecutionResult,
   economicStateOf,
   fetchChainObservation,
   protectedStateOf,
   type ChainEvidence,
-  type DecisionResult,
   type DevnetExecutionResult,
   type DevnetTransactionEvidence,
   type EconomicState,
   type EvidenceReference,
+  type ExecutionDecision,
   type NormalizedQuote,
   type QuoteAvailability,
   type QuoteComparison,
   type ResolvedRepresentationState,
+  type RouteObservation,
   type TransitionPolicy,
 } from "@equityguard/representation-state";
 
@@ -68,6 +69,7 @@ export const DEVNET_DEMO_POLICY: TransitionPolicy = {
 };
 /** Seconds ahead of chain time for the preferred asset's scheduled change. */
 export const PREFERRED_TRANSITION_LEAD_SECS = 600n;
+
 
 export interface DevnetDemoQuoteFixture {
   readonly label: "DEVNET DEMO QUOTE / FIXTURE";
@@ -108,11 +110,15 @@ export function resolveDevnetAsset(asset: TestAsset, underlying: string, evidenc
   };
 }
 
-function quoteFor(asset: TestAsset, underlying: string, evidence: ChainEvidence, fixture: DevnetDemoQuoteFixture): NormalizedQuote | null {
+/** Route observation for a devnet asset: AVAILABLE only when the demo fixture lists an output for it. */
+export function fixtureRoute(asset: TestAsset, underlying: string, evidence: ChainEvidence, fixture: DevnetDemoQuoteFixture): RouteObservation {
   const output = fixture.outputsRaw[asset.label];
+  const base = { mint: asset.mint, source: fixture.label };
+  if (output === undefined) return { ...base, status: "UNAVAILABLE", quote: null, detail: `${asset.label} is not in the DEVNET DEMO QUOTE / FIXTURE` };
   const state = economicStateOf(evidence);
-  if (output === undefined || !state) return null;
-  return { underlying, issuer: "DEVNET_TEST", mint: asset.mint, inputRaw: BigInt(fixture.inputRaw), outputRaw: BigInt(output), state };
+  if (!state) return { ...base, status: "AVAILABLE", quote: null, detail: `${asset.label} chain state could not be bound` };
+  const quote: NormalizedQuote = { underlying, issuer: "DEVNET_TEST", mint: asset.mint, inputRaw: BigInt(fixture.inputRaw), outputRaw: BigInt(output), state };
+  return { ...base, status: "AVAILABLE", quote, detail: null };
 }
 
 export interface DevnetDemoPlan {
@@ -120,11 +126,12 @@ export interface DevnetDemoPlan {
   readonly alternative: ResolvedRepresentationState;
   readonly comparison: QuoteComparison | null;
   readonly inputRaw: bigint;
-  readonly consentOff: DecisionResult;
-  readonly consentOn: DecisionResult;
+  readonly routes: { readonly preferred: RouteObservation; readonly alternative: RouteObservation };
+  readonly consentOff: ExecutionDecision;
+  readonly consentOn: ExecutionDecision;
 }
 
-/** Pure: resolve, normalize, compare and decide with consent off and on. */
+/** Pure: resolve, normalize, compare, decide and evaluate eligibility with consent off and on. */
 export function planDevnetDemo(input: {
   readonly preferredAsset: TestAsset;
   readonly alternativeAsset: TestAsset;
@@ -136,18 +143,21 @@ export function planDevnetDemo(input: {
   const { fixture, policy } = input;
   const preferred = resolveDevnetAsset(input.preferredAsset, fixture.underlying, input.preferredEvidence, policy);
   const alternative = resolveDevnetAsset(input.alternativeAsset, fixture.underlying, input.alternativeEvidence, policy);
-  const p = quoteFor(input.preferredAsset, fixture.underlying, input.preferredEvidence, fixture);
-  const a = quoteFor(input.alternativeAsset, fixture.underlying, input.alternativeEvidence, fixture);
-  const comparison = p && a ? compareQuotes(p, a, { toleranceBps: 0n }) : null;
+  const routes = {
+    preferred: fixtureRoute(input.preferredAsset, fixture.underlying, input.preferredEvidence, fixture),
+    alternative: fixtureRoute(input.alternativeAsset, fixture.underlying, input.alternativeEvidence, fixture),
+  };
+  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: 0n }) : null;
   const inputRaw = BigInt(fixture.inputRaw);
-  const base = { preferred, alternative, inputRaw, comparison };
+  const base = { preferred, alternative, inputRaw, comparison, routes };
   return {
     preferred,
     alternative,
     comparison,
     inputRaw,
-    consentOff: decide({ ...base, policy: { allowCrossIssuerReroute: false } }),
-    consentOn: decide({ ...base, policy: { allowCrossIssuerReroute: true } }),
+    routes,
+    consentOff: decideExecution({ ...base, policy: { allowCrossIssuerReroute: false } }),
+    consentOn: decideExecution({ ...base, policy: { allowCrossIssuerReroute: true } }),
   };
 }
 
@@ -198,7 +208,7 @@ async function tokenBalance(ctx: DevnetContext, owner: Address, mint: Address): 
   return BigInt(value.amount);
 }
 
-async function guardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, boundState: EconomicState, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
+async function submitGuardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, boundState: EconomicState, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
   const instructions = await guardedDeliveryInstructions({ programId, payer: ctx.payer, recipient, asset, boundState, policy: DEVNET_DEMO_POLICY, amount });
   const before = await tokenBalance(ctx, recipient, asset.mint);
   // Preflight is skipped so a rejected attempt lands on-chain and is verifiable.
@@ -213,6 +223,44 @@ async function guardedDelivery(ctx: DevnetContext, programId: Address, asset: Te
     downstreamBalanceAfter: after,
     explorerUrl: explorerUrl(ctx.cluster, outcome.signature),
   };
+}
+
+function requireDevnet(ctx: DevnetContext, programId: Address): void {
+  if (ctx.cluster !== "devnet") throw new DevnetDemoEnvironmentError(`the devnet execution demo only runs on devnet, not ${ctx.cluster}`);
+  if (programId !== EQUITY_GUARD_DEVNET_PROGRAM_ID) throw new DevnetDemoEnvironmentError("deployment is not the pinned devnet program");
+}
+
+/**
+ * The only path that executes a decision. The eligibility gate runs first,
+ * before any RPC call: anything but EXECUTABLE is refused, and the guard
+ * asserts the decision's executable state.
+ */
+export async function executeGuardedDecision(
+  ctx: DevnetContext,
+  input: { readonly programId: Address; readonly decision: ExecutionDecision; readonly asset: TestAsset; readonly amount: bigint; readonly recipient: Address },
+): Promise<DevnetTransactionEvidence> {
+  assertExecutable(input.decision);
+  requireDevnet(ctx, input.programId);
+  if (input.decision.selectedRepresentation.mint !== input.asset.mint) {
+    throw new DevnetDemoEnvironmentError("execution asset differs from the decision's selected representation");
+  }
+  return submitGuardedDelivery(ctx, input.programId, input.asset, input.decision.executableState, input.amount, input.recipient);
+}
+
+/**
+ * NOT an execution of a decision: deliberately submits a guarded delivery for
+ * a representation the state engine did NOT classify SAFE, to prove the
+ * on-chain guard rejects it atomically. Refuses to run for a SAFE state.
+ */
+export async function submitRejectionProbe(
+  ctx: DevnetContext,
+  input: { readonly programId: Address; readonly representation: ResolvedRepresentationState; readonly boundState: EconomicState; readonly asset: TestAsset; readonly amount: bigint; readonly recipient: Address },
+): Promise<DevnetTransactionEvidence> {
+  requireDevnet(ctx, input.programId);
+  if (input.representation.state === RepresentationState.SAFE || input.representation.mint !== input.asset.mint) {
+    throw new DevnetDemoEnvironmentError("a rejection probe is only for a non-SAFE representation of the probed asset");
+  }
+  return submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, input.amount, input.recipient);
 }
 
 /** Puts the preferred asset into a scheduled transition inside the policy window, unless it already is. */
@@ -242,9 +290,8 @@ export async function runDevnetDemo(
   state: DevnetState,
   options: { readonly preferredLabel: string; readonly alternativeLabel: string; readonly recipient: Address },
 ): Promise<DevnetDemoRun> {
-  if (ctx.cluster !== "devnet") throw new DevnetDemoEnvironmentError(`the devnet execution demo only runs on devnet, not ${ctx.cluster}`);
   const programId = requireDeployment(state).programId;
-  if (programId !== EQUITY_GUARD_DEVNET_PROGRAM_ID) throw new DevnetDemoEnvironmentError("deployment is not the pinned devnet program");
+  requireDevnet(ctx, programId);
   const preferredAsset = findAsset(state, options.preferredLabel);
   const alternativeAsset = findAsset(state, options.alternativeLabel);
   const { fixture, sha256 } = loadDevnetQuoteFixture();
@@ -262,29 +309,25 @@ export async function runDevnetDemo(
   const quoteAvailability: QuoteAvailability = {
     source: "DEVNET_DEMO_QUOTE_FIXTURE",
     observedAt: null,
-    preferred: fixture.outputsRaw[preferredAsset.label] ? "AVAILABLE" : "UNAVAILABLE",
-    alternative: fixture.outputsRaw[alternativeAsset.label] ? "AVAILABLE" : "UNAVAILABLE",
+    preferred: plan.routes.preferred.status,
+    alternative: plan.routes.alternative.status,
     note: fixture.notice,
   };
+  const amountFor = (asset: TestAsset) => BigInt(fixture.outputsRaw[asset.label] ?? "0");
 
-  const consentOff = devnetExecutionResult({ decision: plan.consentOff, comparison: plan.comparison, evidenceSources, quoteAvailability });
-  if (plan.consentOn.decision !== Decision.USE_ALTERNATIVE) {
-    return { scheduleSignature, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, comparison: plan.comparison, evidenceSources, quoteAvailability }) };
+  const consentOff = devnetExecutionResult({ decision: plan.consentOff, evidenceSources, quoteAvailability });
+  if (plan.consentOn.executionEligibility !== "EXECUTABLE") {
+    return { scheduleSignature, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }) };
   }
 
-  // USE_ALTERNATIVE implies a state-bound comparison exists.
-  const bound = plan.comparison;
-  if (!bound) throw new Error("USE_ALTERNATIVE without a state-bound comparison");
-  // Proof attempt: the unsafe preferred delivery must be rejected atomically.
-  const rejectedPreferredAttempt = await guardedDelivery(ctx, programId, preferredAsset, bound.preferredState, BigInt(fixture.outputsRaw[preferredAsset.label] ?? "0"), options.recipient);
-  // Consented execution of the SAFE alternative, guarded by the state it was compared on.
-  const executed = await guardedDelivery(ctx, programId, alternativeAsset, bound.alternativeState, BigInt(fixture.outputsRaw[alternativeAsset.label] ?? "0"), options.recipient);
-  const consentOn = devnetExecutionResult({
-    decision: plan.consentOn,
-    comparison: plan.comparison,
-    evidenceSources,
-    quoteAvailability,
-    execution: { executed, rejectedPreferredAttempt },
-  });
+  // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
+  const rejectedPreferredAttempt =
+    plan.preferred.state !== RepresentationState.SAFE && plan.comparison
+      ? await submitRejectionProbe(ctx, { programId, representation: plan.preferred, boundState: plan.comparison.preferredState, asset: preferredAsset, amount: amountFor(preferredAsset), recipient: options.recipient })
+      : null;
+  // Execution of the consented decision, through the eligibility gate.
+  const selectedAsset = plan.consentOn.selectedRepresentation?.mint === alternativeAsset.mint ? alternativeAsset : preferredAsset;
+  const executed = await executeGuardedDecision(ctx, { programId, decision: plan.consentOn, asset: selectedAsset, amount: amountFor(selectedAsset), recipient: options.recipient });
+  const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt } });
   return { scheduleSignature, recipient: options.recipient, consentOff, consentOn };
 }

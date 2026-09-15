@@ -73,7 +73,7 @@ test("scenario A: KOx transition with an unroutable KOon alternative is UNKNOWN_
   );
   assert.deepEqual([a.result.quoteAvailability.preferred, a.result.quoteAvailability.alternative], ["AVAILABLE", "UNAVAILABLE"]);
   assert.equal(a.result.conservativeCostDeltaBps, undefined);
-  assert.equal(a.selectedRouteAtDiscovery, null);
+  assert.deepEqual([a.result.executionEligibility, a.result.selectedRepresentation, a.result.quoteAvailable], ["ROUTE_UNAVAILABLE", null, false]);
 });
 
 test("scenario B: fresh KOon state is SAFE immediately; the decision is state-only because KOon had no route", () => {
@@ -84,7 +84,9 @@ test("scenario B: fresh KOon state is SAFE immediately; the decision is state-on
     ["KOon", "SAFE", "SAFE", "USE_PREFERRED", "PREFERRED_SAFE", false],
   );
   assert.equal(b.result.quoteAvailability.preferred, "UNAVAILABLE");
-  assert.equal(b.selectedRouteAtDiscovery, "UNAVAILABLE");
+  // State SAFE and execution ROUTE_UNAVAILABLE are separate facts.
+  assert.deepEqual([b.result.executionEligibility, b.result.selectedRepresentation?.symbol, b.result.selectedRouteAvailable, b.result.quoteAvailable], ["ROUTE_UNAVAILABLE", "KOon", false, false]);
+  assert.match(b.result.executionReason, /KOon is SAFE but has no available route/);
   assert.equal(b.result.preferredSharesEquivalent, undefined);
 });
 
@@ -92,7 +94,7 @@ test("scenario C: both SAFE uses the preferred representation", () => {
   const c = replayKoScenarios()[2];
   assert.ok(c);
   assert.deepEqual([c.result.preferredState, c.result.alternativeState, c.result.decision, c.result.reasonCode], ["SAFE", "SAFE", "USE_PREFERRED", "PREFERRED_SAFE"]);
-  assert.equal(c.selectedRouteAtDiscovery, "AVAILABLE");
+  assert.deepEqual([c.result.executionEligibility, c.result.selectedRepresentation?.symbol, c.result.selectedRouteAvailable, c.result.quoteAvailable], ["EXECUTABLE", "KOx", true, true]);
 });
 
 test("every replay result is MAINNET_OBSERVATION with hashed evidence and no transaction", () => {
@@ -108,7 +110,7 @@ test("every replay result is MAINNET_OBSERVATION with hashed evidence and no tra
 test("the mainnet observation path contains no signing, sending or RPC code", () => {
   for (const file of ["mainnet-replay.ts", "ko-fixtures.ts"]) {
     const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
-    for (const forbidden of [/devnet\//, /send\.ts/, /sendTransaction/, /signTransaction/, /KeyPairSigner/, /createSolanaRpc/, /fetchChainObservation/, /fetch\(/]) {
+    for (const forbidden of [/devnet\//, /send\.ts/, /sendTransaction/, /signTransaction/, /KeyPairSigner/, /createSolanaRpc/, /fetchChainObservation/, /fetch\(/, /devnet-execution/, /executeGuardedDecision/, /submitRejectionProbe/]) {
       assert.ok(!forbidden.test(source), `${file} must not match ${forbidden}`);
     }
   }

@@ -7,10 +7,14 @@
  * DEVNET_EXECUTION result cannot carry a mainnet market quote.
  * `assertDemoResult` enforces the same rules at runtime for data from outside
  * the type system.
+ *
+ * The state decision (`decision`, `reasonCode`, `reason`) and execution
+ * eligibility (`executionEligibility`, `executionReason`) are separate
+ * fields: a SAFE state choice is never presented as executable on its own.
  */
 
-import type { QuoteComparison } from "./compare.ts";
-import { Decision, type DecisionReasonCode, type DecisionResult } from "./decision.ts";
+import { Decision, type DecisionReasonCode, type RepresentationSummary } from "./decision.ts";
+import { ExecutionEligibility, type ExecutionDecision } from "./execution.ts";
 import { formatRationalFloor } from "./normalize.ts";
 import type { RepresentationState, ResolvedRepresentationState, StateSource } from "./types.ts";
 
@@ -66,10 +70,17 @@ interface DemoResultBase {
   readonly preferredSharesEquivalent?: string;
   readonly alternativeSharesEquivalent?: string;
   readonly conservativeCostDeltaBps?: bigint;
+  /** State-level choice. */
   readonly decision: Decision;
   readonly reasonCode: DecisionReasonCode;
-  readonly consentRequired: boolean;
   readonly reason: string;
+  readonly consentRequired: boolean;
+  /** Whether a transaction could be built for the selection. */
+  readonly executionEligibility: ExecutionEligibility;
+  readonly executionReason: string;
+  readonly selectedRepresentation: RepresentationSummary | null;
+  readonly selectedRouteAvailable: boolean | null;
+  readonly quoteAvailable: boolean;
 }
 
 export type MainnetObservationResult = DemoResultBase & {
@@ -104,11 +115,12 @@ function ref(state: ResolvedRepresentationState): RepresentationRef {
 }
 
 function base(
-  decision: DecisionResult,
-  comparison: QuoteComparison | null,
+  execution: ExecutionDecision,
   evidenceSources: readonly EvidenceReference[],
   quoteAvailability: QuoteAvailability,
 ): DemoResultBase {
+  const decision = execution.stateDecision;
+  const comparison = execution.comparison;
   const shares =
     comparison && comparison.preferredMint === decision.preferred.mint && comparison.alternativeMint === decision.alternative?.mint
       ? {
@@ -129,20 +141,28 @@ function base(
     ...shares,
     decision: decision.decision,
     reasonCode: decision.reasonCode,
-    consentRequired: decision.decision === Decision.REQUIRES_CONSENT,
     reason: decision.reason,
+    consentRequired: decision.decision === Decision.REQUIRES_CONSENT,
+    executionEligibility: execution.executionEligibility,
+    executionReason: execution.executionReason,
+    selectedRepresentation: execution.selectedRepresentation,
+    selectedRouteAvailable: execution.selectedRouteAvailable,
+    quoteAvailable: execution.quoteAvailable,
   };
 }
 
-/** A decision over observed mainnet state. It has no transaction fields at all. */
+/**
+ * A decision over observed mainnet state. It has no transaction fields at all:
+ * eligibility is evaluated against recorded observations and is never
+ * submitted.
+ */
 export function mainnetObservationResult(input: {
-  readonly decision: DecisionResult;
-  readonly comparison: QuoteComparison | null;
+  readonly decision: ExecutionDecision;
   readonly evidenceSources: readonly EvidenceReference[];
   readonly quoteAvailability: QuoteAvailability;
 }): MainnetObservationResult {
   const result: MainnetObservationResult = {
-    ...base(input.decision, input.comparison, input.evidenceSources, input.quoteAvailability),
+    ...base(input.decision, input.evidenceSources, input.quoteAvailability),
     executionEnvironment: "MAINNET_OBSERVATION",
   };
   assertDemoResult(result);
@@ -150,15 +170,14 @@ export function mainnetObservationResult(input: {
 }
 
 export function devnetExecutionResult(input: {
-  readonly decision: DecisionResult;
-  readonly comparison: QuoteComparison | null;
+  readonly decision: ExecutionDecision;
   readonly evidenceSources: readonly EvidenceReference[];
   readonly quoteAvailability: QuoteAvailability;
   readonly execution?: DevnetExecutionResult["execution"];
 }): DevnetExecutionResult {
   const executed = input.execution?.executed ?? null;
   const result: DevnetExecutionResult = {
-    ...base(input.decision, input.comparison, input.evidenceSources, input.quoteAvailability),
+    ...base(input.decision, input.evidenceSources, input.quoteAvailability),
     executionEnvironment: "DEVNET_EXECUTION",
     ...(executed?.succeeded ? { transactionSignature: executed.signature } : {}),
     ...(input.execution ? { execution: input.execution } : {}),
@@ -192,11 +211,17 @@ export function assertDemoResult(result: DemoResult): void {
       throw new DemoResultError("a DEVNET_EXECUTION result cannot cite mainnet evidence");
     }
     const executed = r.execution?.executed ?? null;
-    if (executed && r.decision !== Decision.USE_ALTERNATIVE && r.decision !== Decision.USE_PREFERRED) {
-      throw new DemoResultError(`nothing may execute for decision ${r.decision}`);
+    if (executed && r.executionEligibility !== ExecutionEligibility.EXECUTABLE) {
+      throw new DemoResultError(`nothing may execute when eligibility is ${r.executionEligibility}`);
     }
   }
   if (r.consentRequired !== (r.decision === Decision.REQUIRES_CONSENT)) {
     throw new DemoResultError("consentRequired must match the decision");
+  }
+  if (r.consentRequired && r.executionEligibility !== ExecutionEligibility.CONSENT_REQUIRED) {
+    throw new DemoResultError("a decision requiring consent cannot have any other eligibility");
+  }
+  if (r.executionEligibility === ExecutionEligibility.EXECUTABLE && (r.decision !== Decision.USE_PREFERRED && r.decision !== Decision.USE_ALTERNATIVE)) {
+    throw new DemoResultError(`decision ${r.decision} can never be EXECUTABLE`);
   }
 }
