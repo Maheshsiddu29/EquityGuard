@@ -141,9 +141,14 @@ interface TlvEntry {
   readonly valueOffset: number;
 }
 
-/** Walks the whole TLV area, so corruption anywhere fails closed. */
+/**
+ * Walks the whole TLV area, so corruption anywhere fails closed. A repeated
+ * extension type is ambiguous (lookups read the first entry) and is rejected,
+ * matching the program.
+ */
 function readTlvEntries(data: Uint8Array, view: DataView): TlvEntry[] {
   const entries: TlvEntry[] = [];
+  const seen = new Set<number>();
   let offset = TLV_START;
   // Fewer than two remaining bytes cannot hold a type; Token-2022 treats that
   // as the end of the TLV area.
@@ -161,6 +166,10 @@ function readTlvEntries(data: Uint8Array, view: DataView): TlvEntry[] {
     if (valueOffset + length > data.length) {
       throw new GuardClientError("InvalidMintData", "TLV value overruns account");
     }
+    if (seen.has(type)) {
+      throw new GuardClientError("InvalidMintData", `duplicate extension type ${type}`);
+    }
+    seen.add(type);
     entries.push({ type, length, valueOffset });
     offset = valueOffset + length;
   }

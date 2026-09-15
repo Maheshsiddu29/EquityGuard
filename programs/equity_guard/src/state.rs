@@ -99,8 +99,8 @@ impl ProtectedState {
 /// Decodes the protected ScaledUiAmount state from a mint account.
 ///
 /// Fails closed on anything other than an initialized Token-2022 mint with a
-/// fully well-formed extension area, a permitted extension combination, and
-/// valid multipliers. The whole TLV area is validated, not just the entry we
+/// fully well-formed extension area, no duplicate extension types, a
+/// permitted extension combination, and valid multipliers. The whole TLV area is validated, not just the entry we
 /// read, so corruption elsewhere in the account is not silently accepted.
 pub fn decode_protected_state(
     owner: &Address,
@@ -115,6 +115,19 @@ pub fn decode_protected_state(
     let extension_types = mint
         .get_extension_types()
         .map_err(|_| EquityGuardError::InvalidMintData)?;
+
+    // Duplicate TLV entries are ambiguous (lookups read the first one): reject
+    // any repeated extension type. Known types fit in a u64 bitmask.
+    let mut seen: u64 = 0;
+    for extension_type in &extension_types {
+        let bit = 1_u64
+            .checked_shl(u32::from(u16::from(*extension_type)))
+            .ok_or(EquityGuardError::InvalidMintData)?;
+        if seen & bit != 0 {
+            return Err(EquityGuardError::InvalidMintData);
+        }
+        seen |= bit;
+    }
 
     if !extension_types.contains(&ExtensionType::ScaledUiAmount) {
         return Err(EquityGuardError::MissingScaledUiAmount);
@@ -274,6 +287,39 @@ mod tests {
             decode(&uninitialized),
             Err(EquityGuardError::InvalidMintData)
         );
+    }
+
+    #[test]
+    fn rejects_duplicate_extension_types() {
+        let original = mainnet_mint("UNHx");
+        let tlv = scaled_ui_tlv_offset(&original);
+        let entry_len = 4 + std::mem::size_of::<ScaledUiAmountConfig>();
+        // Append a second ScaledUiAmount entry with different multipliers.
+        let mut duplicate_scaled_ui = original.clone();
+        let mut entry = original[tlv..tlv + entry_len].to_vec();
+        entry[4 + 32..4 + 40].copy_from_slice(&9.0_f64.to_le_bytes());
+        entry[4 + 48..4 + 56].copy_from_slice(&9.0_f64.to_le_bytes());
+        duplicate_scaled_ui.extend_from_slice(&entry);
+        assert_eq!(
+            decode(&duplicate_scaled_ui),
+            Err(EquityGuardError::InvalidMintData)
+        );
+        // Any repeated type is rejected, not only ScaledUiAmount.
+        let mut duplicate_other = original.clone();
+        let first_type_len = u16::from_le_bytes([
+            original[ACCOUNT_TYPE_OFFSET + 3],
+            original[ACCOUNT_TYPE_OFFSET + 4],
+        ]);
+        let first_entry = original
+            [ACCOUNT_TYPE_OFFSET + 1..ACCOUNT_TYPE_OFFSET + 5 + usize::from(first_type_len)]
+            .to_vec();
+        duplicate_other.extend_from_slice(&first_entry);
+        assert_eq!(
+            decode(&duplicate_other),
+            Err(EquityGuardError::InvalidMintData)
+        );
+        // Without duplicates the same mint still decodes.
+        assert!(decode(&original).is_ok());
     }
 
     #[test]

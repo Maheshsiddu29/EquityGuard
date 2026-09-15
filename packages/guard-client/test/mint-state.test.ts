@@ -134,3 +134,26 @@ test("Pausable flag decoding fails closed and reports absence as null", () => {
   assert.equal(decodeMintMetadata(TOKEN_2022, original.slice(0, 82)).paused, null);
   expectCode(() => decodeMintMetadata("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", original), "InvalidMintOwner", "owner");
 });
+
+test("rejects duplicate extension types, as the program does", () => {
+  const original = mainnetMint("UNHx");
+  const scaledUiEntry = scaledUiValueOffset(original) - 4;
+  // Append a second ScaledUiAmount entry with different multipliers.
+  const entry = original.slice(scaledUiEntry, scaledUiEntry + 60);
+  new DataView(entry.buffer).setFloat64(4 + 32, 9, true);
+  new DataView(entry.buffer).setFloat64(4 + 48, 9, true);
+  const duplicateScaledUi = new Uint8Array(original.length + entry.length);
+  duplicateScaledUi.set(original);
+  duplicateScaledUi.set(entry, original.length);
+  assert.throws(() => decodeProtectedState(TOKEN_2022, duplicateScaledUi), (e) => e instanceof GuardClientError && e.code === "InvalidMintData");
+  assert.throws(() => decodeMintMetadata(TOKEN_2022, duplicateScaledUi), (e) => e instanceof GuardClientError && e.code === "InvalidMintData");
+
+  // Any repeated type, not only ScaledUiAmount: duplicate the first TLV entry.
+  const firstLength = new DataView(original.buffer, original.byteOffset).getUint16(168, true);
+  const first = original.slice(166, 170 + firstLength);
+  const duplicateFirst = new Uint8Array(original.length + first.length);
+  duplicateFirst.set(original);
+  duplicateFirst.set(first, original.length);
+  assert.throws(() => decodeProtectedState(TOKEN_2022, duplicateFirst), (e) => e instanceof GuardClientError && e.code === "InvalidMintData");
+  assert.doesNotThrow(() => decodeProtectedState(TOKEN_2022, original));
+});
