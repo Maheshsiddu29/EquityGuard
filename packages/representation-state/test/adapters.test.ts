@@ -145,3 +145,26 @@ test("Ondo reconciliation matrix (fixture-only, no live API)", () => {
     if (source === StateSource.CONFLICT) assert.ok(resolved.chainState !== null && resolved.apiState !== null, label);
   }
 });
+
+test("immediate-update interval is opt-in and classifies only [T, T + after]", () => {
+  const t = 1_789_430_644n;
+  const immediate = withScaledUi(mainnetMint("KOon"), { multiplier: 1.0238905041551842, newMultiplier: 1.0238905041551842, effectiveTimestamp: t });
+  const at = (time: bigint) => observe("KOon", immediate, time);
+  // Default policy: unchanged behaviour.
+  assert.equal(resolveOndoState(KOON, { chain: at(t + 12n), api: null }, TEST_POLICY).state, RepresentationState.SAFE);
+  const policy = { ...TEST_POLICY, immediateUpdateAfterSecs: 300n };
+  const table: [bigint, RepresentationState][] = [
+    [t - 1n, RepresentationState.SAFE],
+    [t, RepresentationState.TRANSITION],
+    [t + 12n, RepresentationState.TRANSITION],
+    [t + 300n, RepresentationState.TRANSITION],
+    [t + 301n, RepresentationState.SAFE],
+  ];
+  for (const [time, state] of table) {
+    assert.equal(resolveOndoState(KOON, { chain: at(time), api: null }, policy).state, state, String(time - t));
+  }
+  // Token-2022's initial T = 0 is never an update.
+  const initial = withScaledUi(mainnetMint("KOon"), { multiplier: 1.1, newMultiplier: 1.1, effectiveTimestamp: 0n });
+  assert.equal(resolveOndoState(KOON, { chain: observe("KOon", initial, 100n), api: null }, policy).state, RepresentationState.SAFE);
+  assert.throws(() => classifyChainEvidence(at(t), { ...policy, immediateUpdateAfterSecs: -1n }), TransitionPolicyError);
+});

@@ -101,7 +101,7 @@ export class TransitionPolicyError extends Error {
 }
 
 export function assertValidPolicy(policy: TransitionPolicy): void {
-  if (policy.beforeSecs < 0n || policy.afterSecs < 0n) {
+  if (policy.beforeSecs < 0n || policy.afterSecs < 0n || (policy.immediateUpdateAfterSecs ?? 0n) < 0n) {
     throw new TransitionPolicyError("protection interval bounds must be non-negative");
   }
 }
@@ -121,6 +121,16 @@ export function classifyChainEvidence(evidence: ChainEvidence, policy: Transitio
     return { state: RepresentationState.PAUSED, reason: "Token-2022 Pausable flag is set" };
   }
   if (!evidence.hasScheduledChange) {
+    const after = policy.immediateUpdateAfterSecs;
+    const t = evidence.protectedState.newMultiplierEffectiveTimestamp;
+    const now = evidence.chainUnixTimestamp;
+    // T = 0 is Token-2022's initial value, not an update.
+    if (after !== undefined && now !== null && t > 0n && t <= now && now <= t + after) {
+      return {
+        state: RepresentationState.TRANSITION,
+        reason: `immediate multiplier update with stored effective timestamp ${t}; chain time ${now} is inside [${t}, ${t + after}] (policy ${policy.calibration})`,
+      };
+    }
     return { state: RepresentationState.SAFE, reason: "no scheduled multiplier change" };
   }
   if (evidence.chainUnixTimestamp === null) {

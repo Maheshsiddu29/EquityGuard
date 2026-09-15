@@ -38,6 +38,13 @@ export type Calibration = "UNCALIBRATED" | "CALIBRATED";
 export interface TransitionPolicy {
   readonly beforeSecs: bigint;
   readonly afterSecs: bigint;
+  /**
+   * Opt-in interval after an IMMEDIATE update: a stored effective timestamp T
+   * with equal multipliers (no pending phase), as observed for KOon in
+   * September 2026. When set, chain time in `[T, T + immediateUpdateAfterSecs]`
+   * is TRANSITION. Unset keeps the previous behaviour (SAFE).
+   */
+  readonly immediateUpdateAfterSecs?: bigint;
   readonly calibration: Calibration;
   /** Where the numbers come from, e.g. issuer documentation or observed events. */
   readonly basis: string;

@@ -117,3 +117,19 @@ export {
   type KOxCorrelation,
   type ObservedBoundary,
 } from "./kox-correlation.ts";
+export {
+  DemoResultError,
+  assertDemoResult,
+  devnetExecutionResult,
+  mainnetObservationResult,
+  type DemoResult,
+  type DevnetExecutionResult,
+  type DevnetTransactionEvidence,
+  type EvidenceReference,
+  type ExecutionEnvironment,
+  type MainnetObservationResult,
+  type QuoteAvailability,
+  type QuoteSource,
+  type QuoteStatus,
+  type RepresentationRef,
+} from "./demo-result.ts";

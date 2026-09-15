@@ -161,7 +161,7 @@ export function decide(input: DecisionInput): DecisionResult {
   // A SAFE alternative exists, but without a normalized quote the cost of
   // switching is unknown and cannot be disclosed: not offered, even with consent.
   if (!comparison) {
-    return result(Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE", `${unsafeReason}; ${alternative.symbol} is SAFE but has no normalized quote`);
+    return result(Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE", `${unsafeReason}; ${alternative.symbol} is SAFE but no normalized quote comparison is available`);
   }
   // A comparison computed for another trade must never authorize a reroute.
   const mismatch = comparisonBindingMismatch(comparison, preferred, alternative, input.inputRaw);
