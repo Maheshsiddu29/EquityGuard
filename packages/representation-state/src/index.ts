@@ -84,6 +84,7 @@ export {
 } from "./quote-identity.ts";
 export {
   ExecutionPlanError,
+  assertPlanDownstream,
   assertPlanFresh,
   assertPlanPolicy,
   consumeExecutionPlan,
@@ -92,6 +93,7 @@ export {
   verifyExecutionPlan,
   type ExecutionPlan,
   type ExecutionPlanContent,
+  type DownstreamBinding,
   type ExecutionPlanErrorCode,
   type PlanFreshnessPolicy,
 } from "./execution-plan.ts";

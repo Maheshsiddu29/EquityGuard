@@ -1,7 +1,9 @@
 /**
  * Offline tests over a REAL recorded Jupiter Swap V2 /build response
  * (USDC -> KOx, mainnet, 2026-09-14) and the real KOx mainnet snapshot it was
- * composed with. The live smoke run is `npm run jupiter:compose-mainnet`.
+ * composed with. HISTORICAL sizing evidence: the recording used the ABI v1
+ * guard layout, reproduced here by a test-only encoder. ABI v2 does not guard
+ * Jupiter swaps, and the live composition script was retired.
  */
 
 import assert from "node:assert/strict";
@@ -9,13 +11,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { address, type Address } from "@solana/kit";
-import {
-  ActivationPhase,
-  EQUITY_GUARD_DEVNET_PROGRAM_ID,
-  encodeAssertSafeExecutionV1,
-  getAssertSafeExecutionInstruction,
-  type AssertSafeExecutionRequest,
-} from "@equityguard/guard-client";
+import { ActivationPhase, EQUITY_GUARD_DEVNET_PROGRAM_ID, type AssertSafeExecutionRequest } from "@equityguard/guard-client";
 
 import {
   GuardBindingError,
@@ -28,6 +24,7 @@ import {
   type CompositionResult,
   type GuardComponent,
 } from "../src/index.ts";
+import { encodeHistoricalAbiV1, historicalAbiV1GuardInstruction } from "./historical-v1-guard.ts";
 
 interface Fixture {
   recordedAt: string;
@@ -74,7 +71,7 @@ function recordedRequest(): AssertSafeExecutionRequest {
 function guardFor(mint: Address): GuardComponent {
   return {
     mint,
-    instruction: getAssertSafeExecutionInstruction({ programAddress: PROGRAM_ID, mint, request: recordedRequest() }),
+    instruction: historicalAbiV1GuardInstruction({ programAddress: PROGRAM_ID, mint, request: recordedRequest() }),
   };
 }
 
@@ -88,9 +85,9 @@ test("real /build response decodes for USDC -> KOx", () => {
   assert.ok(BigInt(build.otherAmountThreshold) <= BigInt(build.outAmount));
 });
 
-test("guard ABI is rebuilt byte-for-byte from the recorded mainnet KOx state", () => {
+test("recorded historical ABI v1 guard bytes are reproduced from the recorded mainnet KOx state", () => {
   assert.equal(fixture.snapshot.mint, KOX_MINT);
-  assert.equal(Buffer.from(encodeAssertSafeExecutionV1(recordedRequest())).toString("hex"), fixture.guardInstructionDataHex);
+  assert.equal(Buffer.from(encodeHistoricalAbiV1(recordedRequest())).toString("hex"), fixture.guardInstructionDataHex);
 });
 
 test("guard bound to anything but Jupiter's outputMint is rejected", () => {

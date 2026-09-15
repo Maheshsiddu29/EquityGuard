@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AccountRole, address, type Instruction } from "@solana/kit";
-import { ActivationPhase, EQUITY_GUARD_DEVNET_PROGRAM_ID, getAssertSafeExecutionInstruction } from "@equityguard/guard-client";
+import { ActivationPhase, EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
 
 import {
   COMPUTE_BUDGET_PROGRAM_ADDRESS,
@@ -16,6 +16,7 @@ import {
   toKitInstruction,
   type GuardComponent,
 } from "../src/index.ts";
+import { historicalAbiV1GuardInstruction } from "./historical-v1-guard.ts";
 import { INPUT_MINT, OUTPUT_MINT, POOL_ACCOUNTS, SWAP_PROGRAM, TAKER, syntheticAddress, syntheticBuild } from "./synthetic.ts";
 
 const PROGRAM_ID = EQUITY_GUARD_DEVNET_PROGRAM_ID;
@@ -24,7 +25,8 @@ const ONE = new Uint8Array([0, 0, 0, 0, 0, 0, 0xf0, 0x3f]);
 function guardFor(mint: ReturnType<typeof syntheticAddress>, instructionMint = mint): GuardComponent {
   return {
     mint,
-    instruction: getAssertSafeExecutionInstruction({
+    // Composition/sizing tests only: a historical v1-shaped instruction, never submitted.
+    instruction: historicalAbiV1GuardInstruction({
       programAddress: PROGRAM_ID,
       mint: instructionMint,
       request: {

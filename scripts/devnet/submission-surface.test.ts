@@ -64,7 +64,7 @@ test("inside the product executor, sending is reachable only through the gated e
 
   // executeGuardedPlan gates before it can reach the delivery helper.
   const body = executor.text.slice(executor.text.indexOf("export async function executeGuardedPlan"));
-  const order = ["verifyExecutionPlan(", "assertPlanPolicy(", "requireDevnet(", "consumeExecutionPlan(", "assertPlanFresh(", "submitGuardedDelivery("].map((token) => body.indexOf(token));
+  const order = ["verifyExecutionPlan(", "assertPlanPolicy(", "requireDevnet(", "assertPlanDownstream(", "consumeExecutionPlan(", "assertPlanFresh(", "submitGuardedDelivery("].map((token) => body.indexOf(token));
   assert.ok(order.every((i) => i >= 0) && order.every((i, k) => k === 0 || i > (order[k - 1] as number)), `gate order ${order.join(",")}`);
 
   const exported = Object.keys(await import("../demo/devnet-execution.ts"));

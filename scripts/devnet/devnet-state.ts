@@ -30,6 +30,11 @@ export interface DevnetDeployment {
   readonly programId: Address;
   readonly deploySignature: string;
   readonly upgradeAuthority: Address;
+  /**
+   * `assert_safe_execution` ABI the deployed binary accepts. This client only
+   * builds ABI v2; update this record (to 2) only after the program upgrade.
+   */
+  readonly abiVersion: 1 | 2;
 }
 
 export interface DevnetState {
@@ -75,10 +80,13 @@ export function parseDevnetState(value: unknown): DevnetState {
     if (typeof d.programId !== "string" || typeof d.deploySignature !== "string" || typeof d.upgradeAuthority !== "string") {
       throw new DevnetStateError("deployment is malformed");
     }
+    const abiVersion = d.abiVersion ?? 1;
+    if (abiVersion !== 1 && abiVersion !== 2) throw new DevnetStateError("deployment abiVersion must be 1 or 2");
     deployment = {
       programId: address(d.programId),
       deploySignature: d.deploySignature,
       upgradeAuthority: address(d.upgradeAuthority),
+      abiVersion,
     };
   }
   return { cluster: "devnet", deployment, assets };
@@ -107,4 +115,22 @@ export function requireDeployment(state: DevnetState): DevnetDeployment {
     );
   }
   return state.deployment;
+}
+
+/** The only guard ABI this client builds. */
+export const CLIENT_GUARD_ABI_VERSION = 2;
+
+/**
+ * The recorded deployment, which must be the pinned program ID AND accept the
+ * ABI this client builds. Refuses before any network call when devnet.json
+ * still records an ABI v1 deployment.
+ */
+export function requireGuardAbiV2Deployment(state: DevnetState): DevnetDeployment {
+  const deployment = requireDeployment(state);
+  if (deployment.abiVersion !== CLIENT_GUARD_ABI_VERSION) {
+    throw new DevnetStateError(
+      `devnet.json records the deployed program as ABI v${deployment.abiVersion}; this client builds ABI v${CLIENT_GUARD_ABI_VERSION} guards. Upgrade the program (human-reviewed) and update the record first.`,
+    );
+  }
+  return deployment;
 }

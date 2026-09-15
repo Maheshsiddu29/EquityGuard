@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { address, AccountRole, generateKeyPairSigner } from "@solana/kit";
-import { TOKEN_2022_PROGRAM_ADDRESS, Token2022Instruction, getTransferCheckedInstructionDataDecoder, identifyToken2022Instruction } from "@solana-program/token-2022";
-import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
+import { address, AccountRole, generateKeyPairSigner, getAddressEncoder } from "@solana/kit";
+import { ASSOCIATED_TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS, Token2022Instruction, getTransferCheckedInstructionDataDecoder, identifyToken2022Instruction } from "@solana-program/token-2022";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID, SYSVAR_INSTRUCTIONS_ADDRESS, asCommittedInstruction, downstreamCommitment } from "@equityguard/guard-client";
 import {
   Decision,
   RepresentationState,
@@ -78,6 +78,9 @@ function plan(fixtureOverride?: Partial<ReturnType<typeof loadDevnetQuoteFixture
   return planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: PREFERRED, alternativeEvidence: ALTERNATIVE, fixture: { ...fixture, ...fixtureOverride }, policy: DEVNET_DEMO_POLICY, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, currentSlot: SLOT, userConsent: DEVNET_DEMO_CONSENT });
 }
 
+/** A stand-in downstream binding; the on-chain commitment is exercised in Rust/LiteSVM. */
+const TEST_DOWNSTREAM = { adapterKind: "TOKEN_2022_TRANSFER_CHECKED" as const, commitmentHex: "a".repeat(64) };
+
 test("the devnet quote fixture is explicitly a demo fixture", () => {
   const { fixture, sha256 } = loadDevnetQuoteFixture();
   assert.equal(fixture.label, "DEVNET DEMO QUOTE / FIXTURE");
@@ -119,25 +122,36 @@ test("a missing devnet quote yields UNKNOWN_STATE, never execution", () => {
   assert.deepEqual([p.consentOn.stateDecision.decision, p.consentOn.stateDecision.reasonCode, p.consentOn.executionEligibility], [Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE", "ROUTE_UNAVAILABLE"]);
 });
 
-test("guarded delivery puts the guard first and asserts exactly the decision's bound state", async () => {
+test("guarded delivery places the committed transfer immediately after the guard and binds the mint, state and action", async () => {
   const payer = await generateKeyPairSigner();
   const recipient = (await generateKeyPairSigner()).address;
   const p = plan();
   assert.ok(p.comparison);
-  const instructions = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, boundState: p.comparison.alternativeQuote.state, policy: DEVNET_DEMO_POLICY, amount: 5_990_000n });
-  assert.equal(instructions.length, 3);
-  const [guard, , transfer] = instructions;
+  const delivery = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, boundState: p.comparison.alternativeQuote.state, policy: DEVNET_DEMO_POLICY, amount: 5_990_000n });
+  assert.equal(delivery.instructions.length, 3);
+  const [createAta, guard, transfer] = delivery.instructions;
+  assert.equal(createAta?.programAddress, ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
+  assert.equal(guard, delivery.guard);
+  assert.equal(transfer, delivery.transferChecked);
   assert.equal(guard?.programAddress, EQUITY_GUARD_DEVNET_PROGRAM_ID);
-  assert.deepEqual(guard?.accounts, [{ address: EQ_B.mint, role: AccountRole.READONLY }]);
-  // ABI v1: multiplier bytes, new multiplier bytes, T, phase, then the policy window (900, 300).
+  assert.deepEqual(guard?.accounts, [
+    { address: EQ_B.mint, role: AccountRole.READONLY },
+    { address: SYSVAR_INSTRUCTIONS_ADDRESS, role: AccountRole.READONLY },
+  ]);
+  // ABI v2: version, expected mint, multipliers, T, phase, window, adapter, commitment.
   const data = Uint8Array.from(guard?.data ?? []);
   const view = new DataView(data.buffer);
   const bound = p.comparison.alternativeQuote.state;
+  const hex = (from: number, to: number) => Buffer.from(data.subarray(from, to)).toString("hex");
   assert.deepEqual(
-    [Buffer.from(data.subarray(1, 9)).toString("hex"), Buffer.from(data.subarray(9, 17)).toString("hex"), view.getBigInt64(17, true), data[25]],
-    [bound.multiplierHex, bound.newMultiplierHex, bound.effectiveTimestamp, bound.phase],
+    [data[0], hex(33, 41), hex(41, 49), view.getBigInt64(49, true), data[57], data[66]],
+    [2, bound.multiplierHex, bound.newMultiplierHex, bound.effectiveTimestamp, bound.phase, 1],
   );
-  assert.deepEqual([view.getUint32(26, true), view.getUint32(30, true)], [900, 300]);
+  assert.equal(hex(1, 33), Buffer.from(getAddressEncoder().encode(EQ_B.mint)).toString("hex"));
+  assert.deepEqual([view.getUint32(58, true), view.getUint32(62, true)], [900, 300]);
+  // The commitment is the one for this exact transfer in this exact transaction.
+  assert.equal(hex(67, 99), delivery.downstream.commitmentHex);
+  assert.equal(delivery.downstream.commitmentHex, Buffer.from(downstreamCommitment(asCommittedInstruction(transfer!, delivery.instructions, payer.address))).toString("hex"));
   assert.equal(transfer?.programAddress, TOKEN_2022_PROGRAM_ADDRESS);
   assert.equal(identifyToken2022Instruction(Uint8Array.from(transfer?.data ?? [])), Token2022Instruction.TransferChecked);
   assert.ok(transfer?.accounts?.some((a) => a.address === EQ_B.mint));
@@ -164,7 +178,7 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   const evidence = [{ kind: "DEVNET_DEMO_QUOTE_FIXTURE" as const, description: "fixture", sha256, observedAt: null }];
   const rejected = { signature: "r", slot: 1n, succeeded: false, customErrorName: "InsideTransitionWindow", downstreamBalanceBefore: 0n, downstreamBalanceAfter: 0n, explorerUrl: null };
   const executed = { signature: "e", slot: 2n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 5_990_000n, explorerUrl: null };
-  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanDigest: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }).planDigest });
+  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanDigest: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }).planDigest });
   assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.additionalCostBps], ["DEVNET_EXECUTION", "e", 17n]);
   assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
@@ -172,7 +186,7 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
 test("the devnet demo refuses contexts that did not come from connectDevnet, before any network call", async () => {
   const rpc = new Proxy({}, { get: () => { throw new Error("RPC must not be called"); } });
   const payer = await generateKeyPairSigner();
-  const state: DevnetState = { cluster: "devnet", deployment: { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, deploySignature: "sig", upgradeAuthority: payer.address }, assets: [EQ_A, EQ_B] };
+  const state: DevnetState = { cluster: "devnet", deployment: { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, deploySignature: "sig", upgradeAuthority: payer.address, abiVersion: 2 }, assets: [EQ_A, EQ_B] };
   const ctx = { rpc, payer, cluster: "localnet" } as unknown as DevnetContext;
   await assert.rejects(runDevnetDemo(ctx, state, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: payer.address }), DevnetConfigError);
   const claimsDevnet = { rpc, payer, cluster: "devnet", genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG" } as unknown as DevnetContext;
@@ -205,9 +219,9 @@ test("no execution plan exists for a non-executable decision, and execution cons
   ];
   for (const [label, decision] of cases) {
     assert.equal(decision.executionEligibility, label);
-    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
+    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
   }
-  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   const quote = p.routes.alternative.quote!;
   const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan: executionPlan, quote, comparison: p.comparison, asset: EQ_B, recipient: payer.address, policy: DEVNET_DEMO_POLICY };
   // Plan checks, cluster and asset checks all run before any RPC call.
@@ -298,16 +312,17 @@ test("setup uses absolute targets only: no step depends on the previous multipli
 
 test("the devnet plan pins the fixture quote, and the guarded transaction consumes exactly the plan", async () => {
   const p = plan();
-  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   assert.deepEqual(
     [executionPlan.selectedRepresentation.symbol, executionPlan.expectedOutputRaw, executionPlan.inputRaw, executionPlan.route.legs[0]?.venue, executionPlan.comparisonKey === p.comparison?.comparisonKey],
     ["EQ-B", 5_990_000n, 5_000_000n, "DEVNET_GUARDED_TRANSFER_CHECKED", true],
   );
   assert.deepEqual(executionPlan.economicState, economicStateOf(ALTERNATIVE));
   const payer = await generateKeyPairSigner();
-  const [guard, , transfer] = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient: payer.address, asset: EQ_B, boundState: executionPlan.economicState, policy: DEVNET_DEMO_POLICY, amount: executionPlan.expectedOutputRaw });
+  const delivery = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient: payer.address, asset: EQ_B, boundState: executionPlan.economicState, policy: DEVNET_DEMO_POLICY, amount: executionPlan.expectedOutputRaw });
+  const [, guard, transfer] = delivery.instructions;
   const data = Uint8Array.from(guard?.data ?? []);
-  assert.equal(Buffer.from(data.subarray(1, 9)).toString("hex"), executionPlan.economicState.multiplierHex);
+  assert.equal(Buffer.from(data.subarray(33, 41)).toString("hex"), executionPlan.economicState.multiplierHex);
   assert.equal(getTransferCheckedInstructionDataDecoder().decode(Uint8Array.from(transfer?.data ?? [])).amount, executionPlan.expectedOutputRaw);
   // The fixture route for EQ-A is a different quote: it cannot stand in for the planned EQ-B quote.
   assert.throws(() => verifyExecutionPlan(executionPlan, { quote: p.routes.preferred.quote!, comparison: p.comparison }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");

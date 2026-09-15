@@ -1,12 +1,21 @@
 /**
- * `assert_safe_execution` ABI v1 encoder. Mirrors
+ * `assert_safe_execution` ABI v2 encoder. Mirrors
  * `programs/equity_guard/src/instruction.rs`, which documents the layout.
+ * There is no ABI v1 encoder: the program no longer accepts v1.
  */
+
+import { getAddressEncoder, type Address } from "@solana/kit";
 
 import { GuardClientError } from "./errors.ts";
 
-export const ABI_VERSION_V1 = 1;
-export const ASSERT_SAFE_EXECUTION_V1_LEN = 34;
+export const ABI_VERSION_V2 = 2;
+export const ASSERT_SAFE_EXECUTION_V2_LEN = 99;
+
+/** Supported downstream actions (ABI byte). */
+export const DownstreamAdapterKind = {
+  TOKEN_2022_TRANSFER_CHECKED: 1,
+} as const;
+export type DownstreamAdapterKind = (typeof DownstreamAdapterKind)[keyof typeof DownstreamAdapterKind];
 
 /** Which stored multiplier Token-2022 treats as effective. */
 export const ActivationPhase = {
@@ -33,10 +42,19 @@ export interface ProtectionWindow {
   readonly afterSecs: number;
 }
 
+/** The economic-state expectation part of a guard request. */
 export interface AssertSafeExecutionRequest {
   readonly expected: ProtectedState;
   readonly expectedPhase: ActivationPhase;
   readonly window: ProtectionWindow;
+}
+
+/** A complete ABI v2 request: mint identity, state expectation and downstream binding. */
+export interface AssertSafeExecutionV2Request extends AssertSafeExecutionRequest {
+  readonly expectedMint: Address;
+  readonly adapterKind: DownstreamAdapterKind;
+  /** SHA-256 commitment to the exact next instruction (see downstream.ts). */
+  readonly downstreamCommitment: Uint8Array;
 }
 
 const MULTIPLIER_LEN = 8;
@@ -73,8 +91,8 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }
 
-/** Encodes and validates an ABI v1 instruction payload. */
-export function encodeAssertSafeExecutionV1(request: AssertSafeExecutionRequest): Uint8Array {
+/** Encodes and validates an ABI v2 instruction payload. */
+export function encodeAssertSafeExecutionV2(request: AssertSafeExecutionV2Request): Uint8Array {
   const { expected, expectedPhase, window } = request;
   if (!isValidStoredMultiplier(expected.multiplier) || !isValidStoredMultiplier(expected.newMultiplier)) {
     throw new GuardClientError("InvalidExpectedState", "multipliers must be 8 bytes encoding a positive normal f64");
@@ -91,15 +109,25 @@ export function encodeAssertSafeExecutionV1(request: AssertSafeExecutionRequest)
       throw new GuardClientError("InvalidProtectionWindow", `${name} must be a u32`);
     }
   }
+  if (request.adapterKind !== DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED) {
+    throw new GuardClientError("InvalidDownstream", `unsupported adapter kind ${String(request.adapterKind)}`);
+  }
+  if (!(request.downstreamCommitment instanceof Uint8Array) || request.downstreamCommitment.length !== 32) {
+    throw new GuardClientError("InvalidDownstream", "downstream commitment must be 32 bytes");
+  }
+  const mint = getAddressEncoder().encode(request.expectedMint);
 
-  const out = new Uint8Array(ASSERT_SAFE_EXECUTION_V1_LEN);
+  const out = new Uint8Array(ASSERT_SAFE_EXECUTION_V2_LEN);
   const view = new DataView(out.buffer);
-  out[0] = ABI_VERSION_V1;
-  out.set(expected.multiplier, 1);
-  out.set(expected.newMultiplier, 9);
-  view.setBigInt64(17, timestamp, true);
-  out[25] = expectedPhase;
-  view.setUint32(26, window.beforeSecs, true);
-  view.setUint32(30, window.afterSecs, true);
+  out[0] = ABI_VERSION_V2;
+  out.set(mint, 1);
+  out.set(expected.multiplier, 33);
+  out.set(expected.newMultiplier, 41);
+  view.setBigInt64(49, timestamp, true);
+  out[57] = expectedPhase;
+  view.setUint32(58, window.beforeSecs, true);
+  view.setUint32(62, window.afterSecs, true);
+  out[66] = request.adapterKind;
+  out.set(request.downstreamCommitment, 67);
   return out;
 }

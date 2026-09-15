@@ -100,12 +100,11 @@ Implemented without any execution path:
 
 | Component | Status |
 | --- | --- |
-| `programs/equity_guard` — `assert_safe_execution` | deployed on devnet; host, LiteSVM and real devnet transactions |
+| `programs/equity_guard` — `assert_safe_execution` | ABI v1 deployed on devnet; ABI v2 candidate (mint identity + committed Token-2022 `TransferChecked` binding) tested locally in LiteSVM, not yet deployed |
 | Token-2022 ScaledUiAmount decoding | implemented in Rust and TypeScript; cross-checked on golden vectors and real mainnet mint bytes |
-| `packages/guard-client` | TypeScript instruction builder (chain-clock snapshot, ABI v1) |
+| `packages/guard-client` | TypeScript builder for ABI v2 guarded `TransferChecked` (chain-clock snapshot, downstream commitment) |
 | `scripts/devnet/` | devnet test mints EQ-A/EQ-B, scenario runner, evidence |
-| `packages/jupiter` | Jupiter Swap V2 `/build` client and guarded v0 composition (build-only) |
-| `scripts/jupiter/compose-mainnet.ts` | live build-only composition for a real xStock; needs `JUPITER_API_KEY` |
+| `packages/jupiter` | Jupiter Swap V2 `/build` client and v0 composition sizing over a recorded response (build-only; ABI v2 does not guard swaps) |
 | `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
 | `packages/representation-state` | registry, issuer state adapters, capture decoding, normalization, decision engine (no execution) |
 | `scripts/observation/` | read-only decoding and event detection over capture copies |
@@ -118,7 +117,6 @@ programs/equity_guard/    on-chain guard program (native Rust)
 packages/guard-client/    TypeScript instruction builder used by clients
 packages/jupiter/         Jupiter /build client and guarded transaction composition
 packages/representation-state/  representation registry, state, normalization, decisions
-scripts/jupiter/          live build-only mainnet composition (no submission)
 scripts/observation/      read-only capture decoding and event detection
 scripts/devnet/           devnet test mints, scenarios, deployment record
 scripts/evidence/         raw mainnet evidence capture (output is local, gitignored)
@@ -137,14 +135,10 @@ cargo test --workspace --locked        # unit, golden, deployment-ID, LiteSVM (n
 npm ci && npm run typecheck && npm test   # offline; includes the recorded Jupiter fixture
 ```
 
-The live composition run reads secrets from a gitignored `.env`
-(`JUPITER_API_KEY`, `EQUITYGUARD_MAINNET_RPC_URL`) and never signs or submits:
-
-```sh
-node --env-file=.env scripts/jupiter/compose-mainnet.ts
-```
-
-CI is credential-free and never calls Jupiter.
+The ABI v2 guard protects only an immediately following Token-2022
+`TransferChecked` of the protected mint, so the former live Jupiter swap
+composition script was retired; the recorded composition fixture remains as
+historical sizing evidence. CI is credential-free and never calls Jupiter.
 
 Capture analysis reads only a copy of a capture file. The tools require
 `--input`, open it read-only, refuse files modified in the last 90 seconds or
@@ -176,6 +170,9 @@ npm run devnet -- scenario safe --label EQ-B
 npm run devnet -- scenario stale --label EQ-A
 npm run devnet -- scenario transition --label EQ-A
 ```
+
+The scenario runner and the devnet demo build ABI v2 guards and refuse to run
+while `scripts/devnet/devnet.json` records the deployed program as ABI v1.
 
 The devnet program ID, deployment signature and test mint addresses are
 recorded in `scripts/devnet/devnet.json`. The on-chain ABI is documented in

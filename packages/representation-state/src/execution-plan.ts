@@ -6,7 +6,9 @@
  * raw input/output, minimum output, quote context), the economic state and
  * the transition policy the guard must assert (the same policy that
  * classified the state), the decision, the consent and disclosure for a
- * reroute, and an explicit slot-based freshness window.
+ * reroute, an explicit slot-based freshness window, and the ABI v2
+ * downstream binding: the adapter kind and the SHA-256 commitment to the exact
+ * action instruction the guard will protect.
  *
  * Authenticity is runtime provenance, not content: only `createExecutionPlan`
  * registers a plan (module-private WeakSet), so hand-built, copied or
@@ -29,6 +31,17 @@ import { ExecutionEligibilityError, assertExecutable, type ExecutionDecision } f
 import type { TransitionPolicy } from "./types.ts";
 import { canonicalKey, quoteIdentityOf, quoteKey, quoteMismatches, type QuoteIdentity, type QuoteMismatch, type RouteIdentity } from "./quote-identity.ts";
 import { sha256Hex } from "./sha256.ts";
+
+/**
+ * The exact downstream action the plan executes, committed as ABI v2 does
+ * on-chain. The executor must rebuild the action and prove its commitment
+ * equals this before anything is signed.
+ */
+export interface DownstreamBinding {
+  readonly adapterKind: "TOKEN_2022_TRANSFER_CHECKED";
+  /** Lowercase hex SHA-256 downstream commitment (64 digits). */
+  readonly commitmentHex: string;
+}
 
 /** How long a plan stays executable, in slots after the slot it was created at. Explicit per executor. */
 export interface PlanFreshnessPolicy {
@@ -59,6 +72,7 @@ export interface ExecutionPlanContent {
   readonly createdAtSlot: bigint;
   /** Last slot at which the plan may be signed (inclusive). */
   readonly expiresAtSlot: bigint;
+  readonly downstream: DownstreamBinding;
 }
 
 export interface ExecutionPlan extends ExecutionPlanContent {
@@ -78,7 +92,9 @@ export type ExecutionPlanErrorCode =
   | "DISCLOSURE_NOT_FOR_COMPARISON"
   | "CONSENT_REJECTED"
   | "INVALID_FRESHNESS"
-  | "POLICY_MISMATCH";
+  | "POLICY_MISMATCH"
+  | "INVALID_DOWNSTREAM"
+  | "DOWNSTREAM_COMMITMENT_MISMATCH";
 
 export class ExecutionPlanError extends Error {
   readonly code: ExecutionPlanErrorCode;
@@ -103,6 +119,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+const isDownstreamBinding = (value: DownstreamBinding | undefined): value is DownstreamBinding =>
+  typeof value === "object" && value !== null && value.adapterKind === "TOKEN_2022_TRANSFER_CHECKED" && typeof value.commitmentHex === "string" && /^[0-9a-f]{64}$/.test(value.commitmentHex);
+
 function contentOf(plan: ExecutionPlan): ExecutionPlanContent {
   const { planDigest: _digest, ...content } = plan;
   return content;
@@ -121,13 +140,16 @@ export function planDigestOf(content: ExecutionPlanContent): string {
 export function createExecutionPlan(
   decision: ExecutionDecision,
   environment: ExecutionEnvironment,
-  options: { readonly currentSlot: bigint; readonly freshness: PlanFreshnessPolicy },
+  options: { readonly currentSlot: bigint; readonly freshness: PlanFreshnessPolicy; readonly downstream: DownstreamBinding },
 ): ExecutionPlan {
   if (environment !== "DEVNET_EXECUTION") {
     throw new ExecutionPlanError("OBSERVATION_ONLY_ENVIRONMENT", `${environment} results cannot produce a submit-capable execution plan`);
   }
   if (typeof options.freshness?.validForSlots !== "bigint" || options.freshness.validForSlots <= 0n || typeof options.currentSlot !== "bigint") {
     throw new ExecutionPlanError("INVALID_FRESHNESS", "an explicit positive bigint validForSlots and currentSlot are required");
+  }
+  if (!isDownstreamBinding(options.downstream)) {
+    throw new ExecutionPlanError("INVALID_DOWNSTREAM", "a TOKEN_2022_TRANSFER_CHECKED downstream binding with a 64-digit lowercase hex commitment is required");
   }
   try {
     assertExecutable(decision);
@@ -178,6 +200,7 @@ export function createExecutionPlan(
     consentId: rerouted ? (decision.consent?.consentId ?? null) : null,
     createdAtSlot: options.currentSlot,
     expiresAtSlot: options.currentSlot + options.freshness.validForSlots,
+    downstream: { adapterKind: options.downstream.adapterKind, commitmentHex: options.downstream.commitmentHex },
   };
   // Structured clone detaches the plan from caller-owned objects before freezing.
   const detached = structuredClone(content);
@@ -211,7 +234,8 @@ export function verifyExecutionPlan(
     plan.expectedOutputRaw !== plan.quote.outputRaw ||
     plan.minOutputRaw !== plan.quote.minOutputRaw ||
     canonicalKey(plan.route) !== canonicalKey(plan.quote.route) ||
-    plan.selectedRepresentation.mint !== plan.quote.mint
+    plan.selectedRepresentation.mint !== plan.quote.mint ||
+    !isDownstreamBinding(plan.downstream)
   ) {
     throw new ExecutionPlanError("PLAN_TAMPERED", "plan fields are inconsistent with the planned quote");
   }
@@ -243,6 +267,17 @@ export function consumeExecutionPlan(
 ): void {
   verifyExecutionPlan(plan, presented);
   consumedPlans.add(plan);
+}
+
+/**
+ * Throws DOWNSTREAM_COMMITMENT_MISMATCH unless `actualCommitmentHex` — the
+ * commitment of the action instruction about to be submitted — is exactly the
+ * planned one. Call before signing.
+ */
+export function assertPlanDownstream(plan: ExecutionPlan, actual: DownstreamBinding): void {
+  if (!isDownstreamBinding(actual) || actual.adapterKind !== plan.downstream.adapterKind || actual.commitmentHex !== plan.downstream.commitmentHex) {
+    throw new ExecutionPlanError("DOWNSTREAM_COMMITMENT_MISMATCH", "the action instruction being submitted is not the planned action");
+  }
 }
 
 /** Throws POLICY_MISMATCH unless the executor's configured policy is exactly the plan's. */

@@ -17,7 +17,8 @@ import {
 
 import type { TransactionOutcome } from "./send.ts";
 
-export const EVIDENCE_SCHEMA_VERSION = 1;
+/** 2: ABI v2 guard with a committed Token-2022 TransferChecked downstream action. */
+export const EVIDENCE_SCHEMA_VERSION = 2;
 
 /** `success`, or the guard error the step is designed to trigger. */
 export type ExpectedResult = "success" | { readonly guardError: EquityGuardErrorName };
@@ -45,9 +46,12 @@ export interface EvidenceRecord {
   readonly customError: { readonly code: number; readonly name: EquityGuardErrorName | null } | null;
   readonly matchedExpectation: boolean;
   readonly downstream: {
-    readonly instruction: "system transfer";
+    readonly instruction: "token-2022 transferChecked";
     readonly recipient: string;
-    readonly lamports: bigint;
+    readonly destination: string;
+    readonly amount: bigint;
+    /** The ABI v2 commitment to the TransferChecked instruction. */
+    readonly commitmentHex: string;
     readonly recipientBalanceBefore: bigint;
     readonly recipientBalanceAfter: bigint;
   };
@@ -83,10 +87,11 @@ export function describeExpected(expected: ExpectedResult): string {
   return expected === "success" ? "success" : `failure:${expected.guardError}`;
 }
 
-export function describeObserved(outcome: TransactionOutcome): string {
+/** `guardIndex` is the guard instruction's position; only its custom errors count as guard errors. */
+export function describeObserved(outcome: TransactionOutcome, guardIndex = 0): string {
   if (outcome.succeeded) return "success";
   const name = outcome.customError ? equityGuardErrorName(outcome.customError.code) : undefined;
-  return name && outcome.customError?.instructionIndex === 0 ? `failure:${name}` : "failure:other";
+  return name && outcome.customError?.instructionIndex === guardIndex ? `failure:${name}` : "failure:other";
 }
 
 /**

@@ -3,9 +3,10 @@
  * execution-eligibility layer as the mainnet replay, executed against the
  * deployed EquityGuard devnet program and the EQ-A / EQ-B devnet test assets.
  *
- * Every transaction is `[assert_safe_execution(asset), create recipient ATA,
- * transferChecked(asset)]`: the token delivery settles only if the guard
- * passes. The guard asserts exactly the economic state the decision and the
+ * Every transaction is `[create recipient ATA, assert_safe_execution v2(asset),
+ * transferChecked(asset)]`: the guard (ABI v2) binds the mint identity and
+ * commits to the exact TransferChecked that immediately follows it, so the
+ * token delivery settles only if the guard passes and only as committed. The guard asserts exactly the economic state the decision and the
  * quote comparison were built against, so a state change between decision
  * and landing fails the transaction instead of executing on stale economics.
  * Quotes come from the DEVNET DEMO QUOTE / FIXTURE, never from a live market.
@@ -29,9 +30,10 @@ import {
 import {
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
   bytesEqual,
+  buildGuardedTransferChecked,
   equityGuardErrorName,
   fetchGuardSnapshot,
-  getAssertSafeExecutionInstruction,
+  type GuardedTransferChecked,
   type ProtectedState,
 } from "@equityguard/guard-client";
 import {
@@ -47,6 +49,7 @@ import {
   fetchChainObservation,
   protectedStateOf,
   routeIdentity,
+  assertPlanDownstream,
   assertPlanFresh,
   assertPlanPolicy,
   consumeExecutionPlan,
@@ -59,6 +62,7 @@ import {
   type EvidenceReference,
   type ExecutionDecision,
   type ConsentRecord,
+  type DownstreamBinding,
   type ExecutionPlan,
   type PlanFreshnessPolicy,
   type NormalizedQuote,
@@ -70,7 +74,7 @@ import {
 } from "@equityguard/representation-state";
 
 import { assertVerifiedDevnetContext, type DevnetContext } from "../devnet/config.ts";
-import { findAsset, requireDeployment, type DevnetState, type TestAsset } from "../devnet/devnet-state.ts";
+import { findAsset, requireGuardAbiV2Deployment, type DevnetState, type TestAsset } from "../devnet/devnet-state.ts";
 import { explorerUrl } from "../devnet/evidence.ts";
 import { sendInstructions } from "../devnet/send.ts";
 import { getScheduleMultiplierInstruction } from "../devnet/test-mint.ts";
@@ -300,9 +304,16 @@ export function demoSetupMismatches(preferred: ProtectedState, alternative: Prot
   return mismatches;
 }
 
+/** A built guarded delivery and its downstream binding (no RPC involved in building it). */
+export interface GuardedDelivery extends GuardedTransferChecked {
+  readonly downstream: DownstreamBinding;
+}
+
 /**
- * `[guard(asset), create recipient ATA, transferChecked(asset)]`, guard first.
- * The guard expects exactly `boundState`: the state the decision was made on.
+ * `[create recipient ATA, guard v2(asset), transferChecked(asset)]`. The exact
+ * TransferChecked is built first; the guard commits to it (with the flags this
+ * transaction gives its accounts) and expects exactly `boundState` under
+ * `policy`: the state and window the decision was made on.
  */
 export async function guardedDeliveryInstructions(input: {
   readonly programId: Address;
@@ -312,25 +323,28 @@ export async function guardedDeliveryInstructions(input: {
   readonly boundState: EconomicState;
   readonly policy: TransitionPolicy;
   readonly amount: bigint;
-}): Promise<Instruction[]> {
+}): Promise<GuardedDelivery> {
   if (input.boundState.mint !== input.asset.mint) throw new Error("bound state is for a different mint than the delivered asset");
   if (input.boundState.decimals !== input.asset.decimals) throw new Error("bound state decimals differ from the delivered asset");
   const [source] = await findAssociatedTokenPda({ owner: input.payer.address, mint: input.asset.mint, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS });
   const [destination] = await findAssociatedTokenPda({ owner: input.recipient, mint: input.asset.mint, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS });
-  return [
-    getAssertSafeExecutionInstruction({
-      programAddress: input.programId,
-      mint: input.asset.mint,
-      request: {
-        expected: protectedStateOf(input.boundState),
-        expectedPhase: input.boundState.phase,
-        window: { beforeSecs: Number(input.policy.beforeSecs), afterSecs: Number(input.policy.afterSecs) },
-      },
-    }),
-    await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: input.payer, owner: input.recipient, mint: input.asset.mint }),
-    getTransferCheckedInstruction({ source, mint: input.asset.mint, destination, authority: input.payer, amount: input.amount, decimals: input.asset.decimals }),
-  ];
+  const guarded = buildGuardedTransferChecked({
+    programAddress: input.programId,
+    feePayer: input.payer.address,
+    mint: input.asset.mint,
+    expectation: {
+      expected: protectedStateOf(input.boundState),
+      expectedPhase: input.boundState.phase,
+      window: { beforeSecs: Number(input.policy.beforeSecs), afterSecs: Number(input.policy.afterSecs) },
+    },
+    before: [await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: input.payer, owner: input.recipient, mint: input.asset.mint })],
+    transferChecked: getTransferCheckedInstruction({ source, mint: input.asset.mint, destination, authority: input.payer, amount: input.amount, decimals: input.asset.decimals }),
+  });
+  return { ...guarded, downstream: { adapterKind: "TOKEN_2022_TRANSFER_CHECKED", commitmentHex: Buffer.from(guarded.commitment).toString("hex") } };
 }
+
+/** Index of the guard in the guarded-delivery layout; its custom errors are guard errors. */
+const GUARD_INDEX = 1;
 
 export class DevnetDemoEnvironmentError extends Error {
   constructor(message: string) {
@@ -347,17 +361,16 @@ async function tokenBalance(ctx: DevnetContext, owner: Address, mint: Address): 
   return BigInt(value.amount);
 }
 
-async function submitGuardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, boundState: EconomicState, policy: TransitionPolicy, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
-  const instructions = await guardedDeliveryInstructions({ programId, payer: ctx.payer, recipient, asset, boundState, policy, amount });
+async function submitGuardedDelivery(ctx: DevnetContext, asset: TestAsset, delivery: GuardedDelivery, recipient: Address): Promise<DevnetTransactionEvidence> {
   const before = await tokenBalance(ctx, recipient, asset.mint);
   // Preflight is skipped so a rejected attempt lands on-chain and is verifiable.
-  const outcome = await sendInstructions(ctx, instructions, { skipPreflight: true });
+  const outcome = await sendInstructions(ctx, delivery.instructions, { skipPreflight: true });
   const after = await tokenBalance(ctx, recipient, asset.mint);
   return {
     signature: outcome.signature,
     slot: outcome.slot,
     succeeded: outcome.succeeded,
-    customErrorName: outcome.customError && outcome.customError.instructionIndex === 0 ? equityGuardErrorName(outcome.customError.code) ?? null : null,
+    customErrorName: outcome.customError && outcome.customError.instructionIndex === GUARD_INDEX ? equityGuardErrorName(outcome.customError.code) ?? null : null,
     downstreamBalanceBefore: before,
     downstreamBalanceAfter: after,
     explorerUrl: explorerUrl(ctx.cluster, outcome.signature),
@@ -378,10 +391,12 @@ function requireDevnet(ctx: DevnetContext, programId: Address): void {
  *    `quote` is exactly the planned quote and `comparison` the consented
  *    one; that the executor's policy is exactly the plan's; the verified
  *    devnet context, pinned program and asset (no RPC);
- * 2. mark the plan consumed, before anything is signed;
- * 3. check the plan is still fresh at the current slot;
- * 4. build the guard (state and window) from the plan and submit; the transport re-verifies the
- *    devnet genesis hash immediately before signing.
+ * 2. build the exact delivery from the plan (state, window, amount) and
+ *    require its downstream commitment to equal the planned one (no RPC);
+ * 3. mark the plan consumed, before anything is signed;
+ * 4. check the plan is still fresh at the current slot;
+ * 5. submit; the transport re-verifies the devnet genesis hash immediately
+ *    before signing.
  */
 export async function executeGuardedPlan(
   ctx: DevnetContext,
@@ -403,9 +418,19 @@ export async function executeGuardedPlan(
   if (input.plan.selectedRepresentation.mint !== input.asset.mint || input.plan.economicState.decimals !== input.asset.decimals) {
     throw new DevnetDemoEnvironmentError("execution asset differs from the plan's selected representation");
   }
+  const delivery = await guardedDeliveryInstructions({
+    programId: input.programId,
+    payer: ctx.payer,
+    recipient: input.recipient,
+    asset: input.asset,
+    boundState: input.plan.economicState,
+    policy: input.plan.policy,
+    amount: input.plan.expectedOutputRaw,
+  });
+  assertPlanDownstream(input.plan, delivery.downstream);
   consumeExecutionPlan(input.plan, presented);
   assertPlanFresh(input.plan, await ctx.rpc.getSlot({ commitment: "confirmed" }).send());
-  return submitGuardedDelivery(ctx, input.programId, input.asset, input.plan.economicState, input.plan.policy, input.plan.expectedOutputRaw, input.recipient);
+  return submitGuardedDelivery(ctx, input.asset, delivery, input.recipient);
 }
 
 /** The demo stopped because a safety expectation failed; nothing after this point runs. */
@@ -445,7 +470,8 @@ export async function submitRejectionProbe(
   if (live.state === RepresentationState.SAFE) {
     throw new DevnetDemoAbortError(`${input.asset.label} is currently SAFE (${live.reason}); a rejection probe would deliver tokens, so nothing was submitted`);
   }
-  const evidence = await submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, input.policy, input.amount, input.recipient);
+  const delivery = await guardedDeliveryInstructions({ programId: input.programId, payer: ctx.payer, recipient: input.recipient, asset: input.asset, boundState: input.boundState, policy: input.policy, amount: input.amount });
+  const evidence = await submitGuardedDelivery(ctx, input.asset, delivery, input.recipient);
   if (evidence.succeeded) {
     throw new DevnetDemoAbortError(`rejection probe ${evidence.signature} unexpectedly SUCCEEDED; aborting the demo before any further execution`, evidence);
   }
@@ -495,7 +521,8 @@ export async function runDevnetDemo(
   state: DevnetState,
   options: { readonly preferredLabel: string; readonly alternativeLabel: string; readonly recipient: Address },
 ): Promise<DevnetDemoRun> {
-  const programId = requireDeployment(state).programId;
+  // The deployed program must accept the ABI v2 guards this client builds.
+  const programId = requireGuardAbiV2Deployment(state).programId;
   requireDevnet(ctx, programId);
   const preferredAsset = findAsset(state, options.preferredLabel);
   const alternativeAsset = findAsset(state, options.alternativeLabel);
@@ -536,8 +563,21 @@ export async function runDevnetDemo(
     return { setupTransactions, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }), executionPlan: null, consent: plan.consent };
   }
 
-  // Immutable plan from the EXECUTABLE consented decision: exact quote, route, state and comparison.
-  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION", { currentSlot, freshness: DEVNET_PLAN_FRESHNESS });
+  // The exact action is built first, so the plan can commit to it (ABI v2 downstream commitment).
+  const executableQuote = plan.consentOn.executableQuote;
+  const selectedAsset = executableQuote?.mint === alternativeAsset.mint ? alternativeAsset : preferredAsset;
+  if (!executableQuote || !plan.consentOn.transitionPolicy) throw new DevnetDemoEnvironmentError("executable decision without a quote or policy");
+  const plannedDelivery = await guardedDeliveryInstructions({
+    programId,
+    payer: ctx.payer,
+    recipient: options.recipient,
+    asset: selectedAsset,
+    boundState: executableQuote.state,
+    policy: plan.consentOn.transitionPolicy,
+    amount: executableQuote.outputRaw,
+  });
+  // Immutable plan from the EXECUTABLE consented decision: exact quote, route, state, comparison and action.
+  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION", { currentSlot, freshness: DEVNET_PLAN_FRESHNESS, downstream: plannedDelivery.downstream });
   // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
   // It re-reads live state itself and throws (aborting the run) if it ever succeeds.
   const rejectedPreferredAttempt =
@@ -545,7 +585,7 @@ export async function runDevnetDemo(
       ? await submitRejectionProbe(ctx, { programId, asset: preferredAsset, boundState: plan.comparison.preferredQuote.state, policy: DEVNET_DEMO_POLICY, amount: amountFor(preferredAsset), recipient: options.recipient })
       : null;
   // Execution consumes the plan; the presented quote is the selected route's quote.
-  const selected = executionPlan.selectedRepresentation.mint === alternativeAsset.mint ? { asset: alternativeAsset, route: plan.routes.alternative } : { asset: preferredAsset, route: plan.routes.preferred };
+  const selected = selectedAsset === alternativeAsset ? { asset: alternativeAsset, route: plan.routes.alternative } : { asset: preferredAsset, route: plan.routes.preferred };
   if (!selected.route.quote) throw new DevnetDemoEnvironmentError("selected route has no quote");
   const executed = await executeGuardedPlan(ctx, { programId, plan: executionPlan, quote: selected.route.quote, comparison: plan.comparison, asset: selected.asset, recipient: options.recipient, policy: DEVNET_DEMO_POLICY });
   const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt }, executionPlanDigest: executionPlan.planDigest });

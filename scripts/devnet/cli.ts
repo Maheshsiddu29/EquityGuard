@@ -21,7 +21,7 @@ import {
   TEST_ASSET_DISCLOSURE,
   findAsset,
   loadDevnetState,
-  requireDeployment,
+  requireGuardAbiV2Deployment,
   saveDevnetState,
   type TestAsset,
 } from "./devnet-state.ts";
@@ -141,7 +141,7 @@ async function scenario(
   values: Record<string, string | boolean | undefined>,
 ): Promise<void> {
   const state = await loadDevnetState();
-  const { programId } = requireDeployment(state);
+  const { programId } = requireGuardAbiV2Deployment(state);
   const program = await ctx.rpc.getAccountInfo(programId, { encoding: "base64" }).send();
   if (!program.value?.executable) {
     throw new Error(`program ${programId} is not deployed on this cluster; deploy it first (see the root README)`);

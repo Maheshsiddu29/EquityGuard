@@ -3,7 +3,8 @@
   "deployment": {
     "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
     "deploySignature": "4rc3JcJ7NHg3HmjNsfzmnTDcEXxR7k3gYvgFazJFfZ4chbwBaSU9nxp7P9yepJtxaEPtiGUXgQLHpoAezwtGBWRa",
-    "upgradeAuthority": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT"
+    "upgradeAuthority": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+    "abiVersion": 1
   },
   "assets": [
     {

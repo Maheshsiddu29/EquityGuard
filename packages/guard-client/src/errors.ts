@@ -5,6 +5,7 @@
 export type GuardClientErrorCode =
   | "AccountNotFound"
   | "InvalidClockData"
+  | "InvalidDownstream"
   | "InvalidExpectedState"
   | "InvalidExtensionCombination"
   | "InvalidMintData"
@@ -45,6 +46,16 @@ export const EQUITY_GUARD_ERROR_CODES = {
   InsideTransitionWindow: 13,
   ArithmeticOverflow: 14,
   ClockUnavailable: 15,
+  UnsupportedVersion: 16,
+  MintKeyMismatch: 17,
+  InvalidInstructionsSysvar: 18,
+  MissingDownstreamInstruction: 19,
+  UnsupportedDownstreamProgram: 20,
+  UnsupportedDownstreamInstruction: 21,
+  DownstreamMintMismatch: 22,
+  DownstreamCommitmentMismatch: 23,
+  UnsupportedAdapter: 24,
+  GuardNotTopLevel: 25,
 } as const;
 
 export type EquityGuardErrorName = keyof typeof EQUITY_GUARD_ERROR_CODES;

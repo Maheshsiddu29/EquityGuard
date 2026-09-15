@@ -1,18 +1,24 @@
 /**
- * Real-transaction scenarios against the deployed program. Every guarded
- * transaction is `[assert_safe_execution, system transfer]`; the transfer to a
- * fresh recipient is the observable downstream effect.
+ * Devnet admin scenarios against the deployed program (ABI v2). Every guarded
+ * transaction is `[create recipient ATA, assert_safe_execution v2,
+ * TransferChecked(asset)]`: the committed Token-2022 delivery to a fresh
+ * recipient is the observable downstream effect.
  *
  * All timing decisions use the chain Clock sysvar, never the local clock.
  */
 
-import { generateKeyPairSigner, type Address, type Instruction } from "@solana/kit";
-import { getTransferSolInstruction } from "@solana-program/system";
+import { generateKeyPairSigner, type Address } from "@solana/kit";
 import {
+  TOKEN_2022_PROGRAM_ADDRESS,
+  findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstructionAsync,
+  getTransferCheckedInstruction,
+} from "@solana-program/token-2022";
+import {
+  buildGuardedTransferChecked,
   bytesEqual,
+  expectationFromSnapshot,
   fetchGuardSnapshot,
-  getAssertSafeExecutionInstruction,
-  requestFromSnapshot,
   type AssertSafeExecutionRequest,
   type GuardSnapshot,
   type ProtectionWindow,
@@ -36,8 +42,8 @@ import {
 import { sendInstructions } from "./send.ts";
 import { getScheduleMultiplierInstruction } from "./test-mint.ts";
 
-/** Above the rent-exempt minimum for an empty account, so a fresh recipient can receive it. */
-export const DOWNSTREAM_TRANSFER_LAMPORTS = 1_000_000n;
+/** Raw test-asset units delivered by each guarded TransferChecked. */
+export const DOWNSTREAM_TRANSFER_AMOUNT = 1_000n;
 const CLOCK_POLL_MS = 2_000;
 /**
  * Chain seconds kept between a step's intended region and its boundary.
@@ -60,7 +66,16 @@ export class ScenarioPreconditionError extends Error {
   }
 }
 
-/** Sends `[guard, transfer]` with `request`, records evidence, returns it. */
+/** Guard position in `[create ATA, guard, TransferChecked]`. */
+const GUARD_INDEX = 1;
+
+async function tokenBalance(env: ScenarioEnv, account: Address): Promise<bigint> {
+  const info = await env.ctx.rpc.getAccountInfo(account, { encoding: "base64", commitment: "confirmed" }).send();
+  if (!info.value) return 0n;
+  return BigInt((await env.ctx.rpc.getTokenAccountBalance(account, { commitment: "confirmed" }).send()).value.amount);
+}
+
+/** Sends `[create ATA, guard v2, TransferChecked]` with `request`, records evidence, returns it. */
 async function guardedTransfer(
   env: ScenarioEnv,
   scenario: string,
@@ -69,52 +84,57 @@ async function guardedTransfer(
   request: AssertSafeExecutionRequest,
   expected: ExpectedResult,
 ): Promise<EvidenceRecord> {
-  const { ctx } = env;
+  const { ctx, asset } = env;
   const recipient = (await generateKeyPairSigner()).address;
-  const balance = async () => (await ctx.rpc.getBalance(recipient, { commitment: "confirmed" }).send()).value;
-  const guard = getAssertSafeExecutionInstruction({ programAddress: env.programId, mint: env.asset.mint, request });
-  const transfer: Instruction = getTransferSolInstruction({
-    source: ctx.payer,
-    destination: recipient,
-    amount: DOWNSTREAM_TRANSFER_LAMPORTS,
+  const [source] = await findAssociatedTokenPda({ owner: ctx.payer.address, mint: asset.mint, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS });
+  const [destination] = await findAssociatedTokenPda({ owner: recipient, mint: asset.mint, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS });
+  const guarded = buildGuardedTransferChecked({
+    programAddress: env.programId,
+    feePayer: ctx.payer.address,
+    mint: asset.mint,
+    expectation: request,
+    before: [await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: ctx.payer, owner: recipient, mint: asset.mint })],
+    transferChecked: getTransferCheckedInstruction({ source, mint: asset.mint, destination, authority: ctx.payer, amount: DOWNSTREAM_TRANSFER_AMOUNT, decimals: asset.decimals }),
   });
 
-  const recipientBalanceBefore = await balance();
-  const chainNow = (await fetchGuardSnapshot(ctx.rpc, env.asset.mint)).clock.unixTimestamp;
+  const recipientBalanceBefore = await tokenBalance(env, destination);
+  const chainNow = (await fetchGuardSnapshot(ctx.rpc, asset.mint)).clock.unixTimestamp;
   // Preflight is skipped so expected failures land on-chain and are verifiable by signature.
-  const outcome = await sendInstructions(ctx, [guard, transfer], { skipPreflight: true });
-  const recipientBalanceAfter = await balance();
+  const outcome = await sendInstructions(ctx, guarded.instructions, { skipPreflight: true });
+  const recipientBalanceAfter = await tokenBalance(env, destination);
 
   const expectedResult = describeExpected(expected);
-  const observedResult = describeObserved(outcome);
+  const observedResult = describeObserved(outcome, GUARD_INDEX);
   const record: EvidenceRecord = {
     schemaVersion: EVIDENCE_SCHEMA_VERSION,
     scenario,
     step,
     cluster: ctx.cluster,
     programId: env.programId,
-    mint: env.asset.mint,
-    assetLabel: env.asset.label,
+    mint: asset.mint,
+    assetLabel: asset.label,
     transactionSignature: outcome.signature,
     explorerUrl: explorerUrl(ctx.cluster, outcome.signature),
     slot: outcome.slot,
     blockTime: outcome.blockTime,
     guardSnapshot: snapshotEvidence(snapshot, request),
-    instructionDataHex: toHex(Uint8Array.from(guard.data ?? [])),
+    instructionDataHex: toHex(Uint8Array.from(guarded.guard.data ?? [])),
     chainUnixTimestampBeforeSend: chainNow,
     expectedResult,
     observedResult,
     customError: customErrorEvidence(outcome),
-    // A failure only counts if the downstream transfer also did not settle.
+    // A failure only counts if the downstream delivery (and the ATA creation) also did not settle.
     matchedExpectation:
       expectedResult === observedResult &&
       (outcome.succeeded
-        ? recipientBalanceAfter === recipientBalanceBefore + DOWNSTREAM_TRANSFER_LAMPORTS
+        ? recipientBalanceAfter === recipientBalanceBefore + DOWNSTREAM_TRANSFER_AMOUNT
         : recipientBalanceAfter === recipientBalanceBefore),
     downstream: {
-      instruction: "system transfer",
+      instruction: "token-2022 transferChecked",
       recipient,
-      lamports: DOWNSTREAM_TRANSFER_LAMPORTS,
+      destination,
+      amount: DOWNSTREAM_TRANSFER_AMOUNT,
+      commitmentHex: toHex(guarded.commitment),
       recipientBalanceBefore,
       recipientBalanceAfter,
     },
@@ -132,7 +152,7 @@ async function guardedTransfer(
 /** SAFE: a fresh snapshot executes and the transfer settles. */
 export async function runSafe(env: ScenarioEnv, window: ProtectionWindow): Promise<EvidenceRecord[]> {
   const snapshot = await fetchGuardSnapshot(env.ctx.rpc, env.asset.mint);
-  return [await guardedTransfer(env, "safe", "fresh-snapshot", snapshot, requestFromSnapshot(snapshot, window), "success")];
+  return [await guardedTransfer(env, "safe", "fresh-snapshot", snapshot, expectationFromSnapshot(snapshot, window), "success")];
 }
 
 /**
@@ -142,7 +162,7 @@ export async function runSafe(env: ScenarioEnv, window: ProtectionWindow): Promi
 export async function runStale(env: ScenarioEnv, window: ProtectionWindow): Promise<EvidenceRecord[]> {
   const { ctx, asset } = env;
   const stale = await fetchGuardSnapshot(ctx.rpc, asset.mint);
-  const staleRequest = requestFromSnapshot(stale, window);
+  const staleRequest = expectationFromSnapshot(stale, window);
 
   const effective = stale.phase === 0 ? stale.state.multiplier : stale.state.newMultiplier;
   const newMultiplier = readF64(effective) + 0.25;
@@ -159,7 +179,7 @@ export async function runStale(env: ScenarioEnv, window: ProtectionWindow): Prom
 
   return [
     await guardedTransfer(env, "stale", "stale-snapshot", stale, staleRequest, { guardError: expectedError }),
-    await guardedTransfer(env, "stale", "fresh-snapshot", changed, requestFromSnapshot(changed, window), "success"),
+    await guardedTransfer(env, "stale", "fresh-snapshot", changed, expectationFromSnapshot(changed, window), "success"),
   ];
 }
 
@@ -201,7 +221,7 @@ export async function runTransition(
     throw new ScenarioPreconditionError("expected a pending scheduled change after scheduling");
   }
   // This exact payload is replayed in every pending step below.
-  const pendingRequest = requestFromSnapshot(pending, window);
+  const pendingRequest = expectationFromSnapshot(pending, window);
   const records: EvidenceRecord[] = [];
 
   const beforeWindowDeadline = activation - before - LANDING_MARGIN_SECS;
@@ -235,7 +255,7 @@ export async function runTransition(
       "transition",
       "fresh-activated-snapshot",
       activated,
-      requestFromSnapshot(activated, window),
+      expectationFromSnapshot(activated, window),
       "success",
     ),
   );

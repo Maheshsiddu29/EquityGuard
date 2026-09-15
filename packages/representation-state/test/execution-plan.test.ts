@@ -81,10 +81,13 @@ function reroute(consent = true, alternativeRouteQuote?: NormalizedQuote) {
 
 const codes = (expected: NormalizedQuote, actual: NormalizedQuote): QuoteMismatchCode[] => quoteMismatches(expected, actual).map((m) => m.code);
 
+/** A stand-in downstream binding; the on-chain commitment is exercised in Rust/LiteSVM. */
+const TEST_DOWNSTREAM = { adapterKind: "TOKEN_2022_TRANSFER_CHECKED" as const, commitmentHex: "a".repeat(64) };
+
 test("1. an identical quote identity is accepted, including a structurally cloned copy", () => {
   const { alternativeQuote, comparison, decision } = reroute();
   assert.deepEqual(codes(alternativeQuote, structuredClone(alternativeQuote)), []);
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   assert.doesNotThrow(() => verifyExecutionPlan(plan, { quote: structuredClone(alternativeQuote), comparison: structuredClone(comparison) }));
   // The issuer label is not part of the identity.
   assert.deepEqual(codes(alternativeQuote, { ...alternativeQuote, issuer: "xStocks" }), []);
@@ -92,7 +95,7 @@ test("1. an identical quote identity is accepted, including a structurally clone
 
 test("2-8. each substituted field is rejected with a precise code", () => {
   const { alternative, alternativeQuote: q, comparison, decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   const phaseChanged = { ...q, state: { ...q.state, phase: q.state.phase === 0 ? 1 : 0 } } as NormalizedQuote;
   const cases: [string, NormalizedQuote, QuoteMismatchCode[]][] = [
     ["2. outputRaw", { ...q, outputRaw: q.outputRaw + 1n }, ["OUTPUT_AMOUNT_CHANGED"]],
@@ -127,26 +130,26 @@ test("8. a comparison whose quote state went stale by phase is not executable", 
   const comparison = compareQuotes(quote(before, 5_450_395n), quote(alternative, KOON_OUT));
   const decision = decideExecution({ preferred: at, alternative, reroutePolicy: POLICY, consent: null, currentSlot: SLOT, inputRaw: INPUT_RAW, comparison, routes: { preferred: null, alternative: route(comparison.alternativeQuote as NormalizedQuote) } });
   assert.equal(decision.executionEligibility, ExecutionEligibility.STALE_COMPARISON);
-  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("9. an execution plan is only created from an EXECUTABLE decision", () => {
   const consentOff = reroute(false).decision;
   assert.equal(consentOff.executionEligibility, ExecutionEligibility.CONSENT_REQUIRED);
-  assert.throws(() => createExecutionPlan(consentOff, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(consentOff, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
   const forged = { ...reroute().decision, executableQuote: null };
-  assert.throws(() => createExecutionPlan(forged, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(forged, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("10. a MAINNET_OBSERVATION environment can never produce a submit-capable plan", () => {
   const { decision } = reroute();
   assert.equal(decision.executionEligibility, ExecutionEligibility.EXECUTABLE);
-  assert.throws(() => createExecutionPlan(decision, "MAINNET_OBSERVATION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "OBSERVATION_ONLY_ENVIRONMENT");
+  assert.throws(() => createExecutionPlan(decision, "MAINNET_OBSERVATION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "OBSERVATION_ONLY_ENVIRONMENT");
 });
 
 test("11. the plan pins exactly the decision's quote, route, state and notional, and cannot be altered", () => {
   const { alternativeQuote, comparison, decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   assert.deepEqual(
     [plan.selectedRepresentation.mint, plan.inputRaw, plan.expectedOutputRaw, plan.minOutputRaw, plan.route, plan.economicState, plan.decision, plan.executionEligibility],
     [KOON.mint, INPUT_RAW, KOON_OUT, KOON_OUT - 1_000n, alternativeQuote.route, alternativeQuote.state, Decision.USE_ALTERNATIVE, "EXECUTABLE"],
@@ -176,14 +179,14 @@ test("12. a substituted route quote is not executable and cannot produce a plan"
   const { decision } = reroute(true, substitute);
   assert.deepEqual([decision.stateDecision.decision, decision.executionEligibility], [Decision.USE_ALTERNATIVE, ExecutionEligibility.QUOTE_MISMATCH]);
   assert.deepEqual(decision.quoteMismatches.map((m) => m.code), ["OUTPUT_AMOUNT_CHANGED", "VENUE_CHANGED", "ROUTE_CHANGED"]);
-  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("13. consent stays bound to the same disclosure and comparison", () => {
   const off = reroute(false);
   const on = reroute(true);
   assert.deepEqual(off.decision.stateDecision.disclosure, on.decision.stateDecision.disclosure);
-  const plan = createExecutionPlan(on.decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(on.decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   assert.equal(plan.comparisonKey, on.comparison.comparisonKey);
   assert.equal(plan.disclosure?.comparisonKey, on.comparison.comparisonKey);
   // Another comparison (different alternative output) is not the one consent was given to.
@@ -194,14 +197,14 @@ test("13. consent stays bound to the same disclosure and comparison", () => {
   assert.equal(compareQuotes(on.preferredQuote, on.alternativeQuote).comparisonKey, on.comparison.comparisonKey);
   // A decision whose disclosure describes another comparison cannot be planned.
   const mismatched = { ...on.decision, stateDecision: { ...on.decision.stateDecision, disclosure: { ...on.decision.stateDecision.disclosure!, comparisonKey: other.comparisonKey } } };
-  assert.throws(() => createExecutionPlan(mismatched, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "DISCLOSURE_NOT_FOR_COMPARISON");
+  assert.throws(() => createExecutionPlan(mismatched, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "DISCLOSURE_NOT_FOR_COMPARISON");
 });
 
 test("a SAFE preferred plan has no comparison and binds the preferred route quote", () => {
   const preferred = koon(TRANSITION_TIME);
   const q = quote(preferred, 5_000_000n);
   const decision = decideExecution({ preferred, alternative: null, reroutePolicy: POLICY, consent: null, currentSlot: SLOT, inputRaw: INPUT_RAW, comparison: null, routes: { preferred: route(q), alternative: null } });
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   assert.deepEqual([plan.decision, plan.comparisonKey, plan.disclosure, plan.expectedOutputRaw], [Decision.USE_PREFERRED, null, null, 5_000_000n]);
   assert.doesNotThrow(() => verifyExecutionPlan(plan, { quote: q, comparison: null }));
   assert.throws(() => verifyExecutionPlan(plan, { quote: { ...q, outputRaw: 1n }, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");
@@ -209,7 +212,7 @@ test("a SAFE preferred plan has no comparison and binds the preferred route quot
 
 test("M01: only createExecutionPlan issues plans; forged, copied and deserialized plans are refused", () => {
   const { alternativeQuote, comparison, decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   const presented = { quote: alternativeQuote, comparison };
   const { planDigest: _digest, ...content } = plan;
   const forgedContent = { ...content, expectedOutputRaw: 999_999_999n, quote: { ...content.quote, outputRaw: 999_999_999n } };
@@ -229,7 +232,7 @@ test("M01: only createExecutionPlan issues plans; forged, copied and deserialize
 
 test("M01: nested plan content is frozen", () => {
   const { decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   const mutations: [string, () => void][] = [
     ["quote.outputRaw", () => ((plan.quote as { outputRaw: bigint }).outputRaw = 1n)],
     ["economicState.multiplierHex", () => ((plan.economicState as { multiplierHex: string }).multiplierHex = "000000000000f03f")],
@@ -243,7 +246,7 @@ test("M01: nested plan content is frozen", () => {
 
 test("M03 / planDigest: plans are single-use, expire at a slot, and carry a SHA-256 commitment", () => {
   const { alternativeQuote, comparison, decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   const presented = { quote: alternativeQuote, comparison };
   const { planDigest, ...content } = plan;
   assert.match(planDigest, /^[0-9a-f]{64}$/);
@@ -257,13 +260,13 @@ test("M03 / planDigest: plans are single-use, expire at a slot, and carry a SHA-
   // Freshness must be explicit.
   for (const freshness of [undefined, { validForSlots: 0n }, { validForSlots: 100 }]) {
     const { decision: d } = reroute();
-    assert.throws(() => createExecutionPlan(d, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness } as never), (e) => e instanceof ExecutionPlanError && e.code === "INVALID_FRESHNESS");
+    assert.throws(() => createExecutionPlan(d, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness, downstream: TEST_DOWNSTREAM } as never), (e) => e instanceof ExecutionPlanError && e.code === "INVALID_FRESHNESS");
   }
   // Same content, same digest: two USE_PREFERRED plans from one decision at one slot.
   const preferred = koon(TRANSITION_TIME);
   const q = quote(preferred, 5_000_000n);
   const direct = decideExecution({ preferred, alternative: null, reroutePolicy: POLICY, inputRaw: INPUT_RAW, comparison: null, routes: { preferred: route(q), alternative: null }, consent: null, currentSlot: SLOT });
-  const options = { currentSlot: SLOT, freshness: { validForSlots: 100n } };
+  const options = { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM };
   assert.equal(createExecutionPlan(direct, "DEVNET_EXECUTION", options).planDigest, createExecutionPlan(direct, "DEVNET_EXECUTION", options).planDigest);
 });
 

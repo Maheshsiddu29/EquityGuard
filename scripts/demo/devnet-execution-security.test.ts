@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { address, generateKeyPairSigner, getBase64Encoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, type Address } from "@solana/kit";
+import { address, generateKeyPairSigner, getBase64Encoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, type Address, type TransactionSigner } from "@solana/kit";
 import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
 import { ExecutionPlanError, createExecutionPlan, type ChainObservation, type TransitionPolicy } from "@equityguard/representation-state";
 
@@ -19,6 +19,7 @@ import {
   DEVNET_DEMO_REROUTE_POLICY,
   DEVNET_PLAN_FRESHNESS,
   DevnetDemoAbortError,
+  guardedDeliveryInstructions,
   executeGuardedPlan,
   loadDevnetQuoteFixture,
   planDevnetDemo,
@@ -48,7 +49,7 @@ function observation(mint: string, multiplier: number, newMultiplier: number, t:
   };
 }
 
-function consentedPlan(policy: TransitionPolicy = DEVNET_DEMO_POLICY) {
+async function consentedPlan(payer: TransactionSigner, recipient: Address, policy: TransitionPolicy = DEVNET_DEMO_POLICY) {
   const p = planDevnetDemo({
     preferredAsset: EQ_A,
     alternativeAsset: EQ_B,
@@ -60,8 +61,11 @@ function consentedPlan(policy: TransitionPolicy = DEVNET_DEMO_POLICY) {
     currentSlot: SLOT,
     userConsent: DEVNET_DEMO_CONSENT,
   });
-  const plan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: DEVNET_PLAN_FRESHNESS });
-  return { p, plan };
+  // The plan commits to the exact delivery the executor will rebuild.
+  const quote = p.consentOn.executableQuote!;
+  const delivery = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, boundState: quote.state, policy, amount: quote.outputRaw });
+  const plan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: DEVNET_PLAN_FRESHNESS, downstream: delivery.downstream });
+  return { p, plan, delivery };
 }
 
 /** A devnet RPC that lets one guarded delivery land successfully at `slot`. */
@@ -106,10 +110,12 @@ async function withDevnet(handler: Parameters<typeof startFakeRpc>[0], body: (ct
   }
 }
 
+
 test("M03: a plan executes once; the second attempt fails before any RPC or signing", async () => {
   await withDevnet(successfulDevnet(() => SLOT + 1n), async (ctx, rpc) => {
-    const { p, plan } = consentedPlan();
-    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: DEVNET_DEMO_POLICY };
+    const recipient = (await generateKeyPairSigner()).address;
+    const { p, plan } = await consentedPlan(ctx.payer, recipient);
+    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient, policy: DEVNET_DEMO_POLICY };
     const first = await executeGuardedPlan(ctx, input);
     assert.equal(first.succeeded, true);
     assert.equal(rpc.calls.filter((c) => c === "sendTransaction").length, 1);
@@ -121,8 +127,9 @@ test("M03: a plan executes once; the second attempt fails before any RPC or sign
 
 test("M03: an expired plan is consumed and refused before signing", async () => {
   await withDevnet(successfulDevnet(() => SLOT + DEVNET_PLAN_FRESHNESS.validForSlots + 1n), async (ctx, rpc) => {
-    const { p, plan } = consentedPlan();
-    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: DEVNET_DEMO_POLICY };
+    const recipient = (await generateKeyPairSigner()).address;
+    const { p, plan } = await consentedPlan(ctx.payer, recipient);
+    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient, policy: DEVNET_DEMO_POLICY };
     await assert.rejects(executeGuardedPlan(ctx, input), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_EXPIRED");
     assert.deepEqual(rpc.calls, ["getSlot"]);
     // Burned: it cannot be retried later either.
@@ -130,7 +137,7 @@ test("M03: an expired plan is consumed and refused before signing", async () => 
   });
 });
 
-/** The ABI v1 protection window (before, after) of the guard instruction in a submitted wire transaction. */
+/** The ABI v2 protection window (before, after) of the guard instruction in a submitted wire transaction. */
 function submittedGuardWindow(rpc: FakeRpc, programId: Address): [number, number] {
   const index = rpc.calls.indexOf("sendTransaction");
   const wire = Uint8Array.from(getBase64Encoder().encode(rpc.params[index]?.[0] as string));
@@ -141,14 +148,15 @@ function submittedGuardWindow(rpc: FakeRpc, programId: Address): [number, number
   const guard = message.instructions.find((i) => message.staticAccounts[i.programAddressIndex] === programId);
   assert.ok(guard?.data);
   const view = new DataView(Uint8Array.from(guard.data).buffer);
-  return [view.getUint32(26, true), view.getUint32(30, true)];
+  return [view.getUint32(58, true), view.getUint32(62, true)];
 }
 
 test("M04: execution refuses an executor policy different from the plan's, before RPC and without consuming it", async () => {
   await withDevnet(successfulDevnet(() => SLOT + 1n), async (ctx, rpc) => {
-    const { p, plan } = consentedPlan();
+    const recipient = (await generateKeyPairSigner()).address;
+    const { p, plan } = await consentedPlan(ctx.payer, recipient);
     assert.deepEqual(plan.policy, DEVNET_DEMO_POLICY);
-    const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address };
+    const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient };
     const others: TransitionPolicy[] = [
       { ...DEVNET_DEMO_POLICY, afterSecs: 0n },
       { ...DEVNET_DEMO_POLICY, beforeSecs: 60n },
@@ -165,9 +173,10 @@ test("M04: execution refuses an executor policy different from the plan's, befor
 test("M04: the submitted guard window is the plan's policy, not a module default", async () => {
   const custom: TransitionPolicy = { beforeSecs: 1_200n, afterSecs: 60n, calibration: "UNCALIBRATED", basis: "test policy distinct from the demo default" };
   await withDevnet(successfulDevnet(() => SLOT + 1n), async (ctx, rpc) => {
-    const { p, plan } = consentedPlan(custom);
+    const recipient = (await generateKeyPairSigner()).address;
+    const { p, plan } = await consentedPlan(ctx.payer, recipient, custom);
     assert.deepEqual(plan.policy, custom);
-    await executeGuardedPlan(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: custom });
+    await executeGuardedPlan(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient, policy: custom });
     assert.deepEqual(submittedGuardWindow(rpc, EQUITY_GUARD_DEVNET_PROGRAM_ID), [1_200, 60]);
   });
 });
@@ -224,7 +233,8 @@ function demoDevnet(outcomes: readonly ("ok" | "guard-rejected")[], eqa = { mult
       case "getSignatureStatuses":
         return { context: { slot: 2 }, value: [{ slot: 2, confirmations: 1, err: null, confirmationStatus: "confirmed" }] };
       case "getTransaction": {
-        const err = outcomes[index] === "guard-rejected" ? { InstructionError: [0, { Custom: 13 }] } : null;
+        // The guard sits at index 1 in `[create ATA, guard, TransferChecked]`.
+        const err = outcomes[index] === "guard-rejected" ? { InstructionError: [1, { Custom: 13 }] } : null;
         return { slot: 2 + index, blockTime: 3, meta: { err, logMessages: [] }, transaction: {} };
       }
       default:
@@ -235,7 +245,7 @@ function demoDevnet(outcomes: readonly ("ok" | "guard-rejected")[], eqa = { mult
 
 const DEMO_STATE = {
   cluster: "devnet" as const,
-  deployment: { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, deploySignature: "sig", upgradeAuthority: address("JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT") },
+  deployment: { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, deploySignature: "sig", upgradeAuthority: address("JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT"), abiVersion: 2 as const },
   assets: [EQ_A, EQ_B],
 };
 
