@@ -72,7 +72,7 @@ test("scenario A: KOx transition with an unroutable KOon alternative is UNKNOWN_
     ["KOx", "TRANSITION", "KOon", "SAFE", "UNKNOWN_STATE", "ALTERNATIVE_QUOTE_UNAVAILABLE"],
   );
   assert.deepEqual([a.result.quoteAvailability.preferred, a.result.quoteAvailability.alternative], ["AVAILABLE", "UNAVAILABLE"]);
-  assert.equal(a.result.conservativeCostDeltaBps, undefined);
+  assert.equal(a.result.additionalCostBps, undefined);
   assert.deepEqual([a.result.executionEligibility, a.result.selectedRepresentation, a.result.quoteAvailable], ["ROUTE_UNAVAILABLE", null, false]);
 });
 

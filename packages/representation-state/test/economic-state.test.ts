@@ -57,13 +57,13 @@ function comparisonFor(preferred: ResolvedRepresentationState, alternative: Reso
     assert.ok(state);
     return { ...TEST_QUOTE_CONTEXT, underlying: r.underlying, issuer: r.issuer, mint: r.mint, inputRaw, outputRaw, state };
   };
-  return compareQuotes(quote(preferred, 5_450_395n), quote(alternative, 54_153_839n), { toleranceBps: 25n });
+  return compareQuotes(quote(preferred, 5_450_395n), quote(alternative, 54_153_839n));
 }
 
 /** The decision a bound comparison authorizes when the preferred side is unsafe. */
 function decideWith(comparison: QuoteComparison, preferred: ResolvedRepresentationState, alternative: ResolvedRepresentationState, inputRaw = INPUT_RAW) {
   const unsafe = { ...preferred, state: RepresentationState.TRANSITION, reason: "test: unsafe preferred" };
-  return decide({ preferred: unsafe, alternative, reroutePolicy: { maxCostBps: 25n }, inputRaw, comparison });
+  return decide({ preferred: unsafe, alternative, reroutePolicy: { maxAdditionalCostBps: 25n }, inputRaw, comparison });
 }
 
 test("binding is exact values, independent of slot and observation time", () => {
@@ -163,6 +163,6 @@ test("14. a valid binding never rescues PAUSED, UNKNOWN or conflicting states", 
     const result = decideWith(comparison, built.kox, alternative);
     assert.deepEqual([result.decision, result.reasonCode], [decision, reasonCode]);
   }
-  const unknownPreferred = decide({ preferred: { ...built.kox, state: RepresentationState.UNKNOWN }, alternative: built.koon, reroutePolicy: { maxCostBps: 25n }, inputRaw: INPUT_RAW, comparison });
+  const unknownPreferred = decide({ preferred: { ...built.kox, state: RepresentationState.UNKNOWN }, alternative: built.koon, reroutePolicy: { maxAdditionalCostBps: 25n }, inputRaw: INPUT_RAW, comparison });
   assert.deepEqual([unknownPreferred.decision, unknownPreferred.reasonCode], [Decision.UNKNOWN_STATE, "PREFERRED_STATE_UNKNOWN"]);
 });

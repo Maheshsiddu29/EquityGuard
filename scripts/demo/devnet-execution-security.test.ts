@@ -244,7 +244,7 @@ test("M02: the product path runs setup, consent, a single plan, the probe and ex
     const run = await runDevnetDemo(ctx, DEMO_STATE, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient: (await generateKeyPairSigner()).address });
     assert.equal(rpc.calls.filter((c) => c === "sendTransaction").length, 3);
     assert.deepEqual([run.consentOff.executionEligibility, run.consentOn.executionEligibility], ["CONSENT_REQUIRED", "EXECUTABLE"]);
-    assert.deepEqual([run.consentOn.preferredSharesEquivalent, run.consentOn.alternativeSharesEquivalent, run.consentOn.conservativeCostDeltaBps], ["6.000000000000", "5.990000000000", 17n]);
+    assert.deepEqual([run.consentOn.preferredSharesEquivalent, run.consentOn.alternativeSharesEquivalent, run.consentOn.additionalCostBps], ["6.000000000000", "5.990000000000", 17n]);
     assert.equal(run.consentOn.execution?.rejectedPreferredAttempt?.customErrorName, "InsideTransitionWindow");
     assert.equal(run.consentOn.executionPlanDigest, run.executionPlan?.planDigest);
     assert.ok(run.consent && run.executionPlan && run.executionPlan.consentId === run.consent.consentId);

@@ -17,7 +17,7 @@
 
 import type { NormalizedQuote, QuoteComparison } from "./compare.ts";
 import { consentIssues, type ConsentIssue, type ConsentRecord } from "./consent.ts";
-import { Decision, decide, outsideTolerance, type DecisionInput, type DecisionResult, type RepresentationSummary } from "./decision.ts";
+import { Decision, decide, exceedsCostLimit, type DecisionInput, type DecisionResult, type RepresentationSummary } from "./decision.ts";
 import { economicStateMismatches, economicStateOf } from "./economic-state.ts";
 import { quoteIdentityOf, quoteMismatches, type QuoteIdentity, type QuoteMismatch } from "./quote-identity.ts";
 import { canonicalKey } from "./quote-identity.ts";
@@ -40,7 +40,7 @@ export const ExecutionEligibility = {
   CONSENT_INVALID: "CONSENT_INVALID",
   /** The transition policy that classified the selected state is missing or differs between representations. */
   POLICY_MISMATCH: "POLICY_MISMATCH",
-  /** A SAFE, quoted alternative exists but is outside the hard reroute tolerance. */
+  /** A SAFE, quoted alternative exists but costs more than the reroute policy's maximum additional cost. */
   ALTERNATIVE_OUTSIDE_TOLERANCE: "ALTERNATIVE_OUTSIDE_TOLERANCE",
   /** A quote or comparison was built against a different economic state. */
   STALE_COMPARISON: "STALE_COMPARISON",
@@ -142,7 +142,7 @@ function applyConsent(base: DecisionResult, input: ExecutionInput): { stateDecis
       ...base,
       decision: Decision.USE_ALTERNATIVE,
       reasonCode: "CONSENT_GIVEN",
-      reason: `${base.reason}; consent ${consent.consentId.slice(0, 12)}… accepts this exact disclosure (${consent.costBps} bps, max ${consent.maxCostBps} bps, until slot ${consent.expiresAtSlot})`,
+      reason: `${base.reason}; consent ${consent.consentId.slice(0, 12)}… accepts this exact disclosure (${consent.additionalCostBps} bps, max ${consent.maxAdditionalCostBps} bps, until slot ${consent.expiresAtSlot})`,
     },
     consent,
     issues: [],
@@ -219,9 +219,9 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       if (!alternativeRoute.quote) {
         return result(ExecutionEligibility.QUOTE_UNAVAILABLE, `${chosen.symbol} is routable but the route carries no quote to execute`, { selectedRepresentation, selectedRouteAvailable: true });
       }
-      // Defense in depth: the hard tolerance and the accepted maximum still hold.
+      // Defense in depth: the one-sided policy limit and the accepted maximum still hold.
       const consent = applied.consent as ConsentRecord;
-      const outside = outsideTolerance(comparison, input.reroutePolicy) ?? (comparison.conservativeCostDeltaBps > consent.maxCostBps ? "cost above the accepted maximum" : null);
+      const outside = exceedsCostLimit(comparison, input.reroutePolicy) ?? (comparison.additionalCostBps > consent.maxAdditionalCostBps ? "cost above the accepted maximum" : null);
       if (outside) {
         return result(ExecutionEligibility.ALTERNATIVE_OUTSIDE_TOLERANCE, `${chosen.symbol}: ${outside}`, { selectedRepresentation, quoteAvailable: true });
       }

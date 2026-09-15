@@ -1,6 +1,6 @@
 /**
  * EG-SEC-H02: consent is an opaque, single-use, expiring record for ONE exact
- * disclosure, and the reroute tolerance is a hard bound consent cannot lift.
+ * disclosure, and the one-sided reroute cost limit is a hard bound consent cannot lift.
  */
 
 import assert from "node:assert/strict";
@@ -35,7 +35,7 @@ const T = 1_789_432_200n;
 const NOW = T - 14n;
 const INPUT_RAW = 5_000_000n;
 const SLOT = 1_000n;
-const POLICY = { maxCostBps: 25n };
+const POLICY = { maxAdditionalCostBps: 25n };
 const KOX_OUT = 5_450_395n;
 /** About 10 bps below KOX_OUT in share-equivalents (KOx 8 decimals, KOon 9). */
 const KOON_OUT = 54_153_839n;
@@ -57,11 +57,11 @@ interface Trade {
   alternativeQuote: NormalizedQuote;
   inputRaw: bigint;
 }
-function trade(overrides: { koxOut?: bigint; koonOut?: bigint; alternative?: ResolvedRepresentationState; altQuote?: Partial<NormalizedQuote>; inputRaw?: bigint; policy?: { maxCostBps: bigint } } = {}): Trade {
+function trade(overrides: { koxOut?: bigint; koonOut?: bigint; alternative?: ResolvedRepresentationState; altQuote?: Partial<NormalizedQuote>; inputRaw?: bigint; policy?: { maxAdditionalCostBps: bigint } } = {}): Trade {
   const alternative = overrides.alternative ?? koon();
   const inputRaw = overrides.inputRaw ?? INPUT_RAW;
   const alternativeQuote = quote(alternative, overrides.koonOut ?? KOON_OUT, { inputRaw, ...overrides.altQuote });
-  const comparison = compareQuotes(quote(kox, overrides.koxOut ?? KOX_OUT, { inputRaw }), alternativeQuote, { toleranceBps: (overrides.policy ?? POLICY).maxCostBps });
+  const comparison = compareQuotes(quote(kox, overrides.koxOut ?? KOX_OUT, { inputRaw }), alternativeQuote);
   return { alternative, comparison, alternativeQuote, inputRaw };
 }
 function evaluate(t: Trade, consent: ConsentRecord | null, currentSlot = SLOT, policy = POLICY) {
@@ -76,18 +76,18 @@ function evaluate(t: Trade, consent: ConsentRecord | null, currentSlot = SLOT, p
     currentSlot,
   });
 }
-function consentFor(t: Trade, maxCostBps = 20n, validForSlots = 10n): ConsentRecord {
+function consentFor(t: Trade, maxAdditionalCostBps = 20n, validForSlots = 10n): ConsentRecord {
   const off = evaluate(t, null);
   assert.equal(off.stateDecision.decision, Decision.REQUIRES_CONSENT);
-  return grantConsent({ decision: off.stateDecision, comparison: t.comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxCostBps, validForSlots });
+  return grantConsent({ decision: off.stateDecision, comparison: t.comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxAdditionalCostBps, validForSlots });
 }
 const issues = (d: ReturnType<typeof evaluate>): string[] => d.consentIssues.map((i) => i.code);
 
 test("exact consent to the shown disclosure authorizes the reroute", () => {
   const t = trade();
   const consent = consentFor(t);
-  assert.equal(consent.costBps, t.comparison.conservativeCostDeltaBps);
-  assert.ok(consent.costBps > 0n && consent.costBps <= 20n);
+  assert.equal(consent.additionalCostBps, t.comparison.additionalCostBps);
+  assert.ok(consent.additionalCostBps > 0n && consent.additionalCostBps <= 20n);
   assert.ok(Object.isFrozen(consent));
   assert.match(consent.consentId, /^[0-9a-f]{64}$/);
   const d = evaluate(t, consent);
@@ -123,23 +123,23 @@ test("consent for comparison A never authorizes comparison B (amount, route, sta
   }
 });
 
-test("the hard tolerance is enforced before consent: 10,000 bps, zero output and above-policy cost are never offered", () => {
+test("the hard cost limit is enforced before consent: 10,000 bps, zero output and above-policy cost are never offered", () => {
   const cases: [string, Trade][] = [
     ["alternative delivers 1 raw unit (10,000 bps)", trade({ koonOut: 1n })],
     ["alternative delivers nothing", trade({ koonOut: 0n })],
-    ["cost above the 5 bps policy", trade({ policy: { maxCostBps: 5n } })],
+    ["cost above the 5 bps policy", trade({ policy: { maxAdditionalCostBps: 5n } })],
   ];
   for (const [label, t] of cases) {
-    const policy = label.includes("5 bps") ? { maxCostBps: 5n } : POLICY;
+    const policy = label.includes("5 bps") ? { maxAdditionalCostBps: 5n } : POLICY;
     const d = evaluate(t, null, SLOT, policy);
     assert.deepEqual([d.stateDecision.decision, d.stateDecision.reasonCode, d.executionEligibility], [Decision.NO_ACCEPTABLE_ROUTE, "ALTERNATIVE_OUTSIDE_TOLERANCE", ExecutionEligibility.ALTERNATIVE_OUTSIDE_TOLERANCE], label);
-    assert.throws(() => grantConsent({ decision: d.stateDecision, comparison: t.comparison, reroutePolicy: policy, currentSlot: SLOT, maxCostBps: 10_000n, validForSlots: 10n }), (e) => e instanceof ConsentError && e.issues[0]?.code === "NOT_A_CONSENT_DECISION", label);
+    assert.throws(() => grantConsent({ decision: d.stateDecision, comparison: t.comparison, reroutePolicy: policy, currentSlot: SLOT, maxAdditionalCostBps: 10_000n, validForSlots: 10n }), (e) => e instanceof ConsentError && e.issues[0]?.code === "NOT_A_CONSENT_DECISION", label);
   }
 });
 
 test("consent cannot accept a cost above the user's own maximum", () => {
   const t = trade();
-  assert.throws(() => consentFor(t, t.comparison.conservativeCostDeltaBps - 1n), (e) => e instanceof ConsentError && e.issues.some((i) => i.code === "COST_ABOVE_ACCEPTED_MAX"));
+  assert.throws(() => consentFor(t, t.comparison.additionalCostBps - 1n), (e) => e instanceof ConsentError && e.issues.some((i) => i.code === "COST_ABOVE_ACCEPTED_MAX"));
 });
 
 test("consent expires at its slot", () => {

@@ -51,7 +51,7 @@ function executionOf(resolved: ResolvedRepresentationState) {
   return decideExecution({
     preferred: resolved,
     alternative: null,
-    reroutePolicy: { maxCostBps: 25n },
+    reroutePolicy: { maxAdditionalCostBps: 25n },
     inputRaw: 1n,
     comparison: null,
     routes: { preferred: { mint: KOON.mint, status: "AVAILABLE", quote, source: "test", detail: null }, alternative: null },

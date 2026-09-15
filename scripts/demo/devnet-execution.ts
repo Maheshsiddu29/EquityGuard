@@ -85,16 +85,16 @@ export const DEVNET_DEMO_POLICY: TransitionPolicy = {
   basis: "M6 devnet demo policy (15 min before / 5 min after T); not an issuer policy",
 };
 /**
- * Devnet demo reroute policy: the hard cost bound (integrator tolerance). The
- * comparison is computed with exactly this tolerance.
+ * Devnet demo reroute policy: the hard one-sided bound on the additional
+ * economic cost of switching (a better alternative always passes it).
  */
-export const DEVNET_DEMO_REROUTE_POLICY = { maxCostBps: 25n } as const;
+export const DEVNET_DEMO_REROUTE_POLICY = { maxAdditionalCostBps: 25n } as const;
 /**
  * The demo user's acceptance of the one disclosure the run shows: at most
- * 20 bps, valid for 150 slots (about a minute). Explicit demo values, not a
+ * 20 bps additional cost, valid for 150 slots (about a minute). Explicit demo values, not a
  * standing preference.
  */
-export const DEVNET_DEMO_CONSENT = { maxCostBps: 20n, validForSlots: 150n } as const;
+export const DEVNET_DEMO_CONSENT = { maxAdditionalCostBps: 20n, validForSlots: 150n } as const;
 /** Devnet executor freshness: a plan may be signed at most 150 slots (about a minute) after it was created. */
 export const DEVNET_PLAN_FRESHNESS: PlanFreshnessPolicy = { validForSlots: 150n };
 /** Seconds ahead of chain time for the preferred asset's scheduled change; inside `beforeSecs`. */
@@ -214,9 +214,9 @@ export function planDevnetDemo(input: {
   readonly alternativeEvidence: ChainEvidence;
   readonly fixture: DevnetDemoQuoteFixture;
   readonly policy: TransitionPolicy;
-  readonly reroutePolicy: { readonly maxCostBps: bigint };
+  readonly reroutePolicy: { readonly maxAdditionalCostBps: bigint };
   readonly currentSlot: bigint;
-  readonly userConsent: { readonly maxCostBps: bigint; readonly validForSlots: bigint } | null;
+  readonly userConsent: { readonly maxAdditionalCostBps: bigint; readonly validForSlots: bigint } | null;
 }): DevnetDemoPlan {
   const { fixture, policy, reroutePolicy, currentSlot } = input;
   const preferred = resolveDevnetAsset(input.preferredAsset, fixture.underlying, input.preferredEvidence, policy);
@@ -226,7 +226,7 @@ export function planDevnetDemo(input: {
     alternative: fixtureRoute(input.alternativeAsset, fixture.underlying, input.alternativeEvidence, fixture),
   };
   const comparison =
-    routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: reroutePolicy.maxCostBps }) : null;
+    routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote) : null;
   const inputRaw = BigInt(fixture.inputRaw);
   const base = { preferred, alternative, inputRaw, comparison, routes, reroutePolicy, currentSlot };
   const consentOff = decideExecution({ ...base, consent: null });

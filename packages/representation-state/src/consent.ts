@@ -4,8 +4,10 @@
  * A `ConsentRecord` is what a user produces by accepting ONE exact
  * REQUIRES_CONSENT disclosure. It binds the comparison key (which covers both
  * exact quotes, routes, raw amounts and economic states), the disclosure
- * digest, the trade identity, the actual conservative cost and the maximum
- * cost the user accepted, and it expires at a slot. Only `grantConsent` can
+ * digest, the trade identity, the actual one-sided additional cost and the
+ * maximum additional cost the user accepted, and it expires at a slot. A
+ * better alternative (negative cost) passes the user's maximum but still
+ * needs this exact consent. Only `grantConsent` can
  * mint one: structurally identical or deserialized objects are not consent.
  * A record is consumed when an execution plan is created from it.
  *
@@ -14,7 +16,7 @@
  */
 
 import type { QuoteComparison } from "./compare.ts";
-import { Decision, disclosureDigestOf, outsideTolerance, type DecisionResult, type ReroutePolicy } from "./decision.ts";
+import { Decision, disclosureDigestOf, exceedsCostLimit, type DecisionResult, type ReroutePolicy } from "./decision.ts";
 import { quoteKey } from "./quote-identity.ts";
 
 export interface ConsentRecord {
@@ -28,10 +30,10 @@ export interface ConsentRecord {
   readonly inputRaw: bigint;
   readonly preferredQuoteKey: string;
   readonly alternativeQuoteKey: string;
-  /** The disclosed conservative cost at grant time. */
-  readonly costBps: bigint;
-  /** The most the user accepted to pay for this switch. */
-  readonly maxCostBps: bigint;
+  /** The disclosed one-sided additional cost at grant time (negative: the alternative is better). */
+  readonly additionalCostBps: bigint;
+  /** The most additional cost the user accepted for this switch. */
+  readonly maxAdditionalCostBps: bigint;
   readonly issuedAtSlot: bigint;
   /** Last slot at which the consent may be used (inclusive). */
   readonly expiresAtSlot: bigint;
@@ -48,7 +50,7 @@ export type ConsentErrorCode =
   | "QUOTE_MISMATCH"
   | "COST_MISMATCH"
   | "COST_ABOVE_ACCEPTED_MAX"
-  | "OUTSIDE_POLICY_TOLERANCE"
+  | "OUTSIDE_POLICY_COST_LIMIT"
   | "INVALID_GRANT";
 
 export interface ConsentIssue {
@@ -117,25 +119,23 @@ export function consentIssues(consent: ConsentRecord, context: ConsentContext): 
   if (consent.preferredQuoteKey !== quoteKey(comparison.preferredQuote) || consent.alternativeQuoteKey !== quoteKey(comparison.alternativeQuote)) {
     add("QUOTE_MISMATCH", "quotes, routes or economic states differ from the consented ones");
   }
-  if (consent.costBps !== comparison.conservativeCostDeltaBps) add("COST_MISMATCH", `${consent.costBps} != ${comparison.conservativeCostDeltaBps} bps`);
-  if (comparison.conservativeCostDeltaBps > consent.maxCostBps) {
-    add("COST_ABOVE_ACCEPTED_MAX", `${comparison.conservativeCostDeltaBps} bps > accepted ${consent.maxCostBps} bps`);
+  if (consent.additionalCostBps !== comparison.additionalCostBps) add("COST_MISMATCH", `${consent.additionalCostBps} != ${comparison.additionalCostBps} bps`);
+  if (comparison.additionalCostBps > consent.maxAdditionalCostBps) {
+    add("COST_ABOVE_ACCEPTED_MAX", `${comparison.additionalCostBps} bps > accepted ${consent.maxAdditionalCostBps} bps`);
   }
-  const policy = outsideTolerance(comparison, context.reroutePolicy);
-  if (policy || comparison.toleranceBps !== context.reroutePolicy.maxCostBps) {
-    add("OUTSIDE_POLICY_TOLERANCE", policy ?? "comparison tolerance differs from the reroute policy");
-  }
+  const policy = exceedsCostLimit(comparison, context.reroutePolicy);
+  if (policy) add("OUTSIDE_POLICY_COST_LIMIT", policy);
   return out;
 }
 
 /**
  * The user accepts exactly the disclosure in `context.decision`, paying at
- * most `maxCostBps`, for `validForSlots` slots from `context.currentSlot`.
+ * most `maxAdditionalCostBps`, for `validForSlots` slots from `context.currentSlot`.
  * Throws `ConsentError` if the grant would not authorize this very decision.
  */
-export function grantConsent(context: ConsentContext & { readonly maxCostBps: bigint; readonly validForSlots: bigint }): ConsentRecord {
-  if (context.maxCostBps < 0n || context.validForSlots <= 0n) {
-    throw new ConsentError([{ code: "INVALID_GRANT", detail: "maxCostBps must be >= 0 and validForSlots > 0" }]);
+export function grantConsent(context: ConsentContext & { readonly maxAdditionalCostBps: bigint; readonly validForSlots: bigint }): ConsentRecord {
+  if (context.maxAdditionalCostBps < 0n || context.validForSlots <= 0n) {
+    throw new ConsentError([{ code: "INVALID_GRANT", detail: "maxAdditionalCostBps must be >= 0 and validForSlots > 0" }]);
   }
   const { decision, comparison } = context;
   const disclosure = decision.disclosure;
@@ -152,8 +152,8 @@ export function grantConsent(context: ConsentContext & { readonly maxCostBps: bi
     inputRaw: comparison.inputRaw,
     preferredQuoteKey: quoteKey(comparison.preferredQuote),
     alternativeQuoteKey: quoteKey(comparison.alternativeQuote),
-    costBps: comparison.conservativeCostDeltaBps,
-    maxCostBps: context.maxCostBps,
+    additionalCostBps: comparison.additionalCostBps,
+    maxAdditionalCostBps: context.maxAdditionalCostBps,
     issuedAtSlot: context.currentSlot,
     expiresAtSlot: context.currentSlot + context.validForSlots,
   });

@@ -46,11 +46,11 @@ export const KO_DEMO_POLICY: TransitionPolicy = {
 };
 
 /**
- * DEMO reroute policy for the replay: the hard cost bound any comparison must
+ * DEMO reroute policy for the replay: the hard one-sided additional-cost bound any comparison must
  * meet before a reroute could even be offered for consent. No replay scenario
  * has a comparison (Ondo had no route), and no consent is ever given.
  */
-export const KO_REPLAY_REROUTE_POLICY = { maxCostBps: 50n } as const;
+export const KO_REPLAY_REROUTE_POLICY = { maxAdditionalCostBps: 50n } as const;
 
 const windowOf = (policy: TransitionPolicy): ProtectionWindow => ({ beforeSecs: Number(policy.beforeSecs), afterSecs: Number(policy.afterSecs) });
 
@@ -169,7 +169,7 @@ function routesFromSnapshot(
     return { ...base, quote, detail: null };
   };
   const routes = { preferred: route(p, preferred), alternative: route(a, alternative) };
-  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: KO_REPLAY_REROUTE_POLICY.maxCostBps }) : null;
+  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote) : null;
   return { routes, comparison, availability };
 }
 

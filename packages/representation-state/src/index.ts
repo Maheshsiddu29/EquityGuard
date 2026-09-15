@@ -95,7 +95,7 @@ export {
   type ExecutionPlanErrorCode,
   type PlanFreshnessPolicy,
 } from "./execution-plan.ts";
-export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
+export { compareQuotes, type EconomicEffect, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
 export {
   ExecutionEligibility,
   ExecutionEligibilityError,
@@ -124,7 +124,7 @@ export {
   comparisonStateMismatch,
   decide,
   disclosureDigestOf,
-  outsideTolerance,
+  exceedsCostLimit,
   type DecisionInput,
   type DecisionReasonCode,
   type DecisionResult,

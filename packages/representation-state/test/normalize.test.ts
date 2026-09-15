@@ -70,16 +70,16 @@ test("D: an f64 representation discrepancy falls within an explicit tolerance, n
 
 test("E: a fractional-bps benefit of the alternative is not overstated", () => {
   // Alternative delivers 1/30000 more shares: a 0.333 bps benefit rounds to 0, not to -1.
-  const comparison = compareQuotes(quote({ outputRaw: 30_000n }), quote({ issuer: "Ondo", outputRaw: 30_001n }), { toleranceBps: 0n });
+  const comparison = compareQuotes(quote({ outputRaw: 30_000n }), quote({ issuer: "Ondo", outputRaw: 30_001n }));
   assert.equal(compareRationals(comparison.alternativeSharesEquivalent, comparison.preferredSharesEquivalent), 1);
-  assert.equal(comparison.conservativeCostDeltaBps, 0n);
+  assert.equal(comparison.additionalCostBps, 0n);
 });
 
 test("F: an alternative worse by a tiny amount is never displayed as cheaper or free", () => {
   // 0.333 bps worse rounds up to a 1 bps cost.
-  const comparison = compareQuotes(quote({ outputRaw: 30_000n }), quote({ issuer: "Ondo", outputRaw: 29_999n }), { toleranceBps: 0n });
-  assert.equal(comparison.conservativeCostDeltaBps, 1n);
-  assert.ok(comparison.conservativeCostDeltaBps > 0n);
+  const comparison = compareQuotes(quote({ outputRaw: 30_000n }), quote({ issuer: "Ondo", outputRaw: 29_999n }));
+  assert.equal(comparison.additionalCostBps, 1n);
+  assert.ok(comparison.additionalCostBps > 0n);
 });
 
 test("G: invalid or non-positive multipliers fail closed", () => {
@@ -106,36 +106,30 @@ test("cost delta derives from share-equivalents, not raw output", () => {
   const comparison = compareQuotes(
     quote({ outputRaw: 5_529_727n, decimals: 8 }),
     quote({ issuer: "Ondo", outputRaw: 55_297_270n, decimals: 9 }),
-    { toleranceBps: 0n },
   );
-  assert.equal(comparison.conservativeCostDeltaBps, 0n);
-  assert.ok(comparison.withinTolerance);
+  assert.equal(comparison.additionalCostBps, 0n);
+  assert.deepEqual(comparison.economicEffect, { kind: "ECONOMICALLY_EQUAL", bps: 0n });
 
   // Same raw output, but the alternative's lower multiplier delivers fewer shares: a real cost.
   const worse = compareQuotes(
     quote({ outputRaw: 1_000_000n, effectiveMultiplier: f64(1.02) }),
     quote({ issuer: "Ondo", outputRaw: 1_000_000n, effectiveMultiplier: f64(1) }),
-    { toleranceBps: 1n },
   );
-  assert.equal(worse.conservativeCostDeltaBps, 197n); // (1.02 - 1) / 1.02 = 196.08 bps, rounded up
-  assert.ok(!worse.withinTolerance);
+  assert.equal(worse.additionalCostBps, 197n); // (1.02 - 1) / 1.02 = 196.08 bps, rounded up
+  assert.deepEqual(worse.economicEffect, { kind: "ADDITIONAL_COST", bps: 197n });
 });
 
 test("quotes must share the same input notional and a positive preferred output", () => {
   assert.throws(
-    () => compareQuotes(quote({}), quote({ inputRaw: 4_999_999n }), { toleranceBps: 0n }),
+    () => compareQuotes(quote({}), quote({ inputRaw: 4_999_999n })),
     (e) => e instanceof NormalizationError && e.code === "NotionalMismatch",
   );
   assert.throws(
-    () => compareQuotes(quote({ outputRaw: 0n }), quote({}), { toleranceBps: 0n }),
+    () => compareQuotes(quote({ outputRaw: 0n }), quote({})),
     (e) => e instanceof NormalizationError && e.code === "NonPositiveOutput",
   );
   assert.throws(
-    () => compareQuotes(quote({}), quote({}), { toleranceBps: -1n }),
-    (e) => e instanceof NormalizationError && e.code === "InvalidTolerance",
-  );
-  assert.throws(
-    () => compareQuotes(quote({}), quote({ underlying: "UNH" }), { toleranceBps: 0n }),
+    () => compareQuotes(quote({}), quote({ underlying: "UNH" })),
     (e) => e instanceof NormalizationError && e.code === "UnderlyingMismatch",
   );
 });
@@ -144,7 +138,7 @@ test("comparisons carry the identity and economic states of the quotes they were
   const koon = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
   const preferred = quote({});
   const alternative = quote({ issuer: "Ondo", mint: koon });
-  const comparison = compareQuotes(preferred, alternative, { toleranceBps: 0n });
+  const comparison = compareQuotes(preferred, alternative);
   assert.deepEqual(
     [comparison.underlying, comparison.preferredMint, comparison.alternativeMint, comparison.inputRaw],
     ["KO", "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", koon, 5_000_000n],
@@ -155,16 +149,16 @@ test("comparisons carry the identity and economic states of the quotes they were
 test("a quote cannot be normalized with another mint's state", () => {
   const koon = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
   const borrowed = { ...quote({ issuer: "Ondo", mint: koon }), state: quote({}).state };
-  assert.throws(() => compareQuotes(quote({}), borrowed, { toleranceBps: 0n }), (e) => e instanceof NormalizationError && e.code === "StateMismatch");
+  assert.throws(() => compareQuotes(quote({}), borrowed), (e) => e instanceof NormalizationError && e.code === "StateMismatch");
 });
 
 test("normalization uses the phase-effective multiplier of the bound state", () => {
   const pending = quote({ effectiveMultiplier: f64(1) });
   const scheduled = { ...pending.state, newMultiplierHex: Buffer.from(f64(2)).toString("hex"), effectiveTimestamp: 100n };
-  const atPending = compareQuotes({ ...pending, state: { ...scheduled, phase: ActivationPhase.Pending } }, pending, { toleranceBps: 0n });
-  const atActivated = compareQuotes({ ...pending, state: { ...scheduled, phase: ActivationPhase.Activated } }, pending, { toleranceBps: 0n });
-  assert.equal(atPending.conservativeCostDeltaBps, 0n);
-  assert.equal(atActivated.conservativeCostDeltaBps, 5000n); // 2 vs 1 share-equivalents
+  const atPending = compareQuotes({ ...pending, state: { ...scheduled, phase: ActivationPhase.Pending } }, pending);
+  const atActivated = compareQuotes({ ...pending, state: { ...scheduled, phase: ActivationPhase.Activated } }, pending);
+  assert.equal(atPending.additionalCostBps, 0n);
+  assert.equal(atActivated.additionalCostBps, 5000n); // 2 vs 1 share-equivalents
 });
 
 test("stored multipliers convert to their exact dyadic rational value", () => {

@@ -13,6 +13,7 @@
  * fields: a SAFE state choice is never presented as executable on its own.
  */
 
+import type { EconomicEffect } from "./compare.ts";
 import { Decision, type DecisionReasonCode, type RepresentationSummary } from "./decision.ts";
 import { ExecutionEligibility, type ExecutionDecision } from "./execution.ts";
 import { formatRationalFloor } from "./normalize.ts";
@@ -69,7 +70,9 @@ interface DemoResultBase {
   readonly quoteAvailability: QuoteAvailability;
   readonly preferredSharesEquivalent?: string;
   readonly alternativeSharesEquivalent?: string;
-  readonly conservativeCostDeltaBps?: bigint;
+  /** One-sided: positive costs more, negative is better. */
+  readonly additionalCostBps?: bigint;
+  readonly economicEffect?: EconomicEffect;
   /** State-level choice. */
   readonly decision: Decision;
   readonly reasonCode: DecisionReasonCode;
@@ -129,7 +132,8 @@ function base(
       ? {
           preferredSharesEquivalent: formatRationalFloor(comparison.preferredSharesEquivalent, SHARE_DECIMALS),
           alternativeSharesEquivalent: formatRationalFloor(comparison.alternativeSharesEquivalent, SHARE_DECIMALS),
-          conservativeCostDeltaBps: comparison.conservativeCostDeltaBps,
+          additionalCostBps: comparison.additionalCostBps,
+          economicEffect: comparison.economicEffect,
         }
       : {};
   return {

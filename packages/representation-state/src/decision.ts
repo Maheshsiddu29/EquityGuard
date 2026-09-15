@@ -9,12 +9,14 @@
  * applied by `decideExecution`) turns it into USE_ALTERNATIVE. There is no
  * user preference flag in this path.
  *
- * The reroute policy's `maxCostBps` is a hard economic bound: an alternative
- * outside it is NO_ACCEPTABLE_ROUTE / ALTERNATIVE_OUTSIDE_TOLERANCE and is
- * never offered for consent.
+ * The reroute policy's `maxAdditionalCostBps` is a hard, ONE-SIDED economic
+ * bound: an alternative that costs more than it is NO_ACCEPTABLE_ROUTE /
+ * ALTERNATIVE_OUTSIDE_TOLERANCE and is never offered for consent. An
+ * economically better alternative always passes the bound, and still
+ * requires consent: benefit never implies an automatic issuer switch.
  */
 
-import type { QuoteComparison } from "./compare.ts";
+import type { EconomicEffect, QuoteComparison } from "./compare.ts";
 import { economicStateMismatches, economicStateOf, type EconomicState } from "./economic-state.ts";
 import { formatRationalFloor } from "./normalize.ts";
 import { canonicalKey } from "./quote-identity.ts";
@@ -26,7 +28,7 @@ export const Decision = {
   REQUIRES_CONSENT: "REQUIRES_CONSENT",
   USE_ALTERNATIVE: "USE_ALTERNATIVE",
   NO_SAFE_ROUTE: "NO_SAFE_ROUTE",
-  /** A SAFE, quoted alternative exists but its economics are outside the hard reroute tolerance. */
+  /** A SAFE, quoted alternative exists but its economics are above the maximum additional cost of the reroute policy. */
   NO_ACCEPTABLE_ROUTE: "NO_ACCEPTABLE_ROUTE",
   UNKNOWN_STATE: "UNKNOWN_STATE",
 } as const;
@@ -49,12 +51,13 @@ export type DecisionReasonCode =
   | "CONSENT_GIVEN";
 
 /**
- * Integrator reroute policy. `maxCostBps` is a HARD bound: a comparison must
- * be computed with exactly this tolerance, be within it, and cost at most this
- * many bps, or no reroute is offered. User consent cannot exceed it.
+ * Integrator reroute policy. `maxAdditionalCostBps` is the HARD maximum
+ * additional economic cost of switching: `additionalCostBps` must be at most
+ * this (a better alternative, with negative cost, always passes). User consent
+ * cannot lift it.
  */
 export interface ReroutePolicy {
-  readonly maxCostBps: bigint;
+  readonly maxAdditionalCostBps: bigint;
 }
 
 /** Share-equivalent display precision; values are rounded down for display only. */
@@ -66,17 +69,17 @@ export interface RerouteDisclosure {
   readonly alternative: RepresentationSummary;
   readonly reason: string;
   /** Conservative: switching costs at least this many bps when positive. */
-  readonly conservativeCostDeltaBps: bigint;
+  readonly additionalCostBps: bigint;
   readonly preferredSharesEquivalent: string;
   readonly alternativeSharesEquivalent: string;
-  readonly toleranceBps: bigint;
-  readonly withinTolerance: boolean;
+  /** Whether the alternative costs more, is equal, or is better, and by how many bps. */
+  readonly economicEffect: EconomicEffect;
   readonly notice: string;
   /** The exact comparison this disclosure (and any consent to it) describes. */
   readonly comparisonKey: string;
   readonly inputRaw: bigint;
   /** Hard policy bound the disclosed cost was checked against. */
-  readonly policyMaxCostBps: bigint;
+  readonly policyMaxAdditionalCostBps: bigint;
   /** SHA-256 of the canonical disclosure content above; what a consent record binds. */
   readonly disclosureDigest: string;
 }
@@ -171,7 +174,9 @@ function unusable(state: ResolvedRepresentationState): "conflict" | "unknown" | 
 
 export function decide(input: DecisionInput): DecisionResult {
   const { preferred, alternative, reroutePolicy, comparison } = input;
-  if (reroutePolicy.maxCostBps < 0n) throw new RangeError("reroute policy maxCostBps must be non-negative");
+  if (typeof reroutePolicy.maxAdditionalCostBps !== "bigint" || reroutePolicy.maxAdditionalCostBps < 0n) {
+    throw new RangeError("reroute policy maxAdditionalCostBps must be a non-negative bigint");
+  }
   const result = (
     decision: Decision,
     reasonCode: DecisionReasonCode,
@@ -221,12 +226,8 @@ export function decide(input: DecisionInput): DecisionResult {
     return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_STALE_STATE", `${unsafeReason}; quote comparison was built against a different economic state and must be recomputed: ${stale}`);
   }
 
-  // The comparison must have been computed under this policy's tolerance.
-  if (comparison.toleranceBps !== reroutePolicy.maxCostBps) {
-    return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH", `${unsafeReason}; quote comparison tolerance ${comparison.toleranceBps} bps differs from the reroute policy ${reroutePolicy.maxCostBps} bps`);
-  }
-  // Hard economic bound: never offer an alternative outside it, whatever consent might say later.
-  const outside = outsideTolerance(comparison, reroutePolicy);
+  // Hard one-sided economic bound: never offer an alternative outside it, whatever consent might say later.
+  const outside = exceedsCostLimit(comparison, reroutePolicy);
   if (outside) {
     return result(Decision.NO_ACCEPTABLE_ROUTE, "ALTERNATIVE_OUTSIDE_TOLERANCE", `${unsafeReason}; ${alternative.symbol} is SAFE but ${outside}`);
   }
@@ -234,12 +235,15 @@ export function decide(input: DecisionInput): DecisionResult {
   return result(Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED", `${unsafeReason}; ${alternative.symbol} (${alternative.issuer}) is SAFE`, disclosureFor(preferred, alternative, unsafeReason, comparison, input.inputRaw, reroutePolicy));
 }
 
-/** Why a comparison is economically unacceptable under the hard policy, or null. */
-export function outsideTolerance(comparison: QuoteComparison, policy: ReroutePolicy): string | null {
+/**
+ * Why a comparison is economically unacceptable under the hard one-sided
+ * policy, or null. Only additional cost counts: `additionalCostBps <=
+ * maxAdditionalCostBps`, never an absolute difference.
+ */
+export function exceedsCostLimit(comparison: QuoteComparison, policy: ReroutePolicy): string | null {
   if (comparison.alternativeQuote.outputRaw <= 0n) return "the alternative quote delivers nothing";
-  if (!comparison.withinTolerance) return `share-equivalents differ by more than ${comparison.toleranceBps} bps`;
-  if (comparison.conservativeCostDeltaBps > policy.maxCostBps) {
-    return `switching costs ${comparison.conservativeCostDeltaBps} bps, above the ${policy.maxCostBps} bps policy limit`;
+  if (comparison.additionalCostBps > policy.maxAdditionalCostBps) {
+    return `switching costs ${comparison.additionalCostBps} bps more, above the ${policy.maxAdditionalCostBps} bps maximum additional cost`;
   }
   return null;
 }
@@ -257,15 +261,14 @@ function disclosureFor(
     original: summary(preferred),
     alternative: summary(alternative),
     reason,
-    conservativeCostDeltaBps: comparison.conservativeCostDeltaBps,
+    additionalCostBps: comparison.additionalCostBps,
     preferredSharesEquivalent: formatRationalFloor(comparison.preferredSharesEquivalent, DISCLOSURE_SHARE_DECIMALS),
     alternativeSharesEquivalent: formatRationalFloor(comparison.alternativeSharesEquivalent, DISCLOSURE_SHARE_DECIMALS),
-    toleranceBps: comparison.toleranceBps,
-    withinTolerance: comparison.withinTolerance,
+    economicEffect: comparison.economicEffect,
     notice: NOT_IDENTICAL_NOTICE,
     comparisonKey: comparison.comparisonKey,
     inputRaw,
-    policyMaxCostBps: policy.maxCostBps,
+    policyMaxAdditionalCostBps: policy.maxAdditionalCostBps,
   };
   return { ...content, disclosureDigest: disclosureDigestOf(content) };
 }

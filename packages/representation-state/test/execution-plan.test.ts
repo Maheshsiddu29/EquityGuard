@@ -59,7 +59,7 @@ function quote(r: ResolvedRepresentationState, outputRaw: bigint): NormalizedQuo
 }
 const route = (q: NormalizedQuote): RouteObservation => ({ mint: q.mint, status: "AVAILABLE", quote: q, source: "test", detail: null });
 
-const POLICY = { maxCostBps: 25n };
+const POLICY = { maxAdditionalCostBps: 25n };
 const SLOT = 100n;
 /** KOon raw output about 10 bps below the KOx quote in share-equivalents. */
 const KOON_OUT = 54_153_839n;
@@ -70,12 +70,12 @@ function reroute(consent = true, alternativeRouteQuote?: NormalizedQuote) {
   const alternative = koon(TRANSITION_TIME);
   const preferredQuote = quote(preferred, 5_450_395n);
   const alternativeQuote = quote(alternative, KOON_OUT);
-  const comparison = compareQuotes(preferredQuote, alternativeQuote, { toleranceBps: 25n });
+  const comparison = compareQuotes(preferredQuote, alternativeQuote);
   const base = { preferred, alternative, reroutePolicy: POLICY, inputRaw: INPUT_RAW, comparison, currentSlot: SLOT, routes: { preferred: route(preferredQuote), alternative: route(alternativeRouteQuote ?? alternativeQuote) } };
   const withoutConsent = decideExecution({ ...base, consent: null });
   if (!consent) return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision: withoutConsent };
   // The user accepts exactly this disclosure.
-  const record = grantConsent({ decision: withoutConsent.stateDecision, comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxCostBps: 25n, validForSlots: 10n });
+  const record = grantConsent({ decision: withoutConsent.stateDecision, comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxAdditionalCostBps: 25n, validForSlots: 10n });
   return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision: decideExecution({ ...base, consent: record }) };
 }
 
@@ -124,7 +124,7 @@ test("8. a comparison whose quote state went stale by phase is not executable", 
   const before = kox(T - 1n);
   const at = kox(T);
   const alternative = koon(T - 1n);
-  const comparison = compareQuotes(quote(before, 5_450_395n), quote(alternative, KOON_OUT), { toleranceBps: 25n });
+  const comparison = compareQuotes(quote(before, 5_450_395n), quote(alternative, KOON_OUT));
   const decision = decideExecution({ preferred: at, alternative, reroutePolicy: POLICY, consent: null, currentSlot: SLOT, inputRaw: INPUT_RAW, comparison, routes: { preferred: null, alternative: route(comparison.alternativeQuote as NormalizedQuote) } });
   assert.equal(decision.executionEligibility, ExecutionEligibility.STALE_COMPARISON);
   assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
@@ -160,7 +160,7 @@ test("11. the plan pins exactly the decision's quote, route, state and notional,
     { ...plan, economicState: { ...plan.economicState, decimals: plan.economicState.decimals + 1 } },
     { ...plan, route: whirlpool(KOX.mint) },
     { ...plan, selectedRepresentation: { ...plan.selectedRepresentation, mint: KOX.mint } },
-    { ...plan, disclosure: { ...plan.disclosure!, conservativeCostDeltaBps: 0n } },
+    { ...plan, disclosure: { ...plan.disclosure!, additionalCostBps: 0n } },
   ];
   for (const t of tampered) {
     assert.throws(() => verifyExecutionPlan(t, { quote: alternativeQuote, comparison }), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_NOT_ISSUED");
@@ -187,14 +187,13 @@ test("13. consent stays bound to the same disclosure and comparison", () => {
   assert.equal(plan.comparisonKey, on.comparison.comparisonKey);
   assert.equal(plan.disclosure?.comparisonKey, on.comparison.comparisonKey);
   // Another comparison (different alternative output) is not the one consent was given to.
-  const other = compareQuotes(on.preferredQuote, { ...on.alternativeQuote, outputRaw: KOON_OUT - 3_000n }, { toleranceBps: 25n });
+  const other = compareQuotes(on.preferredQuote, { ...on.alternativeQuote, outputRaw: KOON_OUT - 3_000n });
   assert.throws(() => verifyExecutionPlan(plan, { quote: on.alternativeQuote, comparison: other }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
   assert.throws(() => verifyExecutionPlan(plan, { quote: on.alternativeQuote, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
-  // Same quotes, different tolerance: a different comparison.
-  const tolerance = compareQuotes(on.preferredQuote, on.alternativeQuote, { toleranceBps: 5n });
-  assert.notEqual(tolerance.comparisonKey, on.comparison.comparisonKey);
+  // The comparison key is a pure function of the two exact quotes.
+  assert.equal(compareQuotes(on.preferredQuote, on.alternativeQuote).comparisonKey, on.comparison.comparisonKey);
   // A decision whose disclosure describes another comparison cannot be planned.
-  const mismatched = { ...on.decision, stateDecision: { ...on.decision.stateDecision, disclosure: { ...on.decision.stateDecision.disclosure!, comparisonKey: tolerance.comparisonKey } } };
+  const mismatched = { ...on.decision, stateDecision: { ...on.decision.stateDecision, disclosure: { ...on.decision.stateDecision.disclosure!, comparisonKey: other.comparisonKey } } };
   assert.throws(() => createExecutionPlan(mismatched, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "DISCLOSURE_NOT_FOR_COMPARISON");
 });
 
@@ -236,7 +235,7 @@ test("M01: nested plan content is frozen", () => {
     ["economicState.multiplierHex", () => ((plan.economicState as { multiplierHex: string }).multiplierHex = "000000000000f03f")],
     ["route.legs[0].venue", () => ((plan.route.legs[0] as { venue: string }).venue = "Other")],
     ["route.legs push", () => (plan.route.legs as unknown as unknown[]).push({})],
-    ["disclosure.conservativeCostDeltaBps", () => ((plan.disclosure as { conservativeCostDeltaBps: bigint }).conservativeCostDeltaBps = 0n)],
+    ["disclosure.additionalCostBps", () => ((plan.disclosure as { additionalCostBps: bigint }).additionalCostBps = 0n)],
     ["selectedRepresentation.mint", () => ((plan.selectedRepresentation as { mint: string }).mint = KOX.mint)],
   ];
   for (const [label, mutate] of mutations) assert.throws(mutate, TypeError, label);

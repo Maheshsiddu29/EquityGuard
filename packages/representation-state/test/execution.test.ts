@@ -65,16 +65,16 @@ function run(input: {
 }): ExecutionDecision {
   const routes = { preferred: input.preferredRoute ?? null, alternative: input.alternativeRoute ?? null };
   const comparison =
-    input.withComparison && input.alternative ? compareQuotes(quote(input.preferred, 5_000_000n), quote(input.alternative, KOON_OUT), { toleranceBps: 25n }) : null;
+    input.withComparison && input.alternative ? compareQuotes(quote(input.preferred, 5_000_000n), quote(input.alternative, KOON_OUT)) : null;
   const base = { preferred: input.preferred, alternative: input.alternative, reroutePolicy: POLICY, inputRaw: input.inputRaw ?? INPUT_RAW, comparison, routes, currentSlot: SLOT };
   const withoutConsent = decideExecution({ ...base, consent: null });
   if (!input.consent || !comparison || withoutConsent.stateDecision.decision !== Decision.REQUIRES_CONSENT) return withoutConsent;
   // The user accepts exactly this disclosure.
-  const consent = grantConsent({ decision: withoutConsent.stateDecision, comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxCostBps: 25n, validForSlots: 10n });
+  const consent = grantConsent({ decision: withoutConsent.stateDecision, comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxAdditionalCostBps: 25n, validForSlots: 10n });
   return decideExecution({ ...base, consent });
 }
 
-const POLICY = { maxCostBps: 25n };
+const POLICY = { maxAdditionalCostBps: 25n };
 const SLOT = 100n;
 
 const eligibility = (d: ExecutionDecision) => [d.stateDecision.decision, d.executionEligibility];
@@ -145,9 +145,9 @@ test("6. stale comparisons and stale preferred quotes are not executable", () =>
   // Comparison built while KOx was pending before T; evaluated at T (clock-only phase change).
   const builtPreferred = kox(T - 1n);
   const alternative = koon(T - 1n);
-  const comparison = compareQuotes(quote(builtPreferred, 5_000_000n), quote(alternative, KOON_OUT), { toleranceBps: 25n });
+  const comparison = compareQuotes(quote(builtPreferred, 5_000_000n), quote(alternative, KOON_OUT));
   const nowPreferred = kox(T);
-  const d = decideExecution({ preferred: nowPreferred, alternative, reroutePolicy: { maxCostBps: 25n }, consent: null, currentSlot: 100n, inputRaw: INPUT_RAW, comparison, routes: { preferred: null, alternative: available(alternative) } });
+  const d = decideExecution({ preferred: nowPreferred, alternative, reroutePolicy: { maxAdditionalCostBps: 25n }, consent: null, currentSlot: 100n, inputRaw: INPUT_RAW, comparison, routes: { preferred: null, alternative: available(alternative) } });
   assert.deepEqual([d.stateDecision.reasonCode, d.executionEligibility], ["QUOTE_COMPARISON_STALE_STATE", ExecutionEligibility.STALE_COMPARISON]);
   assert.throws(() => assertExecutable(d), ExecutionEligibilityError);
 

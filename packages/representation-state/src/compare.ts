@@ -2,9 +2,12 @@
  * Pure comparison of already-built quotes for two representations of the same
  * underlying, at identical input notional. No quotes are fetched here.
  *
- * The cost of switching is derived only from share-equivalents (INV-VAL-01)
- * and rounded AGAINST the alternative: a cost rounds up, a benefit rounds
- * toward zero. The reported cost of switching is never understated.
+ * The one-sided cost of switching, `additionalCostBps`, is derived only from
+ * share-equivalents (INV-VAL-01) and rounded AGAINST the alternative: a cost
+ * rounds up, a benefit rounds toward zero. Positive means the alternative is
+ * worse, zero equal, negative better. It is never understated. A comparison
+ * carries no tolerance: acceptability is judged against the reroute policy's
+ * maximum additional cost (`decide`), never against an absolute difference.
  *
  * Each quote is normalized with the decimals and effective multiplier of the
  * `EconomicState` it was built against. The comparison carries both exact
@@ -22,12 +25,18 @@ import {
   compareRationals,
   rational,
   sharesEquivalent,
-  withinToleranceBps,
   type Rational,
 } from "./normalize.ts";
 import type { Issuer } from "./registry.ts";
 
 const BPS = 10_000n;
+
+/** Presentation-neutral classification of `additionalCostBps`, from the exact sign of the difference. */
+export type EconomicEffect =
+  | { readonly kind: "ADDITIONAL_COST"; readonly bps: bigint }
+  | { readonly kind: "ECONOMICALLY_EQUAL"; readonly bps: 0n }
+  /** `bps` is the understated (rounded toward zero) benefit; it can be 0 for a sub-basis-point benefit. */
+  | { readonly kind: "BETTER_VALUE"; readonly bps: bigint };
 
 /** A raw quote bound to its exact identity (route, amounts, state) plus the issuer label. */
 export interface NormalizedQuote extends QuoteIdentity {
@@ -44,29 +53,26 @@ export interface QuoteComparison {
   /** Quote binding: the exact quotes (and therefore economic states) both sides were normalized from. */
   readonly preferredQuote: QuoteIdentity;
   readonly alternativeQuote: QuoteIdentity;
-  /** Canonical key of both quotes and the tolerance; binds disclosures and execution plans to this comparison. */
+  /** Canonical key of both exact quotes; binds disclosures, consent and execution plans to this comparison. */
   readonly comparisonKey: string;
   readonly preferredSharesEquivalent: Rational;
   readonly alternativeSharesEquivalent: Rational;
   /** preferred − alternative; positive means the alternative delivers fewer shares. */
   readonly difference: { readonly sign: -1 | 0 | 1; readonly magnitude: Rational };
   /**
-   * ceil((preferred − alternative) / preferred × 10000). Positive: switching
-   * costs at least this many bps. Zero or negative: switching is not more
-   * expensive; any benefit is understated rather than overstated.
+   * One-sided cost of switching: ceil((preferred − alternative) / preferred ×
+   * 10000). Positive: the alternative costs at least this many bps more.
+   * Zero or negative: switching is not more expensive; a benefit is
+   * understated rather than overstated.
    */
-  readonly conservativeCostDeltaBps: bigint;
-  readonly toleranceBps: bigint;
-  /** Whether the share-equivalents are within `toleranceBps` of each other. */
-  readonly withinTolerance: boolean;
+  readonly additionalCostBps: bigint;
+  readonly economicEffect: EconomicEffect;
 }
 
 export function compareQuotes(
   preferred: NormalizedQuote,
   alternative: NormalizedQuote,
-  options: { readonly toleranceBps: bigint },
 ): QuoteComparison {
-  if (options.toleranceBps < 0n) throw new NormalizationError("InvalidTolerance", "tolerance must be non-negative");
   if (preferred.underlying !== alternative.underlying) {
     throw new NormalizationError("UnderlyingMismatch", "quotes must be for representations of the same underlying");
   }
@@ -92,6 +98,9 @@ export function compareQuotes(
   const denominator = p.num * a.den;
   const sign = compareRationals(p, a);
   const rawDiff = p.num * a.den - a.num * p.den;
+  const additionalCostBps = ceilDiv(numerator, denominator);
+  const economicEffect: EconomicEffect =
+    sign > 0 ? { kind: "ADDITIONAL_COST", bps: additionalCostBps } : sign === 0 ? { kind: "ECONOMICALLY_EQUAL", bps: 0n } : { kind: "BETTER_VALUE", bps: -additionalCostBps };
   return {
     underlying: preferred.underlying,
     preferredMint: preferred.mint,
@@ -99,12 +108,11 @@ export function compareQuotes(
     inputRaw: preferred.inputRaw,
     preferredQuote: quoteIdentityOf(preferred),
     alternativeQuote: quoteIdentityOf(alternative),
-    comparisonKey: canonicalKey({ preferred: quoteIdentityOf(preferred), alternative: quoteIdentityOf(alternative), toleranceBps: options.toleranceBps }),
+    comparisonKey: canonicalKey({ preferred: quoteIdentityOf(preferred), alternative: quoteIdentityOf(alternative) }),
     preferredSharesEquivalent: p,
     alternativeSharesEquivalent: a,
     difference: { sign, magnitude: rational(rawDiff < 0n ? -rawDiff : rawDiff, p.den * a.den) },
-    conservativeCostDeltaBps: ceilDiv(numerator, denominator),
-    toleranceBps: options.toleranceBps,
-    withinTolerance: withinToleranceBps(p, a, options.toleranceBps),
+    additionalCostBps,
+    economicEffect,
   };
 }

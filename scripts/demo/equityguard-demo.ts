@@ -19,7 +19,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { generateKeyPairSigner } from "@solana/kit";
-import { timelineJson, type DemoResult } from "@equityguard/representation-state";
+import { timelineJson, type DemoResult, type EconomicEffect } from "@equityguard/representation-state";
 
 import { connectDevnet, readDevnetConfig } from "../devnet/config.ts";
 import { loadDevnetState } from "../devnet/devnet-state.ts";
@@ -36,13 +36,25 @@ const banner = (title: string, environment: string) => {
   line("═".repeat(78));
 };
 
+/** Human copy for the one-sided cost; machine values stay exact bigints. */
+function describeEffect(effect: EconomicEffect): string {
+  switch (effect.kind) {
+    case "ADDITIONAL_COST":
+      return `alternative costs ${effect.bps} bps more (rounded up, never understated)`;
+    case "ECONOMICALLY_EQUAL":
+      return "economically equal";
+    case "BETTER_VALUE":
+      return effect.bps === 0n ? "alternative provides slightly better normalized value (under 1 bps)" : `alternative provides ${effect.bps} bps better normalized value (rounded down, never overstated)`;
+  }
+}
+
 function formatDecision(result: DemoResult): void {
   line(`  preferred:    ${result.preferredRepresentation.symbol} (${result.preferredRepresentation.issuer}) → ${result.preferredState} [${result.preferredStateSource}]`);
   line(`  alternative:  ${result.alternativeRepresentation ? `${result.alternativeRepresentation.symbol} (${result.alternativeRepresentation.issuer}) → ${result.alternativeState}` : "none"}`);
   line(`  quotes:       ${result.quoteAvailability.source} preferred=${result.quoteAvailability.preferred} alternative=${result.quoteAvailability.alternative}`);
   if (result.preferredSharesEquivalent) {
     line(`  normalized:   preferred ${result.preferredSharesEquivalent} vs alternative ${result.alternativeSharesEquivalent} share-equivalents (INV-VAL-01)`);
-    line(`  cost delta:   ${result.conservativeCostDeltaBps} bps (conservative, rounded against the alternative)`);
+    if (result.economicEffect) line(`  economics:    ${describeEffect(result.economicEffect)}`);
   }
   line(`  STATE:        ${result.decision} (${result.reasonCode})${result.consentRequired ? "  ← consent required" : ""}`);
   line(`  reason:       ${result.reason}`);
@@ -118,7 +130,7 @@ async function part3(): Promise<DevnetDemoRun> {
     const c = run.consent;
     line(`USER CONSENT to this exact disclosure (demo acceptance, single use):`);
     line(`  consent ${c.consentId.slice(0, 16)}…  disclosure sha256 ${c.disclosureDigest.slice(0, 16)}…`);
-    line(`  ${c.underlying}: ${c.inputRaw} input; cost ${c.costBps} bps, accepted max ${c.maxCostBps} bps; valid slots ${c.issuedAtSlot}..${c.expiresAtSlot}`);
+    line(`  ${c.underlying}: ${c.inputRaw} input; additional cost ${c.additionalCostBps} bps, accepted maximum additional cost ${c.maxAdditionalCostBps} bps; valid slots ${c.issuedAtSlot}..${c.expiresAtSlot}`);
   }
   line();
   line("Consent ON (re-evaluated with the consent record):");

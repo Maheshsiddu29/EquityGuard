@@ -87,11 +87,10 @@ const stateOf = (mint: string, decimals: number): EconomicState => ({
 const COMPARISON: QuoteComparison = compareQuotes(
   { ...TEST_QUOTE_CONTEXT, underlying: "KO", inputRaw: INPUT_RAW, issuer: "xStocks", mint: KOX_MINT, outputRaw: 10_000n, state: stateOf(KOX_MINT, 8) } satisfies NormalizedQuote,
   { ...TEST_QUOTE_CONTEXT, underlying: "KO", inputRaw: INPUT_RAW, issuer: "Ondo", mint: KOON_MINT, outputRaw: 99_800n, state: stateOf(KOON_MINT, 9) },
-  { toleranceBps: 25n },
 );
 
-/** Hard reroute policy the comparison above was computed with. */
-const POLICY = { maxCostBps: 25n };
+/** Hard one-sided reroute policy: at most 25 bps additional cost. */
+const POLICY = { maxAdditionalCostBps: 25n };
 
 test("preferred SAFE uses the preferred representation, regardless of alternatives", () => {
   for (const alternative of [null, resolved("KOon", RepresentationState.UNKNOWN), resolved("KOon", null, StateSource.CONFLICT)]) {
@@ -101,14 +100,14 @@ test("preferred SAFE uses the preferred representation, regardless of alternativ
   }
 });
 
-test("unsafe preferred with a SAFE quoted alternative within tolerance requires consent", () => {
+test("unsafe preferred with a SAFE quoted alternative within the cost limit requires consent", () => {
   for (const unsafe of [RepresentationState.TRANSITION, RepresentationState.PAUSED]) {
     const result = decide({ preferred: resolved("KOx", unsafe), alternative: resolved("KOon", RepresentationState.SAFE), reroutePolicy: POLICY, inputRaw: INPUT_RAW, comparison: COMPARISON });
     assert.equal(result.decision, Decision.REQUIRES_CONSENT, unsafe);
     const d = result.disclosure;
     assert.ok(d);
     assert.deepEqual([d.original.issuer, d.original.symbol, d.alternative.issuer, d.alternative.symbol], ["xStocks", "KOx", "Ondo", "KOon"]);
-    assert.equal(d.conservativeCostDeltaBps, 20n); // 0.0998 vs 0.1 shares: 20 bps, derived from share-equivalents
+    assert.equal(d.additionalCostBps, 20n); // 0.0998 vs 0.1 shares: 20 bps, derived from share-equivalents
     assert.equal(d.preferredSharesEquivalent, "0.000100000000");
     assert.equal(d.alternativeSharesEquivalent, "0.000099800000");
     assert.match(d.reason, new RegExp(unsafe));
@@ -121,31 +120,31 @@ test("the state layer never returns USE_ALTERNATIVE, and the disclosure digest c
   const result = decide(input);
   assert.equal(result.decision, Decision.REQUIRES_CONSENT);
   const d = result.disclosure!;
-  assert.deepEqual([d.comparisonKey, d.inputRaw, d.policyMaxCostBps], [COMPARISON.comparisonKey, INPUT_RAW, 25n]);
+  assert.deepEqual([d.comparisonKey, d.inputRaw, d.policyMaxAdditionalCostBps, d.economicEffect], [COMPARISON.comparisonKey, INPUT_RAW, 25n, { kind: "ADDITIONAL_COST", bps: 20n }]);
   assert.equal(d.disclosureDigest, disclosureDigestOf(d));
   assert.match(d.disclosureDigest, /^[0-9a-f]{64}$/);
-  assert.notEqual(disclosureDigestOf({ ...d, conservativeCostDeltaBps: 0n }), d.disclosureDigest);
+  assert.notEqual(disclosureDigestOf({ ...d, additionalCostBps: 0n }), d.disclosureDigest);
   assert.deepEqual(decide(input).disclosure, d);
 });
 
-test("a SAFE alternative outside the hard tolerance is NO_ACCEPTABLE_ROUTE, never offered for consent", () => {
+test("a SAFE alternative above the maximum additional cost is NO_ACCEPTABLE_ROUTE, never offered for consent", () => {
   const preferred = resolved("KOx", RepresentationState.TRANSITION);
   const alternative = resolved("KOon", RepresentationState.SAFE);
   const quote = (outputRaw: bigint, issuer: "xStocks" | "Ondo", mint: string, decimals: number): NormalizedQuote => ({ ...TEST_QUOTE_CONTEXT, underlying: "KO", inputRaw: INPUT_RAW, issuer, mint, outputRaw, state: stateOf(mint, decimals) });
-  const cases: [string, QuoteComparison, { maxCostBps: bigint }][] = [
-    ["cost above policy (20 bps > 10 bps)", compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(99_800n, "Ondo", KOON_MINT, 9), { toleranceBps: 10n }), { maxCostBps: 10n }],
-    ["10,000 bps: alternative delivers 1 raw unit", compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(1n, "Ondo", KOON_MINT, 9), { toleranceBps: 25n }), POLICY],
-    ["alternative delivers nothing", compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(0n, "Ondo", KOON_MINT, 9), { toleranceBps: 25n }), POLICY],
+  const cases: [string, QuoteComparison, { maxAdditionalCostBps: bigint }][] = [
+    ["cost above policy (20 bps > 10 bps)", compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(99_800n, "Ondo", KOON_MINT, 9)), { maxAdditionalCostBps: 10n }],
+    ["10,000 bps: alternative delivers 1 raw unit", compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(1n, "Ondo", KOON_MINT, 9)), POLICY],
+    ["alternative delivers nothing", compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(0n, "Ondo", KOON_MINT, 9)), POLICY],
   ];
   for (const [label, comparison, reroutePolicy] of cases) {
     const result = decide({ preferred, alternative, reroutePolicy, inputRaw: INPUT_RAW, comparison });
     assert.deepEqual([result.decision, result.reasonCode, result.disclosure], [Decision.NO_ACCEPTABLE_ROUTE, "ALTERNATIVE_OUTSIDE_TOLERANCE", null], label);
     assert.notEqual(result.decision, Decision.NO_SAFE_ROUTE, label);
   }
-  // A comparison computed under a different tolerance than the policy is not this decision's comparison.
-  const loose = compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(99_800n, "Ondo", KOON_MINT, 9), { toleranceBps: 10_000n });
-  const mismatch = decide({ preferred, alternative, reroutePolicy: POLICY, inputRaw: INPUT_RAW, comparison: loose });
-  assert.deepEqual([mismatch.decision, mismatch.reasonCode], [Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH"]);
+  // A much better alternative (here 50% more shares) is never outside the one-sided limit.
+  const better = compareQuotes(quote(10_000n, "xStocks", KOX_MINT, 8), quote(150_000n, "Ondo", KOON_MINT, 9));
+  const offered = decide({ preferred, alternative, reroutePolicy: { maxAdditionalCostBps: 0n }, inputRaw: INPUT_RAW, comparison: better });
+  assert.deepEqual([offered.decision, offered.reasonCode, offered.disclosure?.economicEffect], [Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED", { kind: "BETTER_VALUE", bps: 5_000n }]);
 });
 
 test("no SAFE alternative is NO_SAFE_ROUTE", () => {
@@ -179,7 +178,7 @@ test("NO_SAFE_ROUTE means no SAFE eligible alternative exists, independent of qu
   }
 });
 
-test("a correctly bound comparison within tolerance reaches REQUIRES_CONSENT and no further", () => {
+test("a correctly bound comparison within the cost limit reaches REQUIRES_CONSENT and no further", () => {
   const base = { preferred: resolved("KOx", RepresentationState.TRANSITION), alternative: resolved("KOon", RepresentationState.SAFE), inputRaw: INPUT_RAW, comparison: COMPARISON };
   const result = decide({ ...base, reroutePolicy: POLICY });
   assert.deepEqual([result.decision, result.reasonCode], [Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED"]);

@@ -93,7 +93,7 @@ test("devnet quotes normalize to share-equivalents and compare conservatively", 
   // EQ-A 4.000000 x 1.5 = 6.0; EQ-B 5.990000 x 1.0 = 5.99; (6 - 5.99) / 6 = 16.67 bps, rounded up.
   assert.deepEqual(p.comparison.preferredSharesEquivalent, { num: 6n, den: 1n });
   assert.deepEqual(p.comparison.alternativeSharesEquivalent, { num: 599n, den: 100n });
-  assert.equal(p.comparison.conservativeCostDeltaBps, 17n);
+  assert.equal(p.comparison.additionalCostBps, 17n);
 });
 
 test("consent OFF requires consent; consent ON uses the alternative with the same disclosure", () => {
@@ -165,7 +165,7 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   const rejected = { signature: "r", slot: 1n, succeeded: false, customErrorName: "InsideTransitionWindow", downstreamBalanceBefore: 0n, downstreamBalanceAfter: 0n, explorerUrl: null };
   const executed = { signature: "e", slot: 2n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 5_990_000n, explorerUrl: null };
   const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanDigest: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }).planDigest });
-  assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.conservativeCostDeltaBps], ["DEVNET_EXECUTION", "e", 17n]);
+  assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.additionalCostBps], ["DEVNET_EXECUTION", "e", 17n]);
   assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
 
@@ -272,7 +272,7 @@ test("repeated deterministic setup converges to the same target and the same 6.0
         });
         const p = planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: toObservation(EQ_A.mint, a), alternativeEvidence: toObservation(EQ_B.mint, b), fixture, policy: DEVNET_DEMO_POLICY, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, currentSlot: SLOT, userConsent: DEVNET_DEMO_CONSENT });
         assert.ok(p.comparison);
-        results.add(`${p.comparison.preferredSharesEquivalent.num}/${p.comparison.preferredSharesEquivalent.den} ${p.comparison.alternativeSharesEquivalent.num}/${p.comparison.alternativeSharesEquivalent.den} ${p.comparison.conservativeCostDeltaBps} ${p.consentOff.executionEligibility} ${p.consentOn.executionEligibility}`);
+        results.add(`${p.comparison.preferredSharesEquivalent.num}/${p.comparison.preferredSharesEquivalent.den} ${p.comparison.alternativeSharesEquivalent.num}/${p.comparison.alternativeSharesEquivalent.den} ${p.comparison.additionalCostBps} ${p.consentOff.executionEligibility} ${p.consentOn.executionEligibility}`);
       }
     }
   }
