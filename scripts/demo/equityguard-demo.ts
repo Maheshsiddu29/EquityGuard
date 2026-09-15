@@ -108,7 +108,8 @@ async function part3(): Promise<DevnetDemoRun> {
   line(`  cluster ${ctx.cluster}; program ${state.deployment?.programId}; recipient ${recipient}`);
   line(`  policy: ${DEVNET_DEMO_POLICY.basis} [${DEVNET_DEMO_POLICY.calibration}]`);
   const run = await runDevnetDemo(ctx, state, { preferredLabel: "EQ-A", alternativeLabel: "EQ-B", recipient });
-  if (run.scheduleSignature) line(`  scheduled EQ-A transition: ${run.scheduleSignature}`);
+  line("  Deterministic setup (devnet test mints reset to the fixed demo target):");
+  for (const t of run.setupTransactions) line(`    ${t.purpose}: ${t.signature}`);
   line();
   line("Consent OFF:");
   formatDecision(run.consentOff);

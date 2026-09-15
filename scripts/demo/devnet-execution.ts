@@ -9,6 +9,11 @@
  * quote comparison were built against, so a state change between decision
  * and landing fails the transaction instead of executing on stale economics.
  * Quotes come from the DEVNET DEMO QUOTE / FIXTURE, never from a live market.
+ *
+ * Each run first resets both test mints to one fixed target (EQ-A effective
+ * multiplier 1.5 with 1.75 scheduled; EQ-B 1.0 with nothing scheduled) and
+ * verifies the result on chain, so repeated runs normalize to the same
+ * economics instead of accumulating multiplier changes.
  */
 
 import { readFileSync } from "node:fs";
@@ -23,9 +28,11 @@ import {
 } from "@solana-program/token-2022";
 import {
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
+  bytesEqual,
   equityGuardErrorName,
   fetchGuardSnapshot,
   getAssertSafeExecutionInstruction,
+  type ProtectedState,
 } from "@equityguard/guard-client";
 import {
   RepresentationState,
@@ -67,9 +74,18 @@ export const DEVNET_DEMO_POLICY: TransitionPolicy = {
   calibration: "UNCALIBRATED",
   basis: "M6 devnet demo policy (15 min before / 5 min after T); not an issuer policy",
 };
-/** Seconds ahead of chain time for the preferred asset's scheduled change. */
+/** Seconds ahead of chain time for the preferred asset's scheduled change; inside `beforeSecs`. */
 export const PREFERRED_TRANSITION_LEAD_SECS = 600n;
 
+/**
+ * Fixed demo target. Every run resets to it, so with the fixture outputs
+ * (EQ-A 4.000000, EQ-B 5.990000) the comparison is always 6.0 vs 5.99
+ * share-equivalents, 17 bps.
+ */
+export const DEVNET_DEMO_TARGET = {
+  preferred: { effectiveMultiplier: 1.5, scheduledMultiplier: 1.75 },
+  alternative: { effectiveMultiplier: 1.0 },
+} as const;
 
 export interface DevnetDemoQuoteFixture {
   readonly label: "DEVNET DEMO QUOTE / FIXTURE";
@@ -159,6 +175,69 @@ export function planDevnetDemo(input: {
     consentOff: decideExecution({ ...base, policy: { allowCrossIssuerReroute: false } }),
     consentOn: decideExecution({ ...base, policy: { allowCrossIssuerReroute: true } }),
   };
+}
+
+const f64Bytes = (value: number) => new Uint8Array(new Float64Array([value]).buffer);
+
+export interface SetupUpdate {
+  readonly newMultiplier: number;
+  readonly effectiveTimestamp: bigint;
+}
+
+export interface SetupStep {
+  readonly asset: TestAsset;
+  readonly purpose: string;
+  /** Sent as one transaction, in order. */
+  readonly updates: readonly SetupUpdate[];
+}
+
+/**
+ * Pure setup plan that resets both assets to `DEVNET_DEMO_TARGET` regardless
+ * of their current state. EQ-A: set the effective multiplier immediately
+ * (timestamp at chain time), then schedule the next one
+ * `PREFERRED_TRANSITION_LEAD_SECS` ahead. EQ-B: set it immediately, only if
+ * it is not already exactly at target. Absolute values only: nothing depends
+ * on the previous multiplier, so no drift can accumulate.
+ */
+export function planDemoSetup(input: {
+  readonly preferredAsset: TestAsset;
+  readonly alternativeAsset: TestAsset;
+  readonly alternativeState: ProtectedState;
+  readonly chainNow: bigint;
+}): { readonly steps: readonly SetupStep[]; readonly scheduledTimestamp: bigint } {
+  const { preferred, alternative } = DEVNET_DEMO_TARGET;
+  const scheduledTimestamp = input.chainNow + PREFERRED_TRANSITION_LEAD_SECS;
+  const steps: SetupStep[] = [
+    {
+      asset: input.preferredAsset,
+      purpose: `reset ${input.preferredAsset.label} to effective ${preferred.effectiveMultiplier}, schedule ${preferred.scheduledMultiplier} in ${PREFERRED_TRANSITION_LEAD_SECS}s`,
+      updates: [
+        { newMultiplier: preferred.effectiveMultiplier, effectiveTimestamp: input.chainNow },
+        { newMultiplier: preferred.scheduledMultiplier, effectiveTimestamp: scheduledTimestamp },
+      ],
+    },
+  ];
+  const target = f64Bytes(alternative.effectiveMultiplier);
+  if (!bytesEqual(input.alternativeState.multiplier, target) || !bytesEqual(input.alternativeState.newMultiplier, target)) {
+    steps.push({
+      asset: input.alternativeAsset,
+      purpose: `reset ${input.alternativeAsset.label} to ${alternative.effectiveMultiplier} immediately`,
+      updates: [{ newMultiplier: alternative.effectiveMultiplier, effectiveTimestamp: input.chainNow }],
+    });
+  }
+  return { steps, scheduledTimestamp };
+}
+
+/** Differences between on-chain state after setup and `DEVNET_DEMO_TARGET`; empty means at target. */
+export function demoSetupMismatches(preferred: ProtectedState, alternative: ProtectedState, scheduledTimestamp: bigint): readonly string[] {
+  const { preferred: p, alternative: a } = DEVNET_DEMO_TARGET;
+  const mismatches: string[] = [];
+  if (!bytesEqual(preferred.multiplier, f64Bytes(p.effectiveMultiplier))) mismatches.push("preferred multiplier");
+  if (!bytesEqual(preferred.newMultiplier, f64Bytes(p.scheduledMultiplier))) mismatches.push("preferred newMultiplier");
+  if (preferred.newMultiplierEffectiveTimestamp !== scheduledTimestamp) mismatches.push("preferred effective timestamp");
+  if (!bytesEqual(alternative.multiplier, f64Bytes(a.effectiveMultiplier))) mismatches.push("alternative multiplier");
+  if (!bytesEqual(alternative.newMultiplier, f64Bytes(a.effectiveMultiplier))) mismatches.push("alternative newMultiplier");
+  return mismatches;
 }
 
 /**
@@ -263,23 +342,37 @@ export async function submitRejectionProbe(
   return submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, input.amount, input.recipient);
 }
 
-/** Puts the preferred asset into a scheduled transition inside the policy window, unless it already is. */
-async function ensurePreferredTransition(ctx: DevnetContext, asset: TestAsset): Promise<string | null> {
-  const evidence = await fetchChainObservation(ctx.rpc, asset.mint);
-  if (classifyChainEvidence(evidence, DEVNET_DEMO_POLICY).state === RepresentationState.TRANSITION) return null;
-  const snapshot = await fetchGuardSnapshot(ctx.rpc, asset.mint);
-  const effective = snapshot.phase === 1 ? snapshot.state.newMultiplier : snapshot.state.multiplier;
-  const current = new DataView(effective.buffer, effective.byteOffset, 8).getFloat64(0, true);
-  const outcome = await sendInstructions(
-    ctx,
-    [getScheduleMultiplierInstruction({ mint: asset.mint, authority: ctx.payer, newMultiplier: current + 0.25, effectiveTimestamp: snapshot.clock.unixTimestamp + PREFERRED_TRANSITION_LEAD_SECS })],
-    { skipPreflight: false },
-  );
-  return outcome.signature;
+export interface SetupTransaction {
+  readonly purpose: string;
+  readonly signature: string;
+}
+
+/** Applies `planDemoSetup` on devnet and verifies the resulting chain state; throws if it is not at target. */
+async function resetDemoState(ctx: DevnetContext, preferredAsset: TestAsset, alternativeAsset: TestAsset): Promise<SetupTransaction[]> {
+  const alternative = await fetchGuardSnapshot(ctx.rpc, alternativeAsset.mint);
+  const plan = planDemoSetup({ preferredAsset, alternativeAsset, alternativeState: alternative.state, chainNow: alternative.clock.unixTimestamp });
+  const sent: SetupTransaction[] = [];
+  for (const step of plan.steps) {
+    const instructions = step.updates.map((u) => getScheduleMultiplierInstruction({ mint: step.asset.mint, authority: ctx.payer, newMultiplier: u.newMultiplier, effectiveTimestamp: u.effectiveTimestamp }));
+    const outcome = await sendInstructions(ctx, instructions, { skipPreflight: false });
+    if (!outcome.succeeded) throw new DevnetDemoSetupError(`setup failed: ${step.purpose} (${outcome.signature})`);
+    sent.push({ purpose: step.purpose, signature: outcome.signature });
+  }
+  const [p, a] = [await fetchGuardSnapshot(ctx.rpc, preferredAsset.mint), await fetchGuardSnapshot(ctx.rpc, alternativeAsset.mint)];
+  const mismatches = demoSetupMismatches(p.state, a.state, plan.scheduledTimestamp);
+  if (mismatches.length > 0) throw new DevnetDemoSetupError(`devnet demo state is not at target after setup: ${mismatches.join(", ")}`);
+  return sent;
+}
+
+export class DevnetDemoSetupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DevnetDemoSetupError";
+  }
 }
 
 export interface DevnetDemoRun {
-  readonly scheduleSignature: string | null;
+  readonly setupTransactions: readonly SetupTransaction[];
   readonly recipient: Address;
   readonly consentOff: DevnetExecutionResult;
   readonly consentOn: DevnetExecutionResult;
@@ -296,7 +389,7 @@ export async function runDevnetDemo(
   const alternativeAsset = findAsset(state, options.alternativeLabel);
   const { fixture, sha256 } = loadDevnetQuoteFixture();
 
-  const scheduleSignature = await ensurePreferredTransition(ctx, preferredAsset);
+  const setupTransactions = await resetDemoState(ctx, preferredAsset, alternativeAsset);
   const preferredEvidence = await fetchChainObservation(ctx.rpc, preferredAsset.mint);
   const alternativeEvidence = await fetchChainObservation(ctx.rpc, alternativeAsset.mint);
   const plan = planDevnetDemo({ preferredAsset, alternativeAsset, preferredEvidence, alternativeEvidence, fixture, policy: DEVNET_DEMO_POLICY });
@@ -317,7 +410,7 @@ export async function runDevnetDemo(
 
   const consentOff = devnetExecutionResult({ decision: plan.consentOff, evidenceSources, quoteAvailability });
   if (plan.consentOn.executionEligibility !== "EXECUTABLE") {
-    return { scheduleSignature, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }) };
+    return { setupTransactions, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }) };
   }
 
   // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
@@ -329,5 +422,5 @@ export async function runDevnetDemo(
   const selectedAsset = plan.consentOn.selectedRepresentation?.mint === alternativeAsset.mint ? alternativeAsset : preferredAsset;
   const executed = await executeGuardedDecision(ctx, { programId, decision: plan.consentOn, asset: selectedAsset, amount: amountFor(selectedAsset), recipient: options.recipient });
   const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt } });
-  return { scheduleSignature, recipient: options.recipient, consentOff, consentOn };
+  return { setupTransactions, recipient: options.recipient, consentOff, consentOn };
 }
