@@ -45,6 +45,13 @@ export const KO_DEMO_POLICY: TransitionPolicy = {
   basis: "demo policy: 15 min before / 5 min after a scheduled T; immediate updates have no window; not issuer-calibrated",
 };
 
+/**
+ * DEMO reroute policy for the replay: the hard cost bound any comparison must
+ * meet before a reroute could even be offered for consent. No replay scenario
+ * has a comparison (Ondo had no route), and no consent is ever given.
+ */
+export const KO_REPLAY_REROUTE_POLICY = { maxCostBps: 50n } as const;
+
 const windowOf = (policy: TransitionPolicy): ProtectionWindow => ({ beforeSecs: Number(policy.beforeSecs), afterSecs: Number(policy.afterSecs) });
 
 /** The trade notional of the recorded liquidity snapshot (5 USDC). */
@@ -162,7 +169,7 @@ function routesFromSnapshot(
     return { ...base, quote, detail: null };
   };
   const routes = { preferred: route(p, preferred), alternative: route(a, alternative) };
-  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: 0n }) : null;
+  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: KO_REPLAY_REROUTE_POLICY.maxCostBps }) : null;
   return { routes, comparison, availability };
 }
 
@@ -188,7 +195,17 @@ function scenario(
   const preferred = resolve(fixture, preferredKey, policy);
   const alternative = resolve(fixture, alternativeKey, policy);
   const { routes, comparison, availability } = routesFromSnapshot(snapshot, preferred, alternative);
-  const decision = decideExecution({ preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: SNAPSHOT_INPUT_RAW, comparison, routes });
+  // Observation only: no consent exists, so a reroute could at most reach REQUIRES_CONSENT.
+  const decision = decideExecution({
+    preferred,
+    alternative,
+    reroutePolicy: KO_REPLAY_REROUTE_POLICY,
+    inputRaw: SNAPSHOT_INPUT_RAW,
+    comparison,
+    routes,
+    consent: null,
+    currentSlot: BigInt(fixture.observations[preferredKey].slot),
+  });
   return {
     id,
     title,

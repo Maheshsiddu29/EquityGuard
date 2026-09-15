@@ -11,6 +11,7 @@
  */
 
 import type { QuoteComparison } from "./compare.ts";
+import { ConsentError, consumeConsent } from "./consent.ts";
 import { Decision, type DecisionReasonCode, type RepresentationSummary, type RerouteDisclosure } from "./decision.ts";
 import type { ExecutionEnvironment } from "./demo-result.ts";
 import type { EconomicState } from "./economic-state.ts";
@@ -34,6 +35,8 @@ export interface ExecutionPlanContent {
   /** Present for a consented reroute: the comparison consent was given to. */
   readonly comparisonKey: string | null;
   readonly disclosure: RerouteDisclosure | null;
+  /** Present for a consented reroute: the consumed consent record. */
+  readonly consentId: string | null;
 }
 
 export interface ExecutionPlan extends ExecutionPlanContent {
@@ -47,7 +50,8 @@ export type ExecutionPlanErrorCode =
   | "PLAN_TAMPERED"
   | "QUOTE_SUBSTITUTED"
   | "COMPARISON_NOT_FOR_PLAN"
-  | "DISCLOSURE_NOT_FOR_COMPARISON";
+  | "DISCLOSURE_NOT_FOR_COMPARISON"
+  | "CONSENT_REJECTED";
 
 export class ExecutionPlanError extends Error {
   readonly code: ExecutionPlanErrorCode;
@@ -79,7 +83,7 @@ function contentOf(plan: ExecutionPlan): ExecutionPlanContent {
  * MAINNET_OBSERVATION result can describe eligibility but never becomes a
  * submit-capable plan — and anything but an EXECUTABLE decision.
  */
-export function createExecutionPlan(decision: ExecutionDecision, environment: ExecutionEnvironment): ExecutionPlan {
+export function createExecutionPlan(decision: ExecutionDecision, environment: ExecutionEnvironment, options: { readonly currentSlot: bigint }): ExecutionPlan {
   if (environment !== "DEVNET_EXECUTION") {
     throw new ExecutionPlanError("OBSERVATION_ONLY_ENVIRONMENT", `${environment} results cannot produce a submit-capable execution plan`);
   }
@@ -93,6 +97,21 @@ export function createExecutionPlan(decision: ExecutionDecision, environment: Ex
   const rerouted = stateDecision.decision === Decision.USE_ALTERNATIVE;
   if (rerouted && (!comparison || stateDecision.disclosure?.comparisonKey !== comparison.comparisonKey)) {
     throw new ExecutionPlanError("DISCLOSURE_NOT_FOR_COMPARISON", "a consented reroute needs the disclosure of the exact comparison");
+  }
+  if (rerouted) {
+    // Re-verify against the REQUIRES_CONSENT form of this decision and consume: one consent, one plan.
+    if (!decision.consent) throw new ExecutionPlanError("CONSENT_REJECTED", "a reroute plan requires a consent record");
+    try {
+      consumeConsent(decision.consent, {
+        decision: { ...stateDecision, decision: Decision.REQUIRES_CONSENT, reasonCode: "CONSENT_REQUIRED" },
+        comparison: comparison as QuoteComparison,
+        reroutePolicy: decision.reroutePolicy,
+        currentSlot: options.currentSlot,
+      });
+    } catch (error) {
+      if (error instanceof ConsentError) throw new ExecutionPlanError("CONSENT_REJECTED", error.message);
+      throw error;
+    }
   }
   const quote = quoteIdentityOf(decision.executableQuote);
   const content: ExecutionPlanContent = {
@@ -110,6 +129,7 @@ export function createExecutionPlan(decision: ExecutionDecision, environment: Ex
     executionEligibility: "EXECUTABLE",
     comparisonKey: rerouted ? (comparison as QuoteComparison).comparisonKey : null,
     disclosure: rerouted ? stateDecision.disclosure : null,
+    consentId: rerouted ? (decision.consent?.consentId ?? null) : null,
   };
   // Structured clone detaches the plan from caller-owned objects before freezing.
   return deepFreeze(structuredClone({ ...content, planId: canonicalKey(content) }));

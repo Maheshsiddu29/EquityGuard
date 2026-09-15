@@ -21,7 +21,7 @@ function resolved(symbol: string, state: RepresentationState): ResolvedRepresent
 
 const NO_ROUTES = { preferred: null, alternative: null };
 /** State SAFE but no route: not executable. */
-const safeDecision = decideExecution({ preferred: resolved("KOx", RepresentationState.SAFE), alternative: null, policy: { allowCrossIssuerReroute: false }, inputRaw: 1n, comparison: null, routes: NO_ROUTES });
+const safeDecision = decideExecution({ preferred: resolved("KOx", RepresentationState.SAFE), alternative: null, reroutePolicy: { maxCostBps: 25n }, consent: null, currentSlot: 100n, inputRaw: 1n, comparison: null, routes: NO_ROUTES });
 const mainnetQuotes = { source: "JUPITER_MAINNET_SNAPSHOT" as const, observedAt: "2026-09-15T04:22:16.045Z", preferred: "AVAILABLE" as const, alternative: "NOT_APPLICABLE" as const, note: "snapshot" };
 const devnetQuotes = { source: "DEVNET_DEMO_QUOTE_FIXTURE" as const, observedAt: null, preferred: "AVAILABLE" as const, alternative: "AVAILABLE" as const, note: "DEVNET DEMO QUOTE / FIXTURE" };
 
@@ -47,7 +47,7 @@ test("devnet execution results cannot cite mainnet quotes or evidence, or execut
     () => devnetExecutionResult({ decision: safeDecision, evidenceSources: [{ kind: "JUPITER_ROUTE_DISCOVERY", description: "x", sha256: null, observedAt: null }], quoteAvailability: devnetQuotes }),
     DemoResultError,
   );
-  const unknown = decideExecution({ preferred: resolved("KOx", RepresentationState.UNKNOWN), alternative: null, policy: { allowCrossIssuerReroute: true }, inputRaw: 1n, comparison: null, routes: NO_ROUTES });
+  const unknown = decideExecution({ preferred: resolved("KOx", RepresentationState.UNKNOWN), alternative: null, reroutePolicy: { maxCostBps: 25n }, consent: null, currentSlot: 100n, inputRaw: 1n, comparison: null, routes: NO_ROUTES });
   const tx = { signature: "s", slot: 1n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 1n, explorerUrl: null };
   assert.throws(() => devnetExecutionResult({ decision: unknown, evidenceSources: [], quoteAvailability: devnetQuotes, execution: { executed: tx, rejectedPreferredAttempt: null } }), DemoResultError);
   // A SAFE state with no route is not executable either.

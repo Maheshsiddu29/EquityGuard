@@ -101,10 +101,23 @@ export {
   type RouteStatus,
 } from "./execution.ts";
 export {
+  ConsentError,
+  consentIssues,
+  consumeConsent,
+  grantConsent,
+  type ConsentContext,
+  type ConsentErrorCode,
+  type ConsentIssue,
+  type ConsentRecord,
+} from "./consent.ts";
+export { sha256, sha256Hex } from "./sha256.ts";
+export {
   Decision,
   comparisonBindingMismatch,
   comparisonStateMismatch,
   decide,
+  disclosureDigestOf,
+  outsideTolerance,
   type DecisionInput,
   type DecisionReasonCode,
   type DecisionResult,

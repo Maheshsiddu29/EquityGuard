@@ -57,13 +57,13 @@ function comparisonFor(preferred: ResolvedRepresentationState, alternative: Reso
     assert.ok(state);
     return { ...TEST_QUOTE_CONTEXT, underlying: r.underlying, issuer: r.issuer, mint: r.mint, inputRaw, outputRaw, state };
   };
-  return compareQuotes(quote(preferred, 5_450_395n), quote(alternative, 5_400_000n), { toleranceBps: 0n });
+  return compareQuotes(quote(preferred, 5_450_395n), quote(alternative, 54_153_839n), { toleranceBps: 25n });
 }
 
 /** The decision a bound comparison authorizes when the preferred side is unsafe. */
 function decideWith(comparison: QuoteComparison, preferred: ResolvedRepresentationState, alternative: ResolvedRepresentationState, inputRaw = INPUT_RAW) {
   const unsafe = { ...preferred, state: RepresentationState.TRANSITION, reason: "test: unsafe preferred" };
-  return decide({ preferred: unsafe, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw, comparison });
+  return decide({ preferred: unsafe, alternative, reroutePolicy: { maxCostBps: 25n }, inputRaw, comparison });
 }
 
 test("binding is exact values, independent of slot and observation time", () => {
@@ -86,7 +86,8 @@ test("7. a state-bound comparison is accepted for identical economic state", () 
   // Re-observed later at a different slot, same state and phase.
   const later = resolvePair(KOX_SCHEDULED, BEFORE + 60n);
   const result = decideWith(comparison, later.kox, later.koon);
-  assert.deepEqual([result.decision, result.reasonCode], [Decision.USE_ALTERNATIVE, "CONSENT_GIVEN"]);
+  // The furthest the state layer goes: consent to this exact disclosure is still required.
+  assert.deepEqual([result.decision, result.reasonCode], [Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED"]);
 });
 
 test("8-10. a changed multiplier, newMultiplier or effective timestamp makes the comparison stale", () => {
@@ -162,6 +163,6 @@ test("14. a valid binding never rescues PAUSED, UNKNOWN or conflicting states", 
     const result = decideWith(comparison, built.kox, alternative);
     assert.deepEqual([result.decision, result.reasonCode], [decision, reasonCode]);
   }
-  const unknownPreferred = decide({ preferred: { ...built.kox, state: RepresentationState.UNKNOWN }, alternative: built.koon, policy: { allowCrossIssuerReroute: true }, inputRaw: INPUT_RAW, comparison });
+  const unknownPreferred = decide({ preferred: { ...built.kox, state: RepresentationState.UNKNOWN }, alternative: built.koon, reroutePolicy: { maxCostBps: 25n }, inputRaw: INPUT_RAW, comparison });
   assert.deepEqual([unknownPreferred.decision, unknownPreferred.reasonCode], [Decision.UNKNOWN_STATE, "PREFERRED_STATE_UNKNOWN"]);
 });

@@ -24,7 +24,9 @@ import type { ProtectedState } from "@equityguard/guard-client";
 import { DevnetConfigError, type DevnetContext } from "../devnet/config.ts";
 import { TEST_ASSET_DISCLOSURE, type DevnetState, type TestAsset } from "../devnet/devnet-state.ts";
 import {
+  DEVNET_DEMO_CONSENT,
   DEVNET_DEMO_POLICY,
+  DEVNET_DEMO_REROUTE_POLICY,
   DEVNET_DEMO_TARGET,
   DevnetDemoEnvironmentError,
   PREFERRED_TRANSITION_LEAD_SECS,
@@ -67,12 +69,13 @@ function observation(mint: string, multiplier: number, newMultiplier: number, t:
 }
 
 // EQ-A pending a change at NOW + 597 s; EQ-B at 1.0 with nothing scheduled.
+const SLOT = 498_594_300n;
 const PREFERRED = observation(EQ_A.mint, 1.5, 1.75, NOW + 597n);
 const ALTERNATIVE = observation(EQ_B.mint, 1, 1, 0n);
 
 function plan(fixtureOverride?: Partial<ReturnType<typeof loadDevnetQuoteFixture>["fixture"]>) {
   const { fixture } = loadDevnetQuoteFixture();
-  return planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: PREFERRED, alternativeEvidence: ALTERNATIVE, fixture: { ...fixture, ...fixtureOverride }, policy: DEVNET_DEMO_POLICY });
+  return planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: PREFERRED, alternativeEvidence: ALTERNATIVE, fixture: { ...fixture, ...fixtureOverride }, policy: DEVNET_DEMO_POLICY, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, currentSlot: SLOT, userConsent: DEVNET_DEMO_CONSENT });
 }
 
 test("the devnet quote fixture is explicitly a demo fixture", () => {
@@ -104,9 +107,9 @@ test("consent OFF requires consent; consent ON uses the alternative with the sam
 
 test("quote identity binding: a comparison for another notional or pair never authorizes execution", () => {
   const p = plan();
-  const wrongNotional = decide({ preferred: p.preferred, alternative: p.alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw + 1n, comparison: p.comparison });
+  const wrongNotional = decide({ preferred: p.preferred, alternative: p.alternative, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, inputRaw: p.inputRaw + 1n, comparison: p.comparison });
   assert.deepEqual([wrongNotional.decision, wrongNotional.reasonCode], [Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH"]);
-  const swapped = decide({ preferred: p.alternative, alternative: p.preferred, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw, comparison: p.comparison });
+  const swapped = decide({ preferred: p.alternative, alternative: p.preferred, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, inputRaw: p.inputRaw, comparison: p.comparison });
   assert.notEqual(swapped.decision, Decision.USE_ALTERNATIVE);
 });
 
@@ -149,7 +152,7 @@ test("a devnet comparison built before a state change cannot authorize execution
   // EQ-B's multiplier changes immediately after the comparison was built.
   const updated = observation(EQ_B.mint, 1.1, 1.1, NOW - 1n);
   const alternative = { ...p.alternative, chainObservation: updated };
-  const result = decide({ preferred: p.preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw, comparison: p.comparison });
+  const result = decide({ preferred: p.preferred, alternative, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, inputRaw: p.inputRaw, comparison: p.comparison });
   assert.deepEqual([result.decision, result.reasonCode], [Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_STALE_STATE"]);
   assert.deepEqual(p.comparison?.alternativeQuote.state, economicStateOf(ALTERNATIVE));
 });
@@ -161,7 +164,7 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   const evidence = [{ kind: "DEVNET_DEMO_QUOTE_FIXTURE" as const, description: "fixture", sha256, observedAt: null }];
   const rejected = { signature: "r", slot: 1n, succeeded: false, customErrorName: "InsideTransitionWindow", downstreamBalanceBefore: 0n, downstreamBalanceAfter: 0n, explorerUrl: null };
   const executed = { signature: "e", slot: 2n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 5_990_000n, explorerUrl: null };
-  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanId: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION").planId });
+  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanId: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT }).planId });
   assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.conservativeCostDeltaBps], ["DEVNET_EXECUTION", "e", 17n]);
   assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
@@ -190,7 +193,7 @@ test("no execution plan exists for a non-executable decision, and execution cons
   const ctx = { rpc: NO_RPC, payer, cluster: "devnet" } as unknown as DevnetContext;
   const p = plan();
   const missingQuote = plan({ outputsRaw: { "EQ-A": "4000000" } });
-  const stale = decide({ preferred: p.preferred, alternative: { ...p.alternative, chainObservation: observation(EQ_B.mint, 1.1, 1.1, NOW - 1n) }, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw, comparison: p.comparison });
+  const stale = decide({ preferred: p.preferred, alternative: { ...p.alternative, chainObservation: observation(EQ_B.mint, 1.1, 1.1, NOW - 1n) }, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, inputRaw: p.inputRaw, comparison: p.comparison });
   const cases: [string, ExecutionDecision][] = [
     ["CONSENT_REQUIRED", p.consentOff],
     ["ROUTE_UNAVAILABLE", missingQuote.consentOn],
@@ -202,9 +205,9 @@ test("no execution plan exists for a non-executable decision, and execution cons
   ];
   for (const [label, decision] of cases) {
     assert.equal(decision.executionEligibility, label);
-    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
+    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
   }
-  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION");
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT });
   const quote = p.routes.alternative.quote!;
   const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan: executionPlan, quote, comparison: p.comparison, asset: EQ_B, recipient: payer.address };
   // Plan checks, cluster and asset checks all run before any RPC call.
@@ -267,7 +270,7 @@ test("repeated deterministic setup converges to the same target and the same 6.0
           hasScheduledChange: value(s.multiplier) !== value(s.newMultiplier),
           phase: now >= s.newMultiplierEffectiveTimestamp ? 1 : 0,
         });
-        const p = planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: toObservation(EQ_A.mint, a), alternativeEvidence: toObservation(EQ_B.mint, b), fixture, policy: DEVNET_DEMO_POLICY });
+        const p = planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: toObservation(EQ_A.mint, a), alternativeEvidence: toObservation(EQ_B.mint, b), fixture, policy: DEVNET_DEMO_POLICY, reroutePolicy: DEVNET_DEMO_REROUTE_POLICY, currentSlot: SLOT, userConsent: DEVNET_DEMO_CONSENT });
         assert.ok(p.comparison);
         results.add(`${p.comparison.preferredSharesEquivalent.num}/${p.comparison.preferredSharesEquivalent.den} ${p.comparison.alternativeSharesEquivalent.num}/${p.comparison.alternativeSharesEquivalent.den} ${p.comparison.conservativeCostDeltaBps} ${p.consentOff.executionEligibility} ${p.consentOn.executionEligibility}`);
       }
@@ -295,7 +298,7 @@ test("setup uses absolute targets only: no step depends on the previous multipli
 
 test("the devnet plan pins the fixture quote, and the guarded transaction consumes exactly the plan", async () => {
   const p = plan();
-  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION");
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT });
   assert.deepEqual(
     [executionPlan.selectedRepresentation.symbol, executionPlan.expectedOutputRaw, executionPlan.inputRaw, executionPlan.route.legs[0]?.venue, executionPlan.comparisonKey === p.comparison?.comparisonKey],
     ["EQ-B", 5_990_000n, 5_000_000n, "DEVNET_GUARDED_TRANSFER_CHECKED", true],

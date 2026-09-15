@@ -13,6 +13,7 @@ import {
   compareQuotes,
   createExecutionPlan,
   decideExecution,
+  grantConsent,
   economicStateOf,
   findRepresentationBySymbol,
   observeMintAccount,
@@ -50,22 +51,24 @@ function quote(r: ResolvedRepresentationState, outputRaw: bigint): NormalizedQuo
 }
 const route = (q: NormalizedQuote): RouteObservation => ({ mint: q.mint, status: "AVAILABLE", quote: q, source: "test", detail: null });
 
+const POLICY = { maxCostBps: 25n };
+const SLOT = 100n;
+/** KOon raw output about 10 bps below the KOx quote in share-equivalents. */
+const KOON_OUT = 54_153_839n;
+
 /** KOx in transition, KOon SAFE and quoted: the consented reroute is EXECUTABLE. */
 function reroute(consent = true, alternativeRouteQuote?: NormalizedQuote) {
   const preferred = kox(TRANSITION_TIME);
   const alternative = koon(TRANSITION_TIME);
   const preferredQuote = quote(preferred, 5_450_395n);
-  const alternativeQuote = quote(alternative, 5_400_000n);
-  const comparison = compareQuotes(preferredQuote, alternativeQuote, { toleranceBps: 0n });
-  const decision = decideExecution({
-    preferred,
-    alternative,
-    policy: { allowCrossIssuerReroute: consent },
-    inputRaw: INPUT_RAW,
-    comparison,
-    routes: { preferred: route(preferredQuote), alternative: route(alternativeRouteQuote ?? alternativeQuote) },
-  });
-  return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision };
+  const alternativeQuote = quote(alternative, KOON_OUT);
+  const comparison = compareQuotes(preferredQuote, alternativeQuote, { toleranceBps: 25n });
+  const base = { preferred, alternative, reroutePolicy: POLICY, inputRaw: INPUT_RAW, comparison, currentSlot: SLOT, routes: { preferred: route(preferredQuote), alternative: route(alternativeRouteQuote ?? alternativeQuote) } };
+  const withoutConsent = decideExecution({ ...base, consent: null });
+  if (!consent) return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision: withoutConsent };
+  // The user accepts exactly this disclosure.
+  const record = grantConsent({ decision: withoutConsent.stateDecision, comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxCostBps: 25n, validForSlots: 10n });
+  return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision: decideExecution({ ...base, consent: record }) };
 }
 
 const codes = (expected: NormalizedQuote, actual: NormalizedQuote): QuoteMismatchCode[] => quoteMismatches(expected, actual).map((m) => m.code);
@@ -73,7 +76,7 @@ const codes = (expected: NormalizedQuote, actual: NormalizedQuote): QuoteMismatc
 test("1. an identical quote identity is accepted, including a structurally cloned copy", () => {
   const { alternativeQuote, comparison, decision } = reroute();
   assert.deepEqual(codes(alternativeQuote, structuredClone(alternativeQuote)), []);
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION");
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT });
   assert.doesNotThrow(() => verifyExecutionPlan(plan, { quote: structuredClone(alternativeQuote), comparison: structuredClone(comparison) }));
   // The issuer label is not part of the identity.
   assert.deepEqual(codes(alternativeQuote, { ...alternativeQuote, issuer: "xStocks" }), []);
@@ -81,7 +84,7 @@ test("1. an identical quote identity is accepted, including a structurally clone
 
 test("2-8. each substituted field is rejected with a precise code", () => {
   const { alternative, alternativeQuote: q, comparison, decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION");
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT });
   const phaseChanged = { ...q, state: { ...q.state, phase: q.state.phase === 0 ? 1 : 0 } } as NormalizedQuote;
   const cases: [string, NormalizedQuote, QuoteMismatchCode[]][] = [
     ["2. outputRaw", { ...q, outputRaw: q.outputRaw + 1n }, ["OUTPUT_AMOUNT_CHANGED"]],
@@ -113,32 +116,32 @@ test("8. a comparison whose quote state went stale by phase is not executable", 
   const before = kox(T - 1n);
   const at = kox(T);
   const alternative = koon(T - 1n);
-  const comparison = compareQuotes(quote(before, 5_450_395n), quote(alternative, 5_400_000n), { toleranceBps: 0n });
-  const decision = decideExecution({ preferred: at, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: INPUT_RAW, comparison, routes: { preferred: null, alternative: route(comparison.alternativeQuote as NormalizedQuote) } });
+  const comparison = compareQuotes(quote(before, 5_450_395n), quote(alternative, KOON_OUT), { toleranceBps: 25n });
+  const decision = decideExecution({ preferred: at, alternative, reroutePolicy: POLICY, consent: null, currentSlot: SLOT, inputRaw: INPUT_RAW, comparison, routes: { preferred: null, alternative: route(comparison.alternativeQuote as NormalizedQuote) } });
   assert.equal(decision.executionEligibility, ExecutionEligibility.STALE_COMPARISON);
-  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("9. an execution plan is only created from an EXECUTABLE decision", () => {
   const consentOff = reroute(false).decision;
   assert.equal(consentOff.executionEligibility, ExecutionEligibility.CONSENT_REQUIRED);
-  assert.throws(() => createExecutionPlan(consentOff, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(consentOff, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
   const forged = { ...reroute().decision, executableQuote: null };
-  assert.throws(() => createExecutionPlan(forged, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(forged, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("10. a MAINNET_OBSERVATION environment can never produce a submit-capable plan", () => {
   const { decision } = reroute();
   assert.equal(decision.executionEligibility, ExecutionEligibility.EXECUTABLE);
-  assert.throws(() => createExecutionPlan(decision, "MAINNET_OBSERVATION"), (e) => e instanceof ExecutionPlanError && e.code === "OBSERVATION_ONLY_ENVIRONMENT");
+  assert.throws(() => createExecutionPlan(decision, "MAINNET_OBSERVATION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "OBSERVATION_ONLY_ENVIRONMENT");
 });
 
 test("11. the plan pins exactly the decision's quote, route, state and notional, and cannot be altered", () => {
   const { alternativeQuote, comparison, decision } = reroute();
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION");
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT });
   assert.deepEqual(
     [plan.selectedRepresentation.mint, plan.inputRaw, plan.expectedOutputRaw, plan.minOutputRaw, plan.route, plan.economicState, plan.decision, plan.executionEligibility],
-    [KOON.mint, INPUT_RAW, 5_400_000n, 5_399_000n, alternativeQuote.route, alternativeQuote.state, Decision.USE_ALTERNATIVE, "EXECUTABLE"],
+    [KOON.mint, INPUT_RAW, KOON_OUT, KOON_OUT - 1_000n, alternativeQuote.route, alternativeQuote.state, Decision.USE_ALTERNATIVE, "EXECUTABLE"],
   );
   assert.ok(Object.isFrozen(plan) && Object.isFrozen(plan.quote) && Object.isFrozen(plan.route.legs));
   assert.throws(() => {
@@ -165,18 +168,18 @@ test("12. a substituted route quote is not executable and cannot produce a plan"
   const { decision } = reroute(true, substitute);
   assert.deepEqual([decision.stateDecision.decision, decision.executionEligibility], [Decision.USE_ALTERNATIVE, ExecutionEligibility.QUOTE_MISMATCH]);
   assert.deepEqual(decision.quoteMismatches.map((m) => m.code), ["OUTPUT_AMOUNT_CHANGED", "VENUE_CHANGED", "ROUTE_CHANGED"]);
-  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
+  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("13. consent stays bound to the same disclosure and comparison", () => {
   const off = reroute(false);
   const on = reroute(true);
   assert.deepEqual(off.decision.stateDecision.disclosure, on.decision.stateDecision.disclosure);
-  const plan = createExecutionPlan(on.decision, "DEVNET_EXECUTION");
+  const plan = createExecutionPlan(on.decision, "DEVNET_EXECUTION", { currentSlot: SLOT });
   assert.equal(plan.comparisonKey, on.comparison.comparisonKey);
   assert.equal(plan.disclosure?.comparisonKey, on.comparison.comparisonKey);
   // Another comparison (different alternative output) is not the one consent was given to.
-  const other = compareQuotes(on.preferredQuote, { ...on.alternativeQuote, outputRaw: 5_300_000n }, { toleranceBps: 0n });
+  const other = compareQuotes(on.preferredQuote, { ...on.alternativeQuote, outputRaw: KOON_OUT - 3_000n }, { toleranceBps: 25n });
   assert.throws(() => verifyExecutionPlan(plan, { quote: on.alternativeQuote, comparison: other }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
   assert.throws(() => verifyExecutionPlan(plan, { quote: on.alternativeQuote, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
   // Same quotes, different tolerance: a different comparison.
@@ -184,14 +187,14 @@ test("13. consent stays bound to the same disclosure and comparison", () => {
   assert.notEqual(tolerance.comparisonKey, on.comparison.comparisonKey);
   // A decision whose disclosure describes another comparison cannot be planned.
   const mismatched = { ...on.decision, stateDecision: { ...on.decision.stateDecision, disclosure: { ...on.decision.stateDecision.disclosure!, comparisonKey: tolerance.comparisonKey } } };
-  assert.throws(() => createExecutionPlan(mismatched, "DEVNET_EXECUTION"), (e) => e instanceof ExecutionPlanError && e.code === "DISCLOSURE_NOT_FOR_COMPARISON");
+  assert.throws(() => createExecutionPlan(mismatched, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "DISCLOSURE_NOT_FOR_COMPARISON");
 });
 
 test("a SAFE preferred plan has no comparison and binds the preferred route quote", () => {
   const preferred = koon(TRANSITION_TIME);
   const q = quote(preferred, 5_000_000n);
-  const decision = decideExecution({ preferred, alternative: null, policy: { allowCrossIssuerReroute: false }, inputRaw: INPUT_RAW, comparison: null, routes: { preferred: route(q), alternative: null } });
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION");
+  const decision = decideExecution({ preferred, alternative: null, reroutePolicy: POLICY, consent: null, currentSlot: SLOT, inputRaw: INPUT_RAW, comparison: null, routes: { preferred: route(q), alternative: null } });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT });
   assert.deepEqual([plan.decision, plan.comparisonKey, plan.disclosure, plan.expectedOutputRaw], [Decision.USE_PREFERRED, null, null, 5_000_000n]);
   assert.doesNotThrow(() => verifyExecutionPlan(plan, { quote: q, comparison: null }));
   assert.throws(() => verifyExecutionPlan(plan, { quote: { ...q, outputRaw: 1n }, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");

@@ -8,10 +8,16 @@
  * selected representation has an available route and a quote bound to its
  * exact current economic state. It is pure: it fetches, builds and signs
  * nothing.
+ *
+ * Consent is applied here, not in `decide`: a REQUIRES_CONSENT decision
+ * becomes USE_ALTERNATIVE only with a `ConsentRecord` that authorizes that
+ * exact disclosure, comparison and slot (it is consumed later, by
+ * `createExecutionPlan`).
  */
 
 import type { NormalizedQuote, QuoteComparison } from "./compare.ts";
-import { Decision, decide, type DecisionInput, type DecisionResult, type RepresentationSummary } from "./decision.ts";
+import { consentIssues, type ConsentIssue, type ConsentRecord } from "./consent.ts";
+import { Decision, decide, outsideTolerance, type DecisionInput, type DecisionResult, type RepresentationSummary } from "./decision.ts";
 import { economicStateMismatches, economicStateOf } from "./economic-state.ts";
 import { quoteIdentityOf, quoteMismatches, type QuoteIdentity, type QuoteMismatch } from "./quote-identity.ts";
 import type { ResolvedRepresentationState } from "./types.ts";
@@ -29,6 +35,10 @@ export const ExecutionEligibility = {
   STATE_UNKNOWN: "STATE_UNKNOWN",
   /** A reroute is available but the user has not consented. */
   CONSENT_REQUIRED: "CONSENT_REQUIRED",
+  /** A consent record was presented but does not authorize this exact reroute; `consentIssues` says why. */
+  CONSENT_INVALID: "CONSENT_INVALID",
+  /** A SAFE, quoted alternative exists but is outside the hard reroute tolerance. */
+  ALTERNATIVE_OUTSIDE_TOLERANCE: "ALTERNATIVE_OUTSIDE_TOLERANCE",
   /** A quote or comparison was built against a different economic state. */
   STALE_COMPARISON: "STALE_COMPARISON",
   /**
@@ -55,6 +65,10 @@ export interface RouteObservation {
 
 export interface ExecutionInput extends DecisionInput {
   readonly routes: { readonly preferred: RouteObservation | null; readonly alternative: RouteObservation | null };
+  /** Consent to one exact disclosure; null when the user has not accepted one. */
+  readonly consent: ConsentRecord | null;
+  /** Chain slot of this evaluation; consent expiry is checked against it. */
+  readonly currentSlot: bigint;
 }
 
 export interface ExecutionDecision {
@@ -77,6 +91,12 @@ export interface ExecutionDecision {
   readonly executableQuote: QuoteIdentity | null;
   /** Precise reasons when a presented quote differs from the bound one. */
   readonly quoteMismatches: readonly QuoteMismatch[];
+  /** The consent that turned REQUIRES_CONSENT into USE_ALTERNATIVE; null otherwise. */
+  readonly consent: ConsentRecord | null;
+  /** Why a presented consent was not accepted. */
+  readonly consentIssues: readonly ConsentIssue[];
+  readonly reroutePolicy: DecisionInput["reroutePolicy"];
+  readonly currentSlot: bigint;
 }
 
 export type ExecutableDecision = ExecutionDecision & {
@@ -103,8 +123,27 @@ function routeFor(route: RouteObservation | null, representation: ResolvedRepres
   return route && representation && route.mint === representation.mint ? route : null;
 }
 
+/** Applies a presented consent to a REQUIRES_CONSENT decision; the state layer itself never sees consent. */
+function applyConsent(base: DecisionResult, input: ExecutionInput): { stateDecision: DecisionResult; consent: ConsentRecord | null; issues: readonly ConsentIssue[] } {
+  if (base.decision !== Decision.REQUIRES_CONSENT || !input.consent || !input.comparison) return { stateDecision: base, consent: null, issues: [] };
+  const issues = consentIssues(input.consent, { decision: base, comparison: input.comparison, reroutePolicy: input.reroutePolicy, currentSlot: input.currentSlot });
+  if (issues.length > 0) return { stateDecision: base, consent: null, issues };
+  const consent = input.consent;
+  return {
+    stateDecision: {
+      ...base,
+      decision: Decision.USE_ALTERNATIVE,
+      reasonCode: "CONSENT_GIVEN",
+      reason: `${base.reason}; consent ${consent.consentId.slice(0, 12)}… accepts this exact disclosure (${consent.costBps} bps, max ${consent.maxCostBps} bps, until slot ${consent.expiresAtSlot})`,
+    },
+    consent,
+    issues: [],
+  };
+}
+
 export function decideExecution(input: ExecutionInput): ExecutionDecision {
-  const stateDecision = decide(input);
+  const applied = applyConsent(decide(input), input);
+  const { stateDecision } = applied;
   const { preferred, alternative } = stateDecision;
   const preferredRoute = routeFor(input.routes.preferred, preferred);
   const alternativeRoute = routeFor(input.routes.alternative, alternative);
@@ -123,6 +162,10 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
     consentRequired: stateDecision.decision === Decision.REQUIRES_CONSENT,
     executableQuote: fields.executableQuote ?? null,
     quoteMismatches: fields.quoteMismatches ?? [],
+    consent: applied.consent,
+    consentIssues: applied.issues,
+    reroutePolicy: input.reroutePolicy,
+    currentSlot: input.currentSlot,
   });
 
   switch (stateDecision.decision) {
@@ -157,6 +200,12 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       if (!alternativeRoute.quote) {
         return result(ExecutionEligibility.QUOTE_UNAVAILABLE, `${chosen.symbol} is routable but the route carries no quote to execute`, { selectedRepresentation, selectedRouteAvailable: true });
       }
+      // Defense in depth: the hard tolerance and the accepted maximum still hold.
+      const consent = applied.consent as ConsentRecord;
+      const outside = outsideTolerance(comparison, input.reroutePolicy) ?? (comparison.conservativeCostDeltaBps > consent.maxCostBps ? "cost above the accepted maximum" : null);
+      if (outside) {
+        return result(ExecutionEligibility.ALTERNATIVE_OUTSIDE_TOLERANCE, `${chosen.symbol}: ${outside}`, { selectedRepresentation, quoteAvailable: true });
+      }
       // The route's quote must be exactly the quote that was normalized, compared and disclosed.
       const substituted = quoteMismatches(comparison.alternativeQuote, alternativeRoute.quote);
       const fields = { selectedRepresentation, selectedRouteAvailable: true, quoteAvailable: true };
@@ -169,7 +218,11 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       });
     }
     case Decision.REQUIRES_CONSENT:
-      return result(ExecutionEligibility.CONSENT_REQUIRED, "a disclosed cross-issuer reroute needs explicit consent before anything can be built", { quoteAvailable: true });
+      return applied.issues.length > 0
+        ? result(ExecutionEligibility.CONSENT_INVALID, `presented consent does not authorize this reroute: ${applied.issues.map((i) => i.code).join(", ")}`, { quoteAvailable: true })
+        : result(ExecutionEligibility.CONSENT_REQUIRED, "a disclosed cross-issuer reroute needs consent to this exact disclosure before anything can be built", { quoteAvailable: true });
+    case Decision.NO_ACCEPTABLE_ROUTE:
+      return result(ExecutionEligibility.ALTERNATIVE_OUTSIDE_TOLERANCE, stateDecision.reason, { quoteAvailable: true });
     case Decision.NO_SAFE_ROUTE:
       return result(ExecutionEligibility.STATE_UNSAFE, stateDecision.reason);
     case Decision.UNKNOWN_STATE:

@@ -3,14 +3,22 @@
  * assets, fetches quotes or signs anything.
  *
  * Every outcome is an expected product state returned as a value, not thrown.
- * A switch to a different issuer's representation is never silent: it needs
- * the user's explicit cross-issuer policy and always carries a disclosure
- * (issuers, reason, conservative cost delta).
+ * A switch to a different issuer's representation is never silent and never
+ * decided here: the most this layer returns is REQUIRES_CONSENT with an exact
+ * disclosure. Only a `ConsentRecord` for that exact disclosure (consent.ts,
+ * applied by `decideExecution`) turns it into USE_ALTERNATIVE. There is no
+ * user preference flag in this path.
+ *
+ * The reroute policy's `maxCostBps` is a hard economic bound: an alternative
+ * outside it is NO_ACCEPTABLE_ROUTE / ALTERNATIVE_OUTSIDE_TOLERANCE and is
+ * never offered for consent.
  */
 
 import type { QuoteComparison } from "./compare.ts";
 import { economicStateMismatches, economicStateOf, type EconomicState } from "./economic-state.ts";
 import { formatRationalFloor } from "./normalize.ts";
+import { canonicalKey } from "./quote-identity.ts";
+import { sha256Hex } from "./sha256.ts";
 import { RepresentationState, StateSource, type ResolvedRepresentationState } from "./types.ts";
 
 export const Decision = {
@@ -18,6 +26,8 @@ export const Decision = {
   REQUIRES_CONSENT: "REQUIRES_CONSENT",
   USE_ALTERNATIVE: "USE_ALTERNATIVE",
   NO_SAFE_ROUTE: "NO_SAFE_ROUTE",
+  /** A SAFE, quoted alternative exists but its economics are outside the hard reroute tolerance. */
+  NO_ACCEPTABLE_ROUTE: "NO_ACCEPTABLE_ROUTE",
   UNKNOWN_STATE: "UNKNOWN_STATE",
 } as const;
 export type Decision = (typeof Decision)[keyof typeof Decision];
@@ -34,12 +44,17 @@ export type DecisionReasonCode =
   | "ALTERNATIVE_QUOTE_UNAVAILABLE"
   | "QUOTE_COMPARISON_MISMATCH"
   | "QUOTE_COMPARISON_STALE_STATE"
+  | "ALTERNATIVE_OUTSIDE_TOLERANCE"
   | "CONSENT_REQUIRED"
   | "CONSENT_GIVEN";
 
+/**
+ * Integrator reroute policy. `maxCostBps` is a HARD bound: a comparison must
+ * be computed with exactly this tolerance, be within it, and cost at most this
+ * many bps, or no reroute is offered. User consent cannot exceed it.
+ */
 export interface ReroutePolicy {
-  /** Explicit user choice: "Allow rerouting across verified issuers". */
-  readonly allowCrossIssuerReroute: boolean;
+  readonly maxCostBps: bigint;
 }
 
 /** Share-equivalent display precision; values are rounded down for display only. */
@@ -59,6 +74,11 @@ export interface RerouteDisclosure {
   readonly notice: string;
   /** The exact comparison this disclosure (and any consent to it) describes. */
   readonly comparisonKey: string;
+  readonly inputRaw: bigint;
+  /** Hard policy bound the disclosed cost was checked against. */
+  readonly policyMaxCostBps: bigint;
+  /** SHA-256 of the canonical disclosure content above; what a consent record binds. */
+  readonly disclosureDigest: string;
 }
 
 export interface RepresentationSummary {
@@ -75,14 +95,14 @@ export interface DecisionResult {
   readonly reason: string;
   readonly preferred: ResolvedRepresentationState;
   readonly alternative: ResolvedRepresentationState | null;
-  /** Present for REQUIRES_CONSENT and USE_ALTERNATIVE only. */
+  /** Present for REQUIRES_CONSENT and (consent layer) USE_ALTERNATIVE only. */
   readonly disclosure: RerouteDisclosure | null;
 }
 
 export interface DecisionInput {
   readonly preferred: ResolvedRepresentationState;
   readonly alternative: ResolvedRepresentationState | null;
-  readonly policy: ReroutePolicy;
+  readonly reroutePolicy: ReroutePolicy;
   /** Input notional (smallest units) of the trade being decided. */
   readonly inputRaw: bigint;
   /**
@@ -150,7 +170,8 @@ function unusable(state: ResolvedRepresentationState): "conflict" | "unknown" | 
 }
 
 export function decide(input: DecisionInput): DecisionResult {
-  const { preferred, alternative, policy, comparison } = input;
+  const { preferred, alternative, reroutePolicy, comparison } = input;
+  if (reroutePolicy.maxCostBps < 0n) throw new RangeError("reroute policy maxCostBps must be non-negative");
   const result = (
     decision: Decision,
     reasonCode: DecisionReasonCode,
@@ -200,11 +221,42 @@ export function decide(input: DecisionInput): DecisionResult {
     return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_STALE_STATE", `${unsafeReason}; quote comparison was built against a different economic state and must be recomputed: ${stale}`);
   }
 
-  const disclosure: RerouteDisclosure = {
+  // The comparison must have been computed under this policy's tolerance.
+  if (comparison.toleranceBps !== reroutePolicy.maxCostBps) {
+    return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH", `${unsafeReason}; quote comparison tolerance ${comparison.toleranceBps} bps differs from the reroute policy ${reroutePolicy.maxCostBps} bps`);
+  }
+  // Hard economic bound: never offer an alternative outside it, whatever consent might say later.
+  const outside = outsideTolerance(comparison, reroutePolicy);
+  if (outside) {
+    return result(Decision.NO_ACCEPTABLE_ROUTE, "ALTERNATIVE_OUTSIDE_TOLERANCE", `${unsafeReason}; ${alternative.symbol} is SAFE but ${outside}`);
+  }
+
+  return result(Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED", `${unsafeReason}; ${alternative.symbol} (${alternative.issuer}) is SAFE`, disclosureFor(preferred, alternative, unsafeReason, comparison, input.inputRaw, reroutePolicy));
+}
+
+/** Why a comparison is economically unacceptable under the hard policy, or null. */
+export function outsideTolerance(comparison: QuoteComparison, policy: ReroutePolicy): string | null {
+  if (comparison.alternativeQuote.outputRaw <= 0n) return "the alternative quote delivers nothing";
+  if (!comparison.withinTolerance) return `share-equivalents differ by more than ${comparison.toleranceBps} bps`;
+  if (comparison.conservativeCostDeltaBps > policy.maxCostBps) {
+    return `switching costs ${comparison.conservativeCostDeltaBps} bps, above the ${policy.maxCostBps} bps policy limit`;
+  }
+  return null;
+}
+
+function disclosureFor(
+  preferred: ResolvedRepresentationState,
+  alternative: ResolvedRepresentationState,
+  reason: string,
+  comparison: QuoteComparison,
+  inputRaw: bigint,
+  policy: ReroutePolicy,
+): RerouteDisclosure {
+  const content = {
     underlying: preferred.underlying,
     original: summary(preferred),
     alternative: summary(alternative),
-    reason: unsafeReason,
+    reason,
     conservativeCostDeltaBps: comparison.conservativeCostDeltaBps,
     preferredSharesEquivalent: formatRationalFloor(comparison.preferredSharesEquivalent, DISCLOSURE_SHARE_DECIMALS),
     alternativeSharesEquivalent: formatRationalFloor(comparison.alternativeSharesEquivalent, DISCLOSURE_SHARE_DECIMALS),
@@ -212,9 +264,14 @@ export function decide(input: DecisionInput): DecisionResult {
     withinTolerance: comparison.withinTolerance,
     notice: NOT_IDENTICAL_NOTICE,
     comparisonKey: comparison.comparisonKey,
+    inputRaw,
+    policyMaxCostBps: policy.maxCostBps,
   };
-  if (!policy.allowCrossIssuerReroute) {
-    return result(Decision.REQUIRES_CONSENT, "CONSENT_REQUIRED", `${unsafeReason}; ${alternative.symbol} (${alternative.issuer}) is SAFE`, disclosure);
-  }
-  return result(Decision.USE_ALTERNATIVE, "CONSENT_GIVEN", `${unsafeReason}; user allows cross-issuer reroute to ${alternative.symbol} (${alternative.issuer})`, disclosure);
+  return { ...content, disclosureDigest: disclosureDigestOf(content) };
+}
+
+/** SHA-256 of a disclosure's canonical content (everything but the digest itself). */
+export function disclosureDigestOf(disclosure: Omit<RerouteDisclosure, "disclosureDigest">): string {
+  const { disclosureDigest: _ignored, ...content } = disclosure as RerouteDisclosure;
+  return sha256Hex(canonicalKey(content));
 }

@@ -115,7 +115,14 @@ async function part3(): Promise<DevnetDemoRun> {
   line("Consent OFF:");
   formatDecision(run.consentOff);
   line();
-  line("Consent ON (explicit demo consent: allowCrossIssuerReroute = true):");
+  if (run.consent) {
+    const c = run.consent;
+    line(`USER CONSENT to this exact disclosure (demo acceptance, single use):`);
+    line(`  consent ${c.consentId.slice(0, 16)}…  disclosure sha256 ${c.disclosureDigest.slice(0, 16)}…`);
+    line(`  ${c.underlying}: ${c.inputRaw} input; cost ${c.costBps} bps, accepted max ${c.maxCostBps} bps; valid slots ${c.issuedAtSlot}..${c.expiresAtSlot}`);
+  }
+  line();
+  line("Consent ON (re-evaluated with the consent record):");
   formatDecision(run.consentOn);
   if (run.executionPlan) {
     const plan = run.executionPlan;

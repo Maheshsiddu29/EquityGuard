@@ -42,6 +42,7 @@ import {
   compareQuotes,
   decideExecution,
   devnetExecutionResult,
+  grantConsent,
   economicStateOf,
   fetchChainObservation,
   protectedStateOf,
@@ -54,6 +55,7 @@ import {
   type EconomicState,
   type EvidenceReference,
   type ExecutionDecision,
+  type ConsentRecord,
   type ExecutionPlan,
   type NormalizedQuote,
   type QuoteAvailability,
@@ -78,6 +80,17 @@ export const DEVNET_DEMO_POLICY: TransitionPolicy = {
   calibration: "UNCALIBRATED",
   basis: "M6 devnet demo policy (15 min before / 5 min after T); not an issuer policy",
 };
+/**
+ * Devnet demo reroute policy: the hard cost bound (integrator tolerance). The
+ * comparison is computed with exactly this tolerance.
+ */
+export const DEVNET_DEMO_REROUTE_POLICY = { maxCostBps: 25n } as const;
+/**
+ * The demo user's acceptance of the one disclosure the run shows: at most
+ * 20 bps, valid for 150 slots (about a minute). Explicit demo values, not a
+ * standing preference.
+ */
+export const DEVNET_DEMO_CONSENT = { maxCostBps: 20n, validForSlots: 150n } as const;
 /** Seconds ahead of chain time for the preferred asset's scheduled change; inside `beforeSecs`. */
 export const PREFERRED_TRANSITION_LEAD_SECS = 600n;
 
@@ -173,11 +186,20 @@ export interface DevnetDemoPlan {
   readonly comparison: QuoteComparison | null;
   readonly inputRaw: bigint;
   readonly routes: { readonly preferred: RouteObservation; readonly alternative: RouteObservation };
+  /** Before any consent: at most REQUIRES_CONSENT. */
   readonly consentOff: ExecutionDecision;
+  /** The demo user's consent to exactly `consentOff`'s disclosure; null when there is nothing to consent to. */
+  readonly consent: ConsentRecord | null;
+  /** Re-evaluated with `consent`. */
   readonly consentOn: ExecutionDecision;
 }
 
-/** Pure: resolve, normalize, compare, decide and evaluate eligibility with consent off and on. */
+/**
+ * Pure (apart from minting the consent capability): resolve, normalize,
+ * compare, decide, then — only if the decision is REQUIRES_CONSENT and
+ * `userConsent` is given — grant consent to that exact disclosure and
+ * re-evaluate.
+ */
 export function planDevnetDemo(input: {
   readonly preferredAsset: TestAsset;
   readonly alternativeAsset: TestAsset;
@@ -185,26 +207,27 @@ export function planDevnetDemo(input: {
   readonly alternativeEvidence: ChainEvidence;
   readonly fixture: DevnetDemoQuoteFixture;
   readonly policy: TransitionPolicy;
+  readonly reroutePolicy: { readonly maxCostBps: bigint };
+  readonly currentSlot: bigint;
+  readonly userConsent: { readonly maxCostBps: bigint; readonly validForSlots: bigint } | null;
 }): DevnetDemoPlan {
-  const { fixture, policy } = input;
+  const { fixture, policy, reroutePolicy, currentSlot } = input;
   const preferred = resolveDevnetAsset(input.preferredAsset, fixture.underlying, input.preferredEvidence, policy);
   const alternative = resolveDevnetAsset(input.alternativeAsset, fixture.underlying, input.alternativeEvidence, policy);
   const routes = {
     preferred: fixtureRoute(input.preferredAsset, fixture.underlying, input.preferredEvidence, fixture),
     alternative: fixtureRoute(input.alternativeAsset, fixture.underlying, input.alternativeEvidence, fixture),
   };
-  const comparison = routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: 0n }) : null;
+  const comparison =
+    routes.preferred.quote && routes.alternative.quote ? compareQuotes(routes.preferred.quote, routes.alternative.quote, { toleranceBps: reroutePolicy.maxCostBps }) : null;
   const inputRaw = BigInt(fixture.inputRaw);
-  const base = { preferred, alternative, inputRaw, comparison, routes };
-  return {
-    preferred,
-    alternative,
-    comparison,
-    inputRaw,
-    routes,
-    consentOff: decideExecution({ ...base, policy: { allowCrossIssuerReroute: false } }),
-    consentOn: decideExecution({ ...base, policy: { allowCrossIssuerReroute: true } }),
-  };
+  const base = { preferred, alternative, inputRaw, comparison, routes, reroutePolicy, currentSlot };
+  const consentOff = decideExecution({ ...base, consent: null });
+  const consent =
+    input.userConsent && comparison && consentOff.stateDecision.decision === "REQUIRES_CONSENT"
+      ? grantConsent({ decision: consentOff.stateDecision, comparison, reroutePolicy, currentSlot, ...input.userConsent })
+      : null;
+  return { preferred, alternative, comparison, inputRaw, routes, consentOff, consent, consentOn: decideExecution({ ...base, consent }) };
 }
 
 const f64Bytes = (value: number) => new Uint8Array(new Float64Array([value]).buffer);
@@ -417,6 +440,7 @@ export interface DevnetDemoRun {
   readonly consentOff: DevnetExecutionResult;
   readonly consentOn: DevnetExecutionResult;
   readonly executionPlan: ExecutionPlan | null;
+  readonly consent: ConsentRecord | null;
 }
 
 export async function runDevnetDemo(
@@ -433,7 +457,18 @@ export async function runDevnetDemo(
   const setupTransactions = await resetDemoState(ctx, preferredAsset, alternativeAsset);
   const preferredEvidence = await fetchChainObservation(ctx.rpc, preferredAsset.mint);
   const alternativeEvidence = await fetchChainObservation(ctx.rpc, alternativeAsset.mint);
-  const plan = planDevnetDemo({ preferredAsset, alternativeAsset, preferredEvidence, alternativeEvidence, fixture, policy: DEVNET_DEMO_POLICY });
+  const currentSlot = preferredEvidence.slot ?? 0n;
+  const plan = planDevnetDemo({
+    preferredAsset,
+    alternativeAsset,
+    preferredEvidence,
+    alternativeEvidence,
+    fixture,
+    policy: DEVNET_DEMO_POLICY,
+    reroutePolicy: DEVNET_DEMO_REROUTE_POLICY,
+    currentSlot,
+    userConsent: DEVNET_DEMO_CONSENT,
+  });
 
   const evidenceSources: EvidenceReference[] = [
     { kind: "DEVNET_CHAIN_STATE", description: `${preferredAsset.label} mint at slot ${preferredEvidence.slot}`, sha256: null, observedAt: preferredEvidence.observedAt },
@@ -451,11 +486,11 @@ export async function runDevnetDemo(
 
   const consentOff = devnetExecutionResult({ decision: plan.consentOff, evidenceSources, quoteAvailability });
   if (plan.consentOn.executionEligibility !== "EXECUTABLE") {
-    return { setupTransactions, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }), executionPlan: null };
+    return { setupTransactions, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability }), executionPlan: null, consent: plan.consent };
   }
 
   // Immutable plan from the EXECUTABLE consented decision: exact quote, route, state and comparison.
-  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION");
+  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION", { currentSlot });
   // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
   const rejectedPreferredAttempt =
     plan.preferred.state !== RepresentationState.SAFE && plan.comparison
@@ -466,5 +501,5 @@ export async function runDevnetDemo(
   if (!selected.route.quote) throw new DevnetDemoEnvironmentError("selected route has no quote");
   const executed = await executeGuardedPlan(ctx, { programId, plan: executionPlan, quote: selected.route.quote, comparison: plan.comparison, asset: selected.asset, recipient: options.recipient });
   const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt }, executionPlanId: executionPlan.planId });
-  return { setupTransactions, recipient: options.recipient, consentOff, consentOn, executionPlan };
+  return { setupTransactions, recipient: options.recipient, consentOff, consentOn, executionPlan, consent: plan.consent };
 }

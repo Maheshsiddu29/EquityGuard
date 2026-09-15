@@ -226,7 +226,7 @@ export function assertDemoResult(result: DemoResult): void {
   if (r.consentRequired !== (r.decision === Decision.REQUIRES_CONSENT)) {
     throw new DemoResultError("consentRequired must match the decision");
   }
-  if (r.consentRequired && r.executionEligibility !== ExecutionEligibility.CONSENT_REQUIRED) {
+  if (r.consentRequired && r.executionEligibility !== ExecutionEligibility.CONSENT_REQUIRED && r.executionEligibility !== ExecutionEligibility.CONSENT_INVALID) {
     throw new DemoResultError("a decision requiring consent cannot have any other eligibility");
   }
   if (r.executionEligibility === ExecutionEligibility.EXECUTABLE && (r.decision !== Decision.USE_PREFERRED && r.decision !== Decision.USE_ALTERNATIVE)) {
