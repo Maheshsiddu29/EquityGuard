@@ -34,17 +34,17 @@ export type Calibration = "UNCALIBRATED" | "CALIBRATED";
  * Protection interval around a scheduled multiplier activation T, inclusive:
  * `[T - beforeSecs, T + afterSecs]`, matching the on-chain guard. There is no
  * default: callers must state the policy and its calibration basis.
+ *
+ * It applies only to SCHEDULED changes (stored multipliers differ). An
+ * immediate update (multipliers already equal and activated) has no time
+ * window: a fresh post-update state is SAFE, and the risk it poses to
+ * transactions built from the previous state is handled by stale-state
+ * invalidation, both on-chain (the guard's stored-state checks) and
+ * off-chain (economic-state binding of quote comparisons).
  */
 export interface TransitionPolicy {
   readonly beforeSecs: bigint;
   readonly afterSecs: bigint;
-  /**
-   * Opt-in interval after an IMMEDIATE update: a stored effective timestamp T
-   * with equal multipliers (no pending phase), as observed for KOon in
-   * September 2026. When set, chain time in `[T, T + immediateUpdateAfterSecs]`
-   * is TRANSITION. Unset keeps the previous behaviour (SAFE).
-   */
-  readonly immediateUpdateAfterSecs?: bigint;
   readonly calibration: Calibration;
   /** Where the numbers come from, e.g. issuer documentation or observed events. */
   readonly basis: string;

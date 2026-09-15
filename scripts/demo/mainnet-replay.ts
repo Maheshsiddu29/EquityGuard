@@ -29,15 +29,14 @@ import { decodeObservation, loadKoFixture, loadLiquiditySnapshot, type CuratedKo
 
 /**
  * DEMO policy, UNCALIBRATED: chosen to illustrate the engine on the observed
- * mechanics, not derived from issuer documentation. `immediateUpdateAfterSecs`
- * applies the post-update interval to KOon's immediate update.
+ * mechanics, not derived from issuer documentation. It applies to scheduled
+ * changes only; an immediate update has no time window.
  */
 export const KO_DEMO_POLICY: TransitionPolicy = {
   beforeSecs: 900n,
   afterSecs: 300n,
-  immediateUpdateAfterSecs: 300n,
   calibration: "UNCALIBRATED",
-  basis: "M6 demo policy (15 min before / 5 min after scheduled T; 5 min after an immediate update); not issuer-calibrated",
+  basis: "demo policy: 15 min before / 5 min after a scheduled T; immediate updates have no window; not issuer-calibrated",
 };
 
 /** The trade notional of the recorded liquidity snapshot (5 USDC). */
@@ -150,7 +149,7 @@ export function replayKoScenarios(policy: TransitionPolicy = KO_DEMO_POLICY): Sc
   const snapshot = loadLiquiditySnapshot();
   return [
     scenario("A", "KOx inside its scheduled transition; KOon observed but unroutable", fixture, snapshot, "koxLastPendingBeforeT", "koonAtKoxLastPending", policy),
-    scenario("B", "KOon just updated immediately; KOx SAFE but the quote pair is incomplete", fixture, snapshot, "koonPostEventFirst", "koxAtKoonPostEvent", policy),
+    scenario("B", "Fresh KOon state right after its immediate update: SAFE, no cooldown", fixture, snapshot, "koonPostEventFirst", "koxAtKoonPostEvent", policy),
     scenario("C", "Both representations SAFE after the event window", fixture, snapshot, "windowEndKOx", "windowEndKOon", policy),
   ];
 }

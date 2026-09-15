@@ -146,25 +146,29 @@ test("Ondo reconciliation matrix (fixture-only, no live API)", () => {
   }
 });
 
-test("immediate-update interval is opt-in and classifies only [T, T + after]", () => {
+test("an immediate update is SAFE as soon as it is observed: no cooldown at any chain time", () => {
   const t = 1_789_430_644n;
   const immediate = withScaledUi(mainnetMint("KOon"), { multiplier: 1.0238905041551842, newMultiplier: 1.0238905041551842, effectiveTimestamp: t });
-  const at = (time: bigint) => observe("KOon", immediate, time);
-  // Default policy: unchanged behaviour.
-  assert.equal(resolveOndoState(KOON, { chain: at(t + 12n), api: null }, TEST_POLICY).state, RepresentationState.SAFE);
-  const policy = { ...TEST_POLICY, immediateUpdateAfterSecs: 300n };
+  for (const offset of [0n, 1n, 12n, 60n, 300n, 301n, 86_400n]) {
+    const resolved = resolveOndoState(KOON, { chain: observe("KOon", immediate, t + offset), api: null }, TEST_POLICY);
+    assert.deepEqual([resolved.state, resolved.reason], [RepresentationState.SAFE, "no scheduled multiplier change"], `T+${offset}`);
+  }
+  // The same state is SAFE under any window configuration: windows apply to scheduled changes only.
+  const wide = { ...TEST_POLICY, beforeSecs: 86_400n, afterSecs: 86_400n };
+  assert.equal(classifyChainEvidence(observe("KOon", immediate, t + 12n), wide).state, RepresentationState.SAFE);
+  assert.throws(() => classifyChainEvidence(observe("KOon", immediate, t), { ...TEST_POLICY, afterSecs: -1n }), TransitionPolicyError);
+});
+
+test("a scheduled pending change still resolves TRANSITION inside the window", () => {
+  const t = 1_789_432_200n;
+  const pending = withScaledUi(mainnetMint("KOx"), { multiplier: 1.0183317967386898, newMultiplier: 1.0225601246249238, effectiveTimestamp: t });
   const table: [bigint, RepresentationState][] = [
-    [t - 1n, RepresentationState.SAFE],
-    [t, RepresentationState.TRANSITION],
-    [t + 12n, RepresentationState.TRANSITION],
-    [t + 300n, RepresentationState.TRANSITION],
-    [t + 301n, RepresentationState.SAFE],
+    [t - 901n, RepresentationState.SAFE],
+    [t - 14n, RepresentationState.TRANSITION],
+    [t + 17n, RepresentationState.TRANSITION],
+    [t + 901n, RepresentationState.SAFE],
   ];
   for (const [time, state] of table) {
-    assert.equal(resolveOndoState(KOON, { chain: at(time), api: null }, policy).state, state, String(time - t));
+    assert.equal(resolveXStocksState(KOX, observe("KOx", pending, time), TEST_POLICY).state, state, String(time - t));
   }
-  // Token-2022's initial T = 0 is never an update.
-  const initial = withScaledUi(mainnetMint("KOon"), { multiplier: 1.1, newMultiplier: 1.1, effectiveTimestamp: 0n });
-  assert.equal(resolveOndoState(KOON, { chain: observe("KOon", initial, 100n), api: null }, policy).state, RepresentationState.SAFE);
-  assert.throws(() => classifyChainEvidence(at(t), { ...policy, immediateUpdateAfterSecs: -1n }), TransitionPolicyError);
 });

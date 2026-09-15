@@ -27,7 +27,7 @@ test("real-state resolution of the curated observations under the demo policy", 
     ["koxAtKoonPostEvent", RepresentationState.SAFE], // pending, before T - 900 s
     ["windowEndKOx", RepresentationState.SAFE],
     ["koonPreEventLast", RepresentationState.SAFE],
-    ["koonPostEventFirst", RepresentationState.TRANSITION], // T+12 s after the immediate update
+    ["koonPostEventFirst", RepresentationState.SAFE], // T+12 s after the immediate update: no cooldown
     ["koonAtKoxLastPending", RepresentationState.SAFE],
     ["windowEndKOon", RepresentationState.SAFE],
   ] as const;
@@ -37,9 +37,7 @@ test("real-state resolution of the curated observations under the demo policy", 
     assert.equal(resolved.stateSource, StateSource.CHAIN, key); // no Ondo API evidence was observed
   }
   assert.equal(KO_DEMO_POLICY.calibration, "UNCALIBRATED");
-  // Without the opt-in immediate-update interval, KOon's update is not a TRANSITION.
-  const { immediateUpdateAfterSecs: _omitted, ...withoutImmediateInterval } = KO_DEMO_POLICY;
-  assert.equal(resolveCurated("koonPostEventFirst", withoutImmediateInterval).state, RepresentationState.SAFE);
+  assert.deepEqual(Object.keys(KO_DEMO_POLICY).sort(), ["afterSecs", "basis", "beforeSecs", "calibration"]);
 });
 
 test("scenario A: KOx transition with an unroutable KOon alternative is UNKNOWN_STATE", () => {
@@ -53,15 +51,14 @@ test("scenario A: KOx transition with an unroutable KOon alternative is UNKNOWN_
   assert.equal(a.result.conservativeCostDeltaBps, undefined);
 });
 
-test("scenario B: KOon immediate update with an incomplete quote pair is UNKNOWN_STATE, not a reroute", () => {
+test("scenario B: fresh KOon state is SAFE immediately; no timed TRANSITION after an immediate update", () => {
   const b = replayKoScenarios()[1];
   assert.ok(b);
   assert.deepEqual(
     [b.result.preferredRepresentation.symbol, b.result.preferredState, b.result.alternativeState, b.result.decision, b.result.reasonCode, b.result.consentRequired],
-    ["KOon", "TRANSITION", "SAFE", "UNKNOWN_STATE", "ALTERNATIVE_QUOTE_UNAVAILABLE", false],
+    ["KOon", "SAFE", "SAFE", "USE_PREFERRED", "PREFERRED_SAFE", false],
   );
   assert.equal(b.result.quoteAvailability.preferred, "UNAVAILABLE");
-  assert.equal(b.result.preferredSharesEquivalent, undefined);
 });
 
 test("scenario C: both SAFE uses the preferred representation", () => {
