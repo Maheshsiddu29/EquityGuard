@@ -3,9 +3,10 @@
  *
  * A plan can only be created from an EXECUTABLE decision in a submit-capable
  * environment (DEVNET_EXECUTION). It pins the exact selected quote (route,
- * raw input/output, minimum output, quote context), the economic state the
- * guard must assert, the decision, the consent and disclosure for a reroute,
- * and an explicit slot-based freshness window.
+ * raw input/output, minimum output, quote context), the economic state and
+ * the transition policy the guard must assert (the same policy that
+ * classified the state), the decision, the consent and disclosure for a
+ * reroute, and an explicit slot-based freshness window.
  *
  * Authenticity is runtime provenance, not content: only `createExecutionPlan`
  * registers a plan (module-private WeakSet), so hand-built, copied or
@@ -25,6 +26,7 @@ import { Decision, type DecisionReasonCode, type RepresentationSummary, type Rer
 import type { ExecutionEnvironment } from "./demo-result.ts";
 import type { EconomicState } from "./economic-state.ts";
 import { ExecutionEligibilityError, assertExecutable, type ExecutionDecision } from "./execution.ts";
+import type { TransitionPolicy } from "./types.ts";
 import { canonicalKey, quoteIdentityOf, quoteKey, quoteMismatches, type QuoteIdentity, type QuoteMismatch, type RouteIdentity } from "./quote-identity.ts";
 import { sha256Hex } from "./sha256.ts";
 
@@ -40,6 +42,8 @@ export interface ExecutionPlanContent {
   readonly quoteKey: string;
   /** What the guard asserts; always `quote.state`. */
   readonly economicState: EconomicState;
+  /** The transition policy the state was classified under; the guard window is built from it. */
+  readonly policy: TransitionPolicy;
   readonly inputRaw: bigint;
   readonly expectedOutputRaw: bigint;
   readonly minOutputRaw: bigint | null;
@@ -73,7 +77,8 @@ export type ExecutionPlanErrorCode =
   | "COMPARISON_NOT_FOR_PLAN"
   | "DISCLOSURE_NOT_FOR_COMPARISON"
   | "CONSENT_REJECTED"
-  | "INVALID_FRESHNESS";
+  | "INVALID_FRESHNESS"
+  | "POLICY_MISMATCH";
 
 export class ExecutionPlanError extends Error {
   readonly code: ExecutionPlanErrorCode;
@@ -136,6 +141,9 @@ export function createExecutionPlan(
     throw new ExecutionPlanError("DISCLOSURE_NOT_FOR_COMPARISON", "a consented reroute needs the disclosure of the exact comparison");
   }
   const quote = quoteIdentityOf(decision.executableQuote);
+  if (!decision.transitionPolicy) {
+    throw new ExecutionPlanError("POLICY_MISMATCH", "an executable decision must carry the transition policy its state was classified under");
+  }
   if (rerouted) {
     // Re-verify against the REQUIRES_CONSENT form of this decision and consume: one consent, one plan.
     if (!decision.consent) throw new ExecutionPlanError("CONSENT_REJECTED", "a reroute plan requires a consent record");
@@ -157,6 +165,7 @@ export function createExecutionPlan(
     quote,
     quoteKey: quoteKey(quote),
     economicState: quote.state,
+    policy: decision.transitionPolicy,
     inputRaw: quote.inputRaw,
     expectedOutputRaw: quote.outputRaw,
     minOutputRaw: quote.minOutputRaw,
@@ -234,6 +243,13 @@ export function consumeExecutionPlan(
 ): void {
   verifyExecutionPlan(plan, presented);
   consumedPlans.add(plan);
+}
+
+/** Throws POLICY_MISMATCH unless the executor's configured policy is exactly the plan's. */
+export function assertPlanPolicy(plan: ExecutionPlan, executorPolicy: TransitionPolicy): void {
+  if (canonicalKey(plan.policy) !== canonicalKey(executorPolicy)) {
+    throw new ExecutionPlanError("POLICY_MISMATCH", `plan was decided under \"${plan.policy.basis}\" (${plan.policy.beforeSecs}/${plan.policy.afterSecs}s); executor is configured for \"${executorPolicy.basis}\" (${executorPolicy.beforeSecs}/${executorPolicy.afterSecs}s)`);
+  }
 }
 
 /** Throws PLAN_EXPIRED unless `currentSlot` is within the plan's freshness window. */

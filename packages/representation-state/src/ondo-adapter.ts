@@ -63,6 +63,7 @@ export function resolveOndoState(
     observedAt: chain?.observedAt ?? api?.observedAt ?? null,
     chainObservation: chain,
     apiObservation: api,
+    transitionPolicy: chain ? policy : null,
   };
 
   if (chainState === null && apiState === null) {

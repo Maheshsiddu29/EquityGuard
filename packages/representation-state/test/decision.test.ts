@@ -60,6 +60,7 @@ function resolved(
     observedAt: null,
     reason: `test ${state}`,
     chainObservation: chainObservation(rep.mint, DECIMALS[symbol] ?? 8),
+    transitionPolicy: null,
     apiObservation: null,
   };
 }

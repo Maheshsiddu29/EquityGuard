@@ -34,5 +34,6 @@ export function resolveXStocksState(
     reason,
     chainObservation: evidence,
     apiObservation: null,
+    transitionPolicy: policy,
   };
 }

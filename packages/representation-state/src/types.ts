@@ -114,4 +114,10 @@ export interface ResolvedRepresentationState {
   readonly reason: string;
   readonly chainObservation: ChainEvidence | null;
   readonly apiObservation: ApiObservation | null;
+  /**
+   * The transition policy chain evidence was classified under; null when no
+   * chain evidence was classified. Execution binds it into the plan and the
+   * guard's protection window.
+   */
+  readonly transitionPolicy: TransitionPolicy | null;
 }

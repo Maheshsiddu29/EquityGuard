@@ -188,3 +188,17 @@ test("8. a mainnet observation result carries eligibility but can never carry a 
   assert.throws(() => assertDemoResult({ ...result, transactionSignature: "s" } as never), DemoResultError);
   assert.throws(() => assertDemoResult({ ...result, execution: { executed: tx, rejectedPreferredAttempt: null } } as never), DemoResultError);
 });
+
+test("M04: an executable decision carries its classification policy; mixed policies are POLICY_MISMATCH", () => {
+  const preferred = kox(SAFE_TIME);
+  const d = run({ preferred, alternative: null, preferredRoute: available(preferred) });
+  assert.deepEqual(d.transitionPolicy, TEST_POLICY);
+  const unbound = { ...preferred, transitionPolicy: null };
+  assert.equal(run({ preferred: unbound, alternative: null, preferredRoute: available(preferred) }).executionEligibility, ExecutionEligibility.POLICY_MISMATCH);
+  // Reroute where the two states were classified under different policies.
+  const other = { ...TEST_POLICY, afterSecs: TEST_POLICY.afterSecs + 1n };
+  const transition = kox(TRANSITION_TIME);
+  const alternative = { ...koon(TRANSITION_TIME), transitionPolicy: other };
+  const mixed = run({ preferred: transition, alternative, alternativeRoute: available(alternative, quote(alternative, KOON_OUT)), withComparison: true, consent: true });
+  assert.deepEqual([mixed.stateDecision.decision, mixed.executionEligibility], [Decision.USE_ALTERNATIVE, ExecutionEligibility.POLICY_MISMATCH]);
+});

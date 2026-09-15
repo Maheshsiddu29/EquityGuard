@@ -16,7 +16,7 @@ import {
 
 function resolved(symbol: string, state: RepresentationState): ResolvedRepresentationState {
   const rep = findRepresentationBySymbol(symbol)!;
-  return { underlying: rep.underlying, issuer: rep.issuer, symbol, mint: rep.mint, state, stateSource: StateSource.CHAIN, chainState: state, apiState: null, slot: 1n, blockTime: 1n, observedAt: null, reason: "test", chainObservation: null, apiObservation: null };
+  return { underlying: rep.underlying, issuer: rep.issuer, symbol, mint: rep.mint, state, stateSource: StateSource.CHAIN, chainState: state, apiState: null, slot: 1n, blockTime: 1n, observedAt: null, reason: "test", chainObservation: null, apiObservation: null, transitionPolicy: null };
 }
 
 const NO_ROUTES = { preferred: null, alternative: null };

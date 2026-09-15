@@ -20,6 +20,8 @@ export interface FakeRpc {
   readonly url: string;
   /** Methods in call order. */
   readonly calls: string[];
+  /** Params of every call, in call order. */
+  readonly params: unknown[][];
   close(): Promise<void>;
 }
 
@@ -28,12 +30,14 @@ export class FakeRpcError extends Error {}
 
 export async function startFakeRpc(handler: RpcHandler): Promise<FakeRpc> {
   const calls: string[] = [];
+  const allParams: unknown[][] = [];
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
     req.on("end", () => {
       const { id, method, params } = JSON.parse(body) as { id: number; method: string; params?: unknown[] };
       calls.push(method);
+      allParams.push(params ?? []);
       res.setHeader("content-type", "application/json");
       try {
         const result = handler(method, params ?? [], calls.filter((c) => c === method).length - 1);
@@ -48,6 +52,7 @@ export async function startFakeRpc(handler: RpcHandler): Promise<FakeRpc> {
   return {
     url: `http://127.0.0.1:${port}`,
     calls,
+    params: allParams,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

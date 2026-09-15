@@ -20,7 +20,8 @@ import { consentIssues, type ConsentIssue, type ConsentRecord } from "./consent.
 import { Decision, decide, outsideTolerance, type DecisionInput, type DecisionResult, type RepresentationSummary } from "./decision.ts";
 import { economicStateMismatches, economicStateOf } from "./economic-state.ts";
 import { quoteIdentityOf, quoteMismatches, type QuoteIdentity, type QuoteMismatch } from "./quote-identity.ts";
-import type { ResolvedRepresentationState } from "./types.ts";
+import { canonicalKey } from "./quote-identity.ts";
+import type { ResolvedRepresentationState, TransitionPolicy } from "./types.ts";
 
 export const ExecutionEligibility = {
   /** A transaction for the selected representation can be built now. */
@@ -37,6 +38,8 @@ export const ExecutionEligibility = {
   CONSENT_REQUIRED: "CONSENT_REQUIRED",
   /** A consent record was presented but does not authorize this exact reroute; `consentIssues` says why. */
   CONSENT_INVALID: "CONSENT_INVALID",
+  /** The transition policy that classified the selected state is missing or differs between representations. */
+  POLICY_MISMATCH: "POLICY_MISMATCH",
   /** A SAFE, quoted alternative exists but is outside the hard reroute tolerance. */
   ALTERNATIVE_OUTSIDE_TOLERANCE: "ALTERNATIVE_OUTSIDE_TOLERANCE",
   /** A quote or comparison was built against a different economic state. */
@@ -97,6 +100,11 @@ export interface ExecutionDecision {
   readonly consentIssues: readonly ConsentIssue[];
   readonly reroutePolicy: DecisionInput["reroutePolicy"];
   readonly currentSlot: bigint;
+  /**
+   * The transition policy the selected state was classified under; non-null
+   * whenever EXECUTABLE. The plan and the guard's window are built from it.
+   */
+  readonly transitionPolicy: TransitionPolicy | null;
 }
 
 export type ExecutableDecision = ExecutionDecision & {
@@ -150,7 +158,7 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
   const result = (
     executionEligibility: ExecutionEligibility,
     executionReason: string,
-    fields: Partial<Pick<ExecutionDecision, "selectedRepresentation" | "selectedRouteAvailable" | "quoteAvailable" | "executableQuote" | "quoteMismatches">> = {},
+    fields: Partial<Pick<ExecutionDecision, "selectedRepresentation" | "selectedRouteAvailable" | "quoteAvailable" | "executableQuote" | "quoteMismatches" | "transitionPolicy">> = {},
   ): ExecutionDecision => ({
     stateDecision,
     comparison: input.comparison,
@@ -166,6 +174,7 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
     consentIssues: applied.issues,
     reroutePolicy: input.reroutePolicy,
     currentSlot: input.currentSlot,
+    transitionPolicy: fields.transitionPolicy ?? null,
   });
 
   switch (stateDecision.decision) {
@@ -187,7 +196,10 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       if (stale.length > 0) {
         return result(ExecutionEligibility.STALE_COMPARISON, `${preferred.symbol} quote was built against a different economic state: ${stale.join("; ")}`, fields);
       }
-      return result(ExecutionEligibility.EXECUTABLE, `${preferred.symbol} is SAFE, routable, and quoted against its current state`, { ...fields, executableQuote: quoteIdentityOf(quote) });
+      if (!preferred.transitionPolicy) {
+        return result(ExecutionEligibility.POLICY_MISMATCH, `${preferred.symbol} has no transition policy bound to its classification`, fields);
+      }
+      return result(ExecutionEligibility.EXECUTABLE, `${preferred.symbol} is SAFE, routable, and quoted against its current state`, { ...fields, executableQuote: quoteIdentityOf(quote), transitionPolicy: preferred.transitionPolicy });
     }
     case Decision.USE_ALTERNATIVE: {
       // `decide` already verified the comparison's identity and state binding.
@@ -212,9 +224,14 @@ export function decideExecution(input: ExecutionInput): ExecutionDecision {
       if (substituted.length > 0) {
         return result(ExecutionEligibility.QUOTE_MISMATCH, `${chosen.symbol} route quote is not the compared quote: ${substituted.map((m) => m.code).join(", ")}`, { ...fields, quoteMismatches: substituted });
       }
+      // Both states must have been classified under one and the same transition policy.
+      if (!chosen.transitionPolicy || !preferred.transitionPolicy || canonicalKey(chosen.transitionPolicy) !== canonicalKey(preferred.transitionPolicy)) {
+        return result(ExecutionEligibility.POLICY_MISMATCH, `${preferred.symbol} and ${chosen.symbol} were not classified under the same transition policy`, fields);
+      }
       return result(ExecutionEligibility.EXECUTABLE, `consented reroute to ${chosen.symbol}: SAFE, routable, and the route quote is the compared quote`, {
         ...fields,
         executableQuote: comparison.alternativeQuote,
+        transitionPolicy: chosen.transitionPolicy,
       });
     }
     case Decision.REQUIRES_CONSENT:

@@ -209,7 +209,7 @@ test("no execution plan exists for a non-executable decision, and execution cons
   }
   const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
   const quote = p.routes.alternative.quote!;
-  const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan: executionPlan, quote, comparison: p.comparison, asset: EQ_B, recipient: payer.address };
+  const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan: executionPlan, quote, comparison: p.comparison, asset: EQ_B, recipient: payer.address, policy: DEVNET_DEMO_POLICY };
   // Plan checks, cluster and asset checks all run before any RPC call.
   await assert.rejects(executeGuardedPlan(ctx, { ...base, quote: { ...quote, outputRaw: quote.outputRaw + 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");
   await assert.rejects(executeGuardedPlan(ctx, { ...base, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");

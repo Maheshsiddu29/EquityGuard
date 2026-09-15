@@ -48,6 +48,7 @@ import {
   protectedStateOf,
   routeIdentity,
   assertPlanFresh,
+  assertPlanPolicy,
   consumeExecutionPlan,
   createExecutionPlan,
   verifyExecutionPlan,
@@ -145,6 +146,7 @@ export function resolveDevnetAsset(asset: TestAsset, underlying: string, evidenc
     reason,
     chainObservation: evidence,
     apiObservation: null,
+    transitionPolicy: policy,
   };
 }
 
@@ -345,8 +347,8 @@ async function tokenBalance(ctx: DevnetContext, owner: Address, mint: Address): 
   return BigInt(value.amount);
 }
 
-async function submitGuardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, boundState: EconomicState, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
-  const instructions = await guardedDeliveryInstructions({ programId, payer: ctx.payer, recipient, asset, boundState, policy: DEVNET_DEMO_POLICY, amount });
+async function submitGuardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, boundState: EconomicState, policy: TransitionPolicy, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
+  const instructions = await guardedDeliveryInstructions({ programId, payer: ctx.payer, recipient, asset, boundState, policy, amount });
   const before = await tokenBalance(ctx, recipient, asset.mint);
   // Preflight is skipped so a rejected attempt lands on-chain and is verifiable.
   const outcome = await sendInstructions(ctx, instructions, { skipPreflight: true });
@@ -374,10 +376,11 @@ function requireDevnet(ctx: DevnetContext, programId: Address): void {
  *
  * 1. verify the plan's provenance, integrity and that it is unused, that
  *    `quote` is exactly the planned quote and `comparison` the consented
- *    one; the verified devnet context, pinned program and asset (no RPC);
+ *    one; that the executor's policy is exactly the plan's; the verified
+ *    devnet context, pinned program and asset (no RPC);
  * 2. mark the plan consumed, before anything is signed;
  * 3. check the plan is still fresh at the current slot;
- * 4. build the guard from the plan and submit; the transport re-verifies the
+ * 4. build the guard (state and window) from the plan and submit; the transport re-verifies the
  *    devnet genesis hash immediately before signing.
  */
 export async function executeGuardedPlan(
@@ -389,17 +392,20 @@ export async function executeGuardedPlan(
     readonly comparison: QuoteComparison | null;
     readonly asset: TestAsset;
     readonly recipient: Address;
+    /** The transition policy this executor is configured for; must equal the plan's. */
+    readonly policy: TransitionPolicy;
   },
 ): Promise<DevnetTransactionEvidence> {
   const presented = { quote: input.quote, comparison: input.comparison };
   verifyExecutionPlan(input.plan, presented);
+  assertPlanPolicy(input.plan, input.policy);
   requireDevnet(ctx, input.programId);
   if (input.plan.selectedRepresentation.mint !== input.asset.mint || input.plan.economicState.decimals !== input.asset.decimals) {
     throw new DevnetDemoEnvironmentError("execution asset differs from the plan's selected representation");
   }
   consumeExecutionPlan(input.plan, presented);
   assertPlanFresh(input.plan, await ctx.rpc.getSlot({ commitment: "confirmed" }).send());
-  return submitGuardedDelivery(ctx, input.programId, input.asset, input.plan.economicState, input.plan.expectedOutputRaw, input.recipient);
+  return submitGuardedDelivery(ctx, input.programId, input.asset, input.plan.economicState, input.plan.policy, input.plan.expectedOutputRaw, input.recipient);
 }
 
 /**
@@ -415,7 +421,7 @@ export async function submitRejectionProbe(
   if (input.representation.state === RepresentationState.SAFE || input.representation.mint !== input.asset.mint) {
     throw new DevnetDemoEnvironmentError("a rejection probe is only for a non-SAFE representation of the probed asset");
   }
-  return submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, input.amount, input.recipient);
+  return submitGuardedDelivery(ctx, input.programId, input.asset, input.boundState, DEVNET_DEMO_POLICY, input.amount, input.recipient);
 }
 
 export interface SetupTransaction {
@@ -512,7 +518,7 @@ export async function runDevnetDemo(
   // Execution consumes the plan; the presented quote is the selected route's quote.
   const selected = executionPlan.selectedRepresentation.mint === alternativeAsset.mint ? { asset: alternativeAsset, route: plan.routes.alternative } : { asset: preferredAsset, route: plan.routes.preferred };
   if (!selected.route.quote) throw new DevnetDemoEnvironmentError("selected route has no quote");
-  const executed = await executeGuardedPlan(ctx, { programId, plan: executionPlan, quote: selected.route.quote, comparison: plan.comparison, asset: selected.asset, recipient: options.recipient });
+  const executed = await executeGuardedPlan(ctx, { programId, plan: executionPlan, quote: selected.route.quote, comparison: plan.comparison, asset: selected.asset, recipient: options.recipient, policy: DEVNET_DEMO_POLICY });
   const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt }, executionPlanDigest: executionPlan.planDigest });
   return { setupTransactions, recipient: options.recipient, consentOff, consentOn, executionPlan, consent: plan.consent };
 }

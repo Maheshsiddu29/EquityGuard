@@ -6,9 +6,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { address, generateKeyPairSigner } from "@solana/kit";
+import { address, generateKeyPairSigner, getBase64Encoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, type Address } from "@solana/kit";
 import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
-import { ExecutionPlanError, createExecutionPlan, type ChainObservation } from "@equityguard/representation-state";
+import { ExecutionPlanError, createExecutionPlan, type ChainObservation, type TransitionPolicy } from "@equityguard/representation-state";
 
 import { connectDevnet, type DevnetContext } from "../devnet/config.ts";
 import { TEST_ASSET_DISCLOSURE, type TestAsset } from "../devnet/devnet-state.ts";
@@ -45,14 +45,14 @@ function observation(mint: string, multiplier: number, newMultiplier: number, t:
   };
 }
 
-function consentedPlan() {
+function consentedPlan(policy: TransitionPolicy = DEVNET_DEMO_POLICY) {
   const p = planDevnetDemo({
     preferredAsset: EQ_A,
     alternativeAsset: EQ_B,
     preferredEvidence: observation(EQ_A.mint, 1.5, 1.75, NOW + 597n),
     alternativeEvidence: observation(EQ_B.mint, 1, 1, 0n),
     fixture: loadDevnetQuoteFixture().fixture,
-    policy: DEVNET_DEMO_POLICY,
+    policy,
     reroutePolicy: DEVNET_DEMO_REROUTE_POLICY,
     currentSlot: SLOT,
     userConsent: DEVNET_DEMO_CONSENT,
@@ -96,6 +96,7 @@ async function withDevnet(handler: Parameters<typeof startFakeRpc>[0], body: (ct
   try {
     const ctx = await connectDevnet({ rpcUrl: rpc.url, walletPath: wallet.path });
     rpc.calls.length = 0;
+    rpc.params.length = 0;
     await body(ctx, rpc);
   } finally {
     await rpc.close();
@@ -105,7 +106,7 @@ async function withDevnet(handler: Parameters<typeof startFakeRpc>[0], body: (ct
 test("M03: a plan executes once; the second attempt fails before any RPC or signing", async () => {
   await withDevnet(successfulDevnet(() => SLOT + 1n), async (ctx, rpc) => {
     const { p, plan } = consentedPlan();
-    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address };
+    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: DEVNET_DEMO_POLICY };
     const first = await executeGuardedPlan(ctx, input);
     assert.equal(first.succeeded, true);
     assert.equal(rpc.calls.filter((c) => c === "sendTransaction").length, 1);
@@ -118,10 +119,52 @@ test("M03: a plan executes once; the second attempt fails before any RPC or sign
 test("M03: an expired plan is consumed and refused before signing", async () => {
   await withDevnet(successfulDevnet(() => SLOT + DEVNET_PLAN_FRESHNESS.validForSlots + 1n), async (ctx, rpc) => {
     const { p, plan } = consentedPlan();
-    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address };
+    const input = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: DEVNET_DEMO_POLICY };
     await assert.rejects(executeGuardedPlan(ctx, input), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_EXPIRED");
     assert.deepEqual(rpc.calls, ["getSlot"]);
     // Burned: it cannot be retried later either.
     await assert.rejects(executeGuardedPlan(ctx, input), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_CONSUMED");
+  });
+});
+
+/** The ABI v1 protection window (before, after) of the guard instruction in a submitted wire transaction. */
+function submittedGuardWindow(rpc: FakeRpc, programId: Address): [number, number] {
+  const index = rpc.calls.indexOf("sendTransaction");
+  const wire = Uint8Array.from(getBase64Encoder().encode(rpc.params[index]?.[0] as string));
+  const message = getCompiledTransactionMessageDecoder().decode(getTransactionDecoder().decode(wire).messageBytes) as unknown as {
+    readonly staticAccounts: readonly string[];
+    readonly instructions: readonly { readonly programAddressIndex: number; readonly data?: Uint8Array }[];
+  };
+  const guard = message.instructions.find((i) => message.staticAccounts[i.programAddressIndex] === programId);
+  assert.ok(guard?.data);
+  const view = new DataView(Uint8Array.from(guard.data).buffer);
+  return [view.getUint32(26, true), view.getUint32(30, true)];
+}
+
+test("M04: execution refuses an executor policy different from the plan's, before RPC and without consuming it", async () => {
+  await withDevnet(successfulDevnet(() => SLOT + 1n), async (ctx, rpc) => {
+    const { p, plan } = consentedPlan();
+    assert.deepEqual(plan.policy, DEVNET_DEMO_POLICY);
+    const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address };
+    const others: TransitionPolicy[] = [
+      { ...DEVNET_DEMO_POLICY, afterSecs: 0n },
+      { ...DEVNET_DEMO_POLICY, beforeSecs: 60n },
+      { ...DEVNET_DEMO_POLICY, basis: "another policy" },
+    ];
+    for (const policy of others) {
+      await assert.rejects(executeGuardedPlan(ctx, { ...base, policy }), (e) => e instanceof ExecutionPlanError && e.code === "POLICY_MISMATCH");
+    }
+    assert.deepEqual(rpc.calls, []);
+    assert.equal((await executeGuardedPlan(ctx, { ...base, policy: DEVNET_DEMO_POLICY })).succeeded, true);
+  });
+});
+
+test("M04: the submitted guard window is the plan's policy, not a module default", async () => {
+  const custom: TransitionPolicy = { beforeSecs: 1_200n, afterSecs: 60n, calibration: "UNCALIBRATED", basis: "test policy distinct from the demo default" };
+  await withDevnet(successfulDevnet(() => SLOT + 1n), async (ctx, rpc) => {
+    const { p, plan } = consentedPlan(custom);
+    assert.deepEqual(plan.policy, custom);
+    await executeGuardedPlan(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan, quote: p.routes.alternative.quote!, comparison: p.comparison, asset: EQ_B, recipient: (await generateKeyPairSigner()).address, policy: custom });
+    assert.deepEqual(submittedGuardWindow(rpc, EQUITY_GUARD_DEVNET_PROGRAM_ID), [1_200, 60]);
   });
 });

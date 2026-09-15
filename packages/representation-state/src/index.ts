@@ -84,6 +84,7 @@ export {
 export {
   ExecutionPlanError,
   assertPlanFresh,
+  assertPlanPolicy,
   consumeExecutionPlan,
   createExecutionPlan,
   planDigestOf,
