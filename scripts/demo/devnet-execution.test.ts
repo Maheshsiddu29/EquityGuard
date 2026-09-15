@@ -164,7 +164,7 @@ test("execution results are DEVNET_EXECUTION and cannot claim execution for unsa
   const evidence = [{ kind: "DEVNET_DEMO_QUOTE_FIXTURE" as const, description: "fixture", sha256, observedAt: null }];
   const rejected = { signature: "r", slot: 1n, succeeded: false, customErrorName: "InsideTransitionWindow", downstreamBalanceBefore: 0n, downstreamBalanceAfter: 0n, explorerUrl: null };
   const executed = { signature: "e", slot: 2n, succeeded: true, customErrorName: null, downstreamBalanceBefore: 0n, downstreamBalanceAfter: 5_990_000n, explorerUrl: null };
-  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanId: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT }).planId });
+  const on = devnetExecutionResult({ decision: p.consentOn, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: rejected }, executionPlanDigest: createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }).planDigest });
   assert.deepEqual([on.executionEnvironment, on.transactionSignature, on.conservativeCostDeltaBps], ["DEVNET_EXECUTION", "e", 17n]);
   assert.throws(() => devnetExecutionResult({ decision: p.consentOff, evidenceSources: evidence, quoteAvailability: quotes, execution: { executed, rejectedPreferredAttempt: null } }), /nothing may execute/);
 });
@@ -205,15 +205,15 @@ test("no execution plan exists for a non-executable decision, and execution cons
   ];
   for (const [label, decision] of cases) {
     assert.equal(decision.executionEligibility, label);
-    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
+    assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE" && e.message.includes(label), label);
   }
-  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT });
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
   const quote = p.routes.alternative.quote!;
   const base = { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, plan: executionPlan, quote, comparison: p.comparison, asset: EQ_B, recipient: payer.address };
   // Plan checks, cluster and asset checks all run before any RPC call.
   await assert.rejects(executeGuardedPlan(ctx, { ...base, quote: { ...quote, outputRaw: quote.outputRaw + 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "QUOTE_SUBSTITUTED");
   await assert.rejects(executeGuardedPlan(ctx, { ...base, comparison: null }), (e) => e instanceof ExecutionPlanError && e.code === "COMPARISON_NOT_FOR_PLAN");
-  await assert.rejects(executeGuardedPlan(ctx, { ...base, plan: { ...executionPlan, expectedOutputRaw: 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_TAMPERED");
+  await assert.rejects(executeGuardedPlan(ctx, { ...base, plan: { ...executionPlan, expectedOutputRaw: 1n } }), (e) => e instanceof ExecutionPlanError && e.code === "PLAN_NOT_ISSUED");
   // A hand-built context is refused (before RPC) even for a valid plan.
   await assert.rejects(executeGuardedPlan(ctx, base), DevnetConfigError);
   // The rejection probe refuses SAFE representations.
@@ -298,7 +298,7 @@ test("setup uses absolute targets only: no step depends on the previous multipli
 
 test("the devnet plan pins the fixture quote, and the guarded transaction consumes exactly the plan", async () => {
   const p = plan();
-  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT });
+  const executionPlan = createExecutionPlan(p.consentOn, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
   assert.deepEqual(
     [executionPlan.selectedRepresentation.symbol, executionPlan.expectedOutputRaw, executionPlan.inputRaw, executionPlan.route.legs[0]?.venue, executionPlan.comparisonKey === p.comparison?.comparisonKey],
     ["EQ-B", 5_990_000n, 5_000_000n, "DEVNET_GUARDED_TRANSFER_CHECKED", true],

@@ -87,15 +87,15 @@ export type MainnetObservationResult = DemoResultBase & {
   readonly executionEnvironment: "MAINNET_OBSERVATION";
   readonly transactionSignature?: never;
   readonly execution?: never;
-  readonly executionPlanId?: never;
+  readonly executionPlanDigest?: never;
 };
 
 export type DevnetExecutionResult = DemoResultBase & {
   readonly executionEnvironment: "DEVNET_EXECUTION";
   /** Signature of the executed (successful) transaction, if any. */
   readonly transactionSignature?: string;
-  /** planId of the execution plan the executed transaction consumed. */
-  readonly executionPlanId?: string;
+  /** planDigest of the execution plan the executed transaction consumed. */
+  readonly executionPlanDigest?: string;
   readonly execution?: {
     readonly executed: DevnetTransactionEvidence | null;
     readonly rejectedPreferredAttempt: DevnetTransactionEvidence | null;
@@ -177,7 +177,7 @@ export function devnetExecutionResult(input: {
   readonly evidenceSources: readonly EvidenceReference[];
   readonly quoteAvailability: QuoteAvailability;
   readonly execution?: DevnetExecutionResult["execution"];
-  readonly executionPlanId?: string;
+  readonly executionPlanDigest?: string;
 }): DevnetExecutionResult {
   const executed = input.execution?.executed ?? null;
   const result: DevnetExecutionResult = {
@@ -185,7 +185,7 @@ export function devnetExecutionResult(input: {
     executionEnvironment: "DEVNET_EXECUTION",
     ...(executed?.succeeded ? { transactionSignature: executed.signature } : {}),
     ...(input.execution ? { execution: input.execution } : {}),
-    ...(input.executionPlanId ? { executionPlanId: input.executionPlanId } : {}),
+    ...(input.executionPlanDigest ? { executionPlanDigest: input.executionPlanDigest } : {}),
   };
   assertDemoResult(result);
   return result;
@@ -199,7 +199,7 @@ export function assertDemoResult(result: DemoResult): void {
     throw new DemoResultError(`unknown execution environment ${String(environment)}`);
   }
   if (r.executionEnvironment === "MAINNET_OBSERVATION") {
-    if (r.transactionSignature !== undefined || r.execution !== undefined || r.executionPlanId !== undefined) {
+    if (r.transactionSignature !== undefined || r.execution !== undefined || r.executionPlanDigest !== undefined) {
       throw new DemoResultError("a MAINNET_OBSERVATION result cannot carry transactions");
     }
     if (r.quoteAvailability.source !== "JUPITER_MAINNET_SNAPSHOT") {
@@ -219,7 +219,7 @@ export function assertDemoResult(result: DemoResult): void {
     if (executed && r.executionEligibility !== ExecutionEligibility.EXECUTABLE) {
       throw new DemoResultError(`nothing may execute when eligibility is ${r.executionEligibility}`);
     }
-    if (executed && !r.executionPlanId) {
+    if (executed && !r.executionPlanDigest) {
       throw new DemoResultError("an executed transaction must record the execution plan it consumed");
     }
   }

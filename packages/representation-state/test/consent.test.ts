@@ -150,16 +150,16 @@ test("consent expires at its slot", () => {
   assert.deepEqual([late.executionEligibility, issues(late)], [ExecutionEligibility.CONSENT_INVALID, ["EXPIRED"]]);
   // Planning after expiry is refused even for a decision evaluated in time.
   const inTime = evaluate(t, consent, SLOT + 5n);
-  assert.throws(() => createExecutionPlan(inTime, "DEVNET_EXECUTION", { currentSlot: SLOT + 11n }), (e) => e instanceof ExecutionPlanError && e.code === "CONSENT_REJECTED" && /EXPIRED/.test(e.message));
+  assert.throws(() => createExecutionPlan(inTime, "DEVNET_EXECUTION", { currentSlot: SLOT + 11n, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "CONSENT_REJECTED" && /EXPIRED/.test(e.message));
 });
 
 test("consent is single-use: one plan, then it is consumed", () => {
   const t = trade();
   const consent = consentFor(t);
   const decision = evaluate(t, consent);
-  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT });
+  const plan = createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } });
   assert.equal(plan.consentId, consent.consentId);
-  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT }), (e) => e instanceof ExecutionPlanError && e.code === "CONSENT_REJECTED" && /CONSUMED/.test(e.message));
+  assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n } }), (e) => e instanceof ExecutionPlanError && e.code === "CONSENT_REJECTED" && /CONSUMED/.test(e.message));
   const again = evaluate(t, consent);
   assert.deepEqual([again.executionEligibility, issues(again)], [ExecutionEligibility.CONSENT_INVALID, ["CONSUMED"]]);
   // A fresh grant for the same disclosure is a new, distinct consent.

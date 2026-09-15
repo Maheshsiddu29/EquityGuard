@@ -47,8 +47,10 @@ import {
   fetchChainObservation,
   protectedStateOf,
   routeIdentity,
-  verifyExecutionPlan,
+  assertPlanFresh,
+  consumeExecutionPlan,
   createExecutionPlan,
+  verifyExecutionPlan,
   type ChainEvidence,
   type DevnetExecutionResult,
   type DevnetTransactionEvidence,
@@ -57,6 +59,7 @@ import {
   type ExecutionDecision,
   type ConsentRecord,
   type ExecutionPlan,
+  type PlanFreshnessPolicy,
   type NormalizedQuote,
   type QuoteAvailability,
   type QuoteComparison,
@@ -91,6 +94,8 @@ export const DEVNET_DEMO_REROUTE_POLICY = { maxCostBps: 25n } as const;
  * standing preference.
  */
 export const DEVNET_DEMO_CONSENT = { maxCostBps: 20n, validForSlots: 150n } as const;
+/** Devnet executor freshness: a plan may be signed at most 150 slots (about a minute) after it was created. */
+export const DEVNET_PLAN_FRESHNESS: PlanFreshnessPolicy = { validForSlots: 150n };
 /** Seconds ahead of chain time for the preferred asset's scheduled change; inside `beforeSecs`. */
 export const PREFERRED_TRANSITION_LEAD_SECS = 600n;
 
@@ -364,11 +369,16 @@ function requireDevnet(ctx: DevnetContext, programId: Address): void {
 }
 
 /**
- * The only path that executes. It consumes an `ExecutionPlan` (which can only
- * exist for an EXECUTABLE devnet decision) and verifies it first, before any
- * RPC call: `quote` is the quote about to be delivered and `comparison` the
- * one consent was given to; any substitution fails closed. The guard asserts
- * `plan.economicState` and the delivered amount is `plan.expectedOutputRaw`.
+ * The only product path that executes. It consumes an `ExecutionPlan` (which
+ * only `createExecutionPlan` can issue, for an EXECUTABLE devnet decision):
+ *
+ * 1. verify the plan's provenance, integrity and that it is unused, that
+ *    `quote` is exactly the planned quote and `comparison` the consented
+ *    one; the verified devnet context, pinned program and asset (no RPC);
+ * 2. mark the plan consumed, before anything is signed;
+ * 3. check the plan is still fresh at the current slot;
+ * 4. build the guard from the plan and submit; the transport re-verifies the
+ *    devnet genesis hash immediately before signing.
  */
 export async function executeGuardedPlan(
   ctx: DevnetContext,
@@ -381,11 +391,14 @@ export async function executeGuardedPlan(
     readonly recipient: Address;
   },
 ): Promise<DevnetTransactionEvidence> {
-  verifyExecutionPlan(input.plan, { quote: input.quote, comparison: input.comparison });
+  const presented = { quote: input.quote, comparison: input.comparison };
+  verifyExecutionPlan(input.plan, presented);
   requireDevnet(ctx, input.programId);
   if (input.plan.selectedRepresentation.mint !== input.asset.mint || input.plan.economicState.decimals !== input.asset.decimals) {
     throw new DevnetDemoEnvironmentError("execution asset differs from the plan's selected representation");
   }
+  consumeExecutionPlan(input.plan, presented);
+  assertPlanFresh(input.plan, await ctx.rpc.getSlot({ commitment: "confirmed" }).send());
   return submitGuardedDelivery(ctx, input.programId, input.asset, input.plan.economicState, input.plan.expectedOutputRaw, input.recipient);
 }
 
@@ -490,7 +503,7 @@ export async function runDevnetDemo(
   }
 
   // Immutable plan from the EXECUTABLE consented decision: exact quote, route, state and comparison.
-  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION", { currentSlot });
+  const executionPlan = createExecutionPlan(plan.consentOn, "DEVNET_EXECUTION", { currentSlot, freshness: DEVNET_PLAN_FRESHNESS });
   // Rejection probe: the non-SAFE preferred delivery must be rejected atomically.
   const rejectedPreferredAttempt =
     plan.preferred.state !== RepresentationState.SAFE && plan.comparison
@@ -500,6 +513,6 @@ export async function runDevnetDemo(
   const selected = executionPlan.selectedRepresentation.mint === alternativeAsset.mint ? { asset: alternativeAsset, route: plan.routes.alternative } : { asset: preferredAsset, route: plan.routes.preferred };
   if (!selected.route.quote) throw new DevnetDemoEnvironmentError("selected route has no quote");
   const executed = await executeGuardedPlan(ctx, { programId, plan: executionPlan, quote: selected.route.quote, comparison: plan.comparison, asset: selected.asset, recipient: options.recipient });
-  const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt }, executionPlanId: executionPlan.planId });
+  const consentOn = devnetExecutionResult({ decision: plan.consentOn, evidenceSources, quoteAvailability, execution: { executed, rejectedPreferredAttempt }, executionPlanDigest: executionPlan.planDigest });
   return { setupTransactions, recipient: options.recipient, consentOff, consentOn, executionPlan, consent: plan.consent };
 }

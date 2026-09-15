@@ -1,13 +1,22 @@
 /**
- * Immutable execution plan: the single artifact an executor consumes.
+ * Execution plan: the single artifact an executor consumes.
  *
  * A plan can only be created from an EXECUTABLE decision in a submit-capable
  * environment (DEVNET_EXECUTION). It pins the exact selected quote (route,
  * raw input/output, minimum output, quote context), the economic state the
- * guard must assert, the decision, and — for a consented reroute — the
- * comparison and disclosure the user consented to. `verifyExecutionPlan`
- * fails closed with precise codes when the plan was altered, or when the
- * quote or comparison presented at execution time is not the planned one.
+ * guard must assert, the decision, the consent and disclosure for a reroute,
+ * and an explicit slot-based freshness window.
+ *
+ * Authenticity is runtime provenance, not content: only `createExecutionPlan`
+ * registers a plan (module-private WeakSet), so hand-built, copied or
+ * deserialized plans are rejected even when they are internally consistent.
+ * Plans are deep-frozen and single-use: `consumeExecutionPlan` marks a plan
+ * consumed before anything is signed, and a consumed plan is never accepted
+ * again.
+ *
+ * `planDigest` is SHA-256 over the canonical content. It is a stable
+ * commitment (logs, evidence, a future on-chain commitment), NOT
+ * authentication: anyone can compute it.
  */
 
 import type { QuoteComparison } from "./compare.ts";
@@ -17,6 +26,12 @@ import type { ExecutionEnvironment } from "./demo-result.ts";
 import type { EconomicState } from "./economic-state.ts";
 import { ExecutionEligibilityError, assertExecutable, type ExecutionDecision } from "./execution.ts";
 import { canonicalKey, quoteIdentityOf, quoteKey, quoteMismatches, type QuoteIdentity, type QuoteMismatch, type RouteIdentity } from "./quote-identity.ts";
+import { sha256Hex } from "./sha256.ts";
+
+/** How long a plan stays executable, in slots after the slot it was created at. Explicit per executor. */
+export interface PlanFreshnessPolicy {
+  readonly validForSlots: bigint;
+}
 
 export interface ExecutionPlanContent {
   readonly environment: "DEVNET_EXECUTION";
@@ -37,21 +52,28 @@ export interface ExecutionPlanContent {
   readonly disclosure: RerouteDisclosure | null;
   /** Present for a consented reroute: the consumed consent record. */
   readonly consentId: string | null;
+  readonly createdAtSlot: bigint;
+  /** Last slot at which the plan may be signed (inclusive). */
+  readonly expiresAtSlot: bigint;
 }
 
 export interface ExecutionPlan extends ExecutionPlanContent {
-  /** Canonical key of the content; any alteration changes it. */
-  readonly planId: string;
+  /** SHA-256 of the canonical content: a commitment, not authentication. */
+  readonly planDigest: string;
 }
 
 export type ExecutionPlanErrorCode =
   | "NOT_EXECUTABLE"
   | "OBSERVATION_ONLY_ENVIRONMENT"
+  | "PLAN_NOT_ISSUED"
+  | "PLAN_CONSUMED"
+  | "PLAN_EXPIRED"
   | "PLAN_TAMPERED"
   | "QUOTE_SUBSTITUTED"
   | "COMPARISON_NOT_FOR_PLAN"
   | "DISCLOSURE_NOT_FOR_COMPARISON"
-  | "CONSENT_REJECTED";
+  | "CONSENT_REJECTED"
+  | "INVALID_FRESHNESS";
 
 export class ExecutionPlanError extends Error {
   readonly code: ExecutionPlanErrorCode;
@@ -65,6 +87,9 @@ export class ExecutionPlanError extends Error {
   }
 }
 
+const issuedPlans = new WeakSet<object>();
+const consumedPlans = new WeakSet<object>();
+
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -74,18 +99,30 @@ function deepFreeze<T>(value: T): T {
 }
 
 function contentOf(plan: ExecutionPlan): ExecutionPlanContent {
-  const { planId: _planId, ...content } = plan;
+  const { planDigest: _digest, ...content } = plan;
   return content;
 }
 
+export function planDigestOf(content: ExecutionPlanContent): string {
+  return sha256Hex(canonicalKey(content));
+}
+
 /**
- * Creates the plan. Refuses any environment other than DEVNET_EXECUTION — a
- * MAINNET_OBSERVATION result can describe eligibility but never becomes a
- * submit-capable plan — and anything but an EXECUTABLE decision.
+ * Creates and registers the plan. Refuses any environment other than
+ * DEVNET_EXECUTION — a MAINNET_OBSERVATION result can describe eligibility
+ * but never becomes a plan — and anything but an EXECUTABLE decision. A
+ * reroute's consent is re-verified and consumed here.
  */
-export function createExecutionPlan(decision: ExecutionDecision, environment: ExecutionEnvironment, options: { readonly currentSlot: bigint }): ExecutionPlan {
+export function createExecutionPlan(
+  decision: ExecutionDecision,
+  environment: ExecutionEnvironment,
+  options: { readonly currentSlot: bigint; readonly freshness: PlanFreshnessPolicy },
+): ExecutionPlan {
   if (environment !== "DEVNET_EXECUTION") {
     throw new ExecutionPlanError("OBSERVATION_ONLY_ENVIRONMENT", `${environment} results cannot produce a submit-capable execution plan`);
+  }
+  if (typeof options.freshness?.validForSlots !== "bigint" || options.freshness.validForSlots <= 0n || typeof options.currentSlot !== "bigint") {
+    throw new ExecutionPlanError("INVALID_FRESHNESS", "an explicit positive bigint validForSlots and currentSlot are required");
   }
   try {
     assertExecutable(decision);
@@ -98,6 +135,7 @@ export function createExecutionPlan(decision: ExecutionDecision, environment: Ex
   if (rerouted && (!comparison || stateDecision.disclosure?.comparisonKey !== comparison.comparisonKey)) {
     throw new ExecutionPlanError("DISCLOSURE_NOT_FOR_COMPARISON", "a consented reroute needs the disclosure of the exact comparison");
   }
+  const quote = quoteIdentityOf(decision.executableQuote);
   if (rerouted) {
     // Re-verify against the REQUIRES_CONSENT form of this decision and consume: one consent, one plan.
     if (!decision.consent) throw new ExecutionPlanError("CONSENT_REJECTED", "a reroute plan requires a consent record");
@@ -113,7 +151,6 @@ export function createExecutionPlan(decision: ExecutionDecision, environment: Ex
       throw error;
     }
   }
-  const quote = quoteIdentityOf(decision.executableQuote);
   const content: ExecutionPlanContent = {
     environment,
     selectedRepresentation: decision.selectedRepresentation,
@@ -130,22 +167,32 @@ export function createExecutionPlan(decision: ExecutionDecision, environment: Ex
     comparisonKey: rerouted ? (comparison as QuoteComparison).comparisonKey : null,
     disclosure: rerouted ? stateDecision.disclosure : null,
     consentId: rerouted ? (decision.consent?.consentId ?? null) : null,
+    createdAtSlot: options.currentSlot,
+    expiresAtSlot: options.currentSlot + options.freshness.validForSlots,
   };
   // Structured clone detaches the plan from caller-owned objects before freezing.
-  return deepFreeze(structuredClone({ ...content, planId: canonicalKey(content) }));
+  const detached = structuredClone(content);
+  const plan: ExecutionPlan = deepFreeze({ ...detached, planDigest: planDigestOf(detached) });
+  issuedPlans.add(plan);
+  return plan;
 }
 
 /**
- * Execution-time check; call before building anything. `quote` is the quote
- * the downstream builder is about to execute; `comparison` is required for a
- * consented reroute and must be the one the plan was made from.
+ * Execution-time check without side effects; call before building anything.
+ * `quote` is the quote the downstream builder is about to execute;
+ * `comparison` is required for a consented reroute and must be the one the
+ * plan was made from.
  */
 export function verifyExecutionPlan(
   plan: ExecutionPlan,
   presented: { readonly quote: QuoteIdentity; readonly comparison: QuoteComparison | null },
 ): void {
+  if (typeof plan !== "object" || plan === null || !issuedPlans.has(plan)) {
+    throw new ExecutionPlanError("PLAN_NOT_ISSUED", "execution plans can only come from createExecutionPlan");
+  }
+  if (consumedPlans.has(plan)) throw new ExecutionPlanError("PLAN_CONSUMED", `plan ${plan.planDigest.slice(0, 16)}… was already executed`);
   const content = contentOf(plan);
-  if (canonicalKey(content) !== plan.planId) throw new ExecutionPlanError("PLAN_TAMPERED", "plan content does not match its planId");
+  if (planDigestOf(content) !== plan.planDigest) throw new ExecutionPlanError("PLAN_TAMPERED", "plan content does not match its digest");
   if (
     plan.environment !== "DEVNET_EXECUTION" ||
     plan.executionEligibility !== "EXECUTABLE" ||
@@ -174,5 +221,24 @@ export function verifyExecutionPlan(
     if (alternative.length > 0) {
       throw new ExecutionPlanError("COMPARISON_NOT_FOR_PLAN", "comparison's alternative quote is not the planned quote", alternative);
     }
+  }
+}
+
+/**
+ * Verifies and marks the plan consumed, before any signing or submission, so
+ * an ambiguous RPC outcome can never lead to a blind second execution.
+ */
+export function consumeExecutionPlan(
+  plan: ExecutionPlan,
+  presented: { readonly quote: QuoteIdentity; readonly comparison: QuoteComparison | null },
+): void {
+  verifyExecutionPlan(plan, presented);
+  consumedPlans.add(plan);
+}
+
+/** Throws PLAN_EXPIRED unless `currentSlot` is within the plan's freshness window. */
+export function assertPlanFresh(plan: ExecutionPlan, currentSlot: bigint): void {
+  if (typeof currentSlot !== "bigint" || currentSlot > plan.expiresAtSlot) {
+    throw new ExecutionPlanError("PLAN_EXPIRED", `slot ${String(currentSlot)} > expiresAtSlot ${plan.expiresAtSlot}`);
   }
 }

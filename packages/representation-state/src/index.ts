@@ -69,6 +69,7 @@ export {
 } from "./economic-state.ts";
 export {
   QuoteIdentityError,
+  assertQuoteIdentityTypes,
   canonicalKey,
   quoteIdentityOf,
   quoteKey,
@@ -82,11 +83,15 @@ export {
 } from "./quote-identity.ts";
 export {
   ExecutionPlanError,
+  assertPlanFresh,
+  consumeExecutionPlan,
   createExecutionPlan,
+  planDigestOf,
   verifyExecutionPlan,
   type ExecutionPlan,
   type ExecutionPlanContent,
   type ExecutionPlanErrorCode,
+  type PlanFreshnessPolicy,
 } from "./execution-plan.ts";
 export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
 export {
