@@ -10,20 +10,31 @@ import {
   RegistryError,
   buildRegistry,
   decide,
+  ExecutionEligibility,
+  ExecutionEligibilityError,
   devnetExecutionResult,
   economicStateOf,
   type ChainObservation,
+  type ExecutionDecision,
 } from "@equityguard/representation-state";
+import type { ProtectedState } from "@equityguard/guard-client";
 
 import type { DevnetContext } from "../devnet/config.ts";
 import { TEST_ASSET_DISCLOSURE, type DevnetState, type TestAsset } from "../devnet/devnet-state.ts";
 import {
   DEVNET_DEMO_POLICY,
+  DEVNET_DEMO_TARGET,
   DevnetDemoEnvironmentError,
+  PREFERRED_TRANSITION_LEAD_SECS,
+  demoSetupMismatches,
+  executeGuardedDecision,
   guardedDeliveryInstructions,
   loadDevnetQuoteFixture,
+  planDemoSetup,
   planDevnetDemo,
   runDevnetDemo,
+  submitRejectionProbe,
+  type SetupUpdate,
 } from "./devnet-execution.ts";
 
 const EQ_A: TestAsset = { label: "EQ-A", mint: address("5ikX5JLtRXxqARxsCfLyJ1gkz43bcYFCXnhPyfpmJeRt"), decimals: 6, conceptualStock: "DEMO", disclosure: TEST_ASSET_DISCLOSURE };
@@ -168,3 +179,110 @@ test("devnet test assets can never enter the mainnet registry", () => {
   );
 });
 
+const NO_RPC = new Proxy({}, { get: () => { throw new Error("RPC must not be called"); } });
+
+test("the execution function refuses every non-executable decision before any RPC call", async () => {
+  const payer = await generateKeyPairSigner();
+  const ctx = { rpc: NO_RPC, payer, cluster: "devnet" } as unknown as DevnetContext;
+  const p = plan();
+  const missingQuote = plan({ outputsRaw: { "EQ-A": "4000000" } });
+  const stale = decide({ preferred: p.preferred, alternative: { ...p.alternative, chainObservation: observation(EQ_B.mint, 1.1, 1.1, NOW - 1n) }, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw, comparison: p.comparison });
+  const cases: [string, ExecutionDecision][] = [
+    ["CONSENT_REQUIRED", p.consentOff],
+    ["ROUTE_UNAVAILABLE", missingQuote.consentOn],
+    ["STALE_COMPARISON", { ...p.consentOn, stateDecision: stale, executionEligibility: ExecutionEligibility.STALE_COMPARISON }],
+    ["QUOTE_UNAVAILABLE", { ...p.consentOn, executionEligibility: ExecutionEligibility.QUOTE_UNAVAILABLE }],
+    ["STATE_UNSAFE", { ...p.consentOn, executionEligibility: ExecutionEligibility.STATE_UNSAFE }],
+    ["STATE_UNKNOWN", { ...p.consentOn, executionEligibility: ExecutionEligibility.STATE_UNKNOWN }],
+  ];
+  for (const [label, decision] of cases) {
+    assert.equal(decision.executionEligibility, label);
+    await assert.rejects(
+      executeGuardedDecision(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, decision, asset: EQ_B, amount: 1n, recipient: payer.address }),
+      (e) => e instanceof ExecutionEligibilityError && e.eligibility === label,
+      label,
+    );
+  }
+  // An executable decision still refuses a non-devnet cluster or a different asset before any RPC.
+  const local = { ...ctx, cluster: "localnet" } as unknown as DevnetContext;
+  await assert.rejects(executeGuardedDecision(local, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, decision: p.consentOn, asset: EQ_B, amount: 1n, recipient: payer.address }), DevnetDemoEnvironmentError);
+  await assert.rejects(executeGuardedDecision(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, decision: p.consentOn, asset: EQ_A, amount: 1n, recipient: payer.address }), /selected representation/);
+  // The rejection probe refuses SAFE representations.
+  await assert.rejects(
+    submitRejectionProbe(ctx, { programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, representation: p.alternative, boundState: p.comparison!.alternativeState, asset: EQ_B, amount: 1n, recipient: payer.address }),
+    /only for a non-SAFE representation/,
+  );
+});
+
+const value = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, 8).getFloat64(0, true);
+
+/**
+ * Model of Token-2022 UpdateMultiplier for tests. The interface documents that
+ * a timestamp not after chain time applies immediately; whether a scheduled
+ * update first promotes an already-activated pending multiplier is not
+ * documented there, so both variants are modelled. The demo also verifies the
+ * resulting state on chain.
+ */
+function applyUpdate(state: ProtectedState, update: SetupUpdate, now: bigint, promotes: boolean): ProtectedState {
+  const bytes = f64(update.newMultiplier);
+  if (update.effectiveTimestamp <= now) return { multiplier: bytes, newMultiplier: bytes, newMultiplierEffectiveTimestamp: update.effectiveTimestamp };
+  const current = promotes && state.newMultiplierEffectiveTimestamp <= now ? state.newMultiplier : state.multiplier;
+  return { multiplier: current, newMultiplier: bytes, newMultiplierEffectiveTimestamp: update.effectiveTimestamp };
+}
+
+test("repeated deterministic setup converges to the same target and the same 6.0 vs 5.99 / 17 bps economics", () => {
+  const { fixture } = loadDevnetQuoteFixture();
+  const drifted: [ProtectedState, ProtectedState][] = [
+    // M6 end state, M7 end state (cumulative +0.25 drift), and an arbitrary drifted EQ-B.
+    [{ multiplier: f64(1.5), newMultiplier: f64(1.75), newMultiplierEffectiveTimestamp: NOW - 5_000n }, { multiplier: f64(1), newMultiplier: f64(1), newMultiplierEffectiveTimestamp: 0n }],
+    [{ multiplier: f64(1.75), newMultiplier: f64(2), newMultiplierEffectiveTimestamp: NOW + 100n }, { multiplier: f64(1), newMultiplier: f64(1), newMultiplierEffectiveTimestamp: 0n }],
+    [{ multiplier: f64(3.25), newMultiplier: f64(3.5), newMultiplierEffectiveTimestamp: NOW - 1n }, { multiplier: f64(1.2), newMultiplier: f64(1.3), newMultiplierEffectiveTimestamp: NOW + 50n }],
+  ];
+  const results = new Set<string>();
+  for (const promotes of [false, true]) {
+    for (const [startA, startB] of drifted) {
+      let [a, b] = [startA, startB];
+      // Three consecutive runs, 700 s apart, each starting from the previous run's end state.
+      for (let runIndex = 0n; runIndex < 3n; runIndex += 1n) {
+        const now = NOW + runIndex * 700n;
+        const setup = planDemoSetup({ preferredAsset: EQ_A, alternativeAsset: EQ_B, alternativeState: b, chainNow: now });
+        for (const step of setup.steps) {
+          for (const update of step.updates) {
+            if (step.asset.mint === EQ_A.mint) a = applyUpdate(a, update, now, promotes);
+            else b = applyUpdate(b, update, now, promotes);
+          }
+        }
+        assert.deepEqual(demoSetupMismatches(a, b, setup.scheduledTimestamp), [], `promotes=${promotes} run ${runIndex}`);
+        assert.deepEqual([value(a.multiplier), value(a.newMultiplier), a.newMultiplierEffectiveTimestamp - now], [1.5, 1.75, PREFERRED_TRANSITION_LEAD_SECS]);
+        const toObservation = (mint: string, s: ProtectedState): ChainObservation => ({
+          ...observation(mint, 1, 1, 0n),
+          chainUnixTimestamp: now,
+          protectedState: s,
+          hasScheduledChange: value(s.multiplier) !== value(s.newMultiplier),
+          phase: now >= s.newMultiplierEffectiveTimestamp ? 1 : 0,
+        });
+        const p = planDevnetDemo({ preferredAsset: EQ_A, alternativeAsset: EQ_B, preferredEvidence: toObservation(EQ_A.mint, a), alternativeEvidence: toObservation(EQ_B.mint, b), fixture, policy: DEVNET_DEMO_POLICY });
+        assert.ok(p.comparison);
+        results.add(`${p.comparison.preferredSharesEquivalent.num}/${p.comparison.preferredSharesEquivalent.den} ${p.comparison.alternativeSharesEquivalent.num}/${p.comparison.alternativeSharesEquivalent.den} ${p.comparison.conservativeCostDeltaBps} ${p.consentOff.executionEligibility} ${p.consentOn.executionEligibility}`);
+      }
+    }
+  }
+  assert.deepEqual([...results], ["6/1 599/100 17 CONSENT_REQUIRED EXECUTABLE"]);
+});
+
+test("setup uses absolute targets only: no step depends on the previous multiplier", () => {
+  const bAtTarget: ProtectedState = { multiplier: f64(1), newMultiplier: f64(1), newMultiplierEffectiveTimestamp: 123n };
+  const plan1 = planDemoSetup({ preferredAsset: EQ_A, alternativeAsset: EQ_B, alternativeState: bAtTarget, chainNow: NOW });
+  assert.equal(plan1.steps.length, 1, "EQ-B already at target: no EQ-B transaction");
+  assert.deepEqual(plan1.steps[0]?.updates, [
+    { newMultiplier: DEVNET_DEMO_TARGET.preferred.effectiveMultiplier, effectiveTimestamp: NOW },
+    { newMultiplier: DEVNET_DEMO_TARGET.preferred.scheduledMultiplier, effectiveTimestamp: NOW + PREFERRED_TRANSITION_LEAD_SECS },
+  ]);
+  const plan2 = planDemoSetup({ preferredAsset: EQ_A, alternativeAsset: EQ_B, alternativeState: { ...bAtTarget, newMultiplier: f64(1.25) }, chainNow: NOW });
+  assert.deepEqual(plan2.steps[1]?.updates, [{ newMultiplier: 1, effectiveTimestamp: NOW }]);
+  // The scheduled change lands inside the policy's before-window, so EQ-A resolves TRANSITION.
+  assert.ok(PREFERRED_TRANSITION_LEAD_SECS <= DEVNET_DEMO_POLICY.beforeSecs);
+  // Verification catches any drift.
+  const drifted: ProtectedState = { multiplier: f64(1.75), newMultiplier: f64(2), newMultiplierEffectiveTimestamp: NOW + 600n };
+  assert.deepEqual(demoSetupMismatches(drifted, bAtTarget, NOW + 600n), ["preferred multiplier", "preferred newMultiplier"]);
+});
