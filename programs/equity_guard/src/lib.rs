@@ -1,12 +1,16 @@
 //! EquityGuard on-chain program.
 //!
-//! One instruction, `assert_safe_execution`, placed before execution
-//! instructions in the same transaction. It fails, reverting the whole
-//! transaction, if a Token-2022 tokenized equity's protected ScaledUiAmount
-//! state no longer matches what the transaction was built against, or if
-//! execution falls in or across a scheduled multiplier activation.
+//! One instruction, `assert_safe_execution` (ABI v2), placed immediately
+//! before the action it protects in the same transaction. It fails, reverting
+//! the whole transaction, if the mint account is not the expected mint, if the
+//! Token-2022 tokenized equity's protected ScaledUiAmount state no longer
+//! matches what the transaction was built against, if execution falls in or
+//! across a scheduled multiplier activation, or if the immediately following
+//! top-level instruction is not the exact committed Token-2022
+//! `TransferChecked` of that mint.
 //! See `docs/invariants.md`.
 
+pub mod downstream;
 pub mod error;
 pub mod guard;
 pub mod instruction;

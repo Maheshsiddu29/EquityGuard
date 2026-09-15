@@ -9,7 +9,7 @@ use solana_program_error::ProgramError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum EquityGuardError {
-    /// Instruction data is empty or names an unsupported ABI version.
+    /// Instruction data is empty.
     UnsupportedInstruction = 0,
     /// Instruction data length does not match the ABI version.
     InvalidInstructionLength = 1,
@@ -46,6 +46,26 @@ pub enum EquityGuardError {
     ArithmeticOverflow = 14,
     /// The Clock sysvar could not be read.
     ClockUnavailable = 15,
+    /// Instruction data names an ABI version other than v2 (ABI v1 included).
+    UnsupportedVersion = 16,
+    /// The expected mint pubkey in the payload is not the mint account passed.
+    MintKeyMismatch = 17,
+    /// Account 1 is not the Instructions sysvar.
+    InvalidInstructionsSysvar = 18,
+    /// No top-level instruction immediately follows the guard.
+    MissingDownstreamInstruction = 19,
+    /// The next instruction's program is not a supported downstream program.
+    UnsupportedDownstreamProgram = 20,
+    /// The next instruction is not the supported downstream instruction.
+    UnsupportedDownstreamInstruction = 21,
+    /// The downstream action's mint is not the protected mint.
+    DownstreamMintMismatch = 22,
+    /// The next instruction is not the exact instruction the payload commits to.
+    DownstreamCommitmentMismatch = 23,
+    /// The payload names an unknown downstream adapter.
+    UnsupportedAdapter = 24,
+    /// The guard is not executing as the current top-level instruction.
+    GuardNotTopLevel = 25,
 }
 
 impl From<EquityGuardError> for ProgramError {

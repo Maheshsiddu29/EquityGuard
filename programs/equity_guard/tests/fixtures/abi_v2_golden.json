@@ -1,0 +1,309 @@
+{
+  "description": "ABI v2 golden vectors for assert_safe_execution and the downstream commitment. Generated independently with Python struct.pack('<B32s8s8sqBIIB32s') and hashlib.sha256 over the documented commitment encoding; the Rust program and the TypeScript client must both match them byte-for-byte.",
+  "abiVersion": 2,
+  "encodedLength": 99,
+  "offsets": {
+    "version": 0,
+    "expectedMint": 1,
+    "multiplier": 33,
+    "newMultiplier": 41,
+    "effectiveTimestamp": 49,
+    "expectedPhase": 57,
+    "protectionBeforeSecs": 58,
+    "protectionAfterSecs": 62,
+    "adapterKind": 66,
+    "downstreamCommitment": 67
+  },
+  "commitmentDomain": "EQUITYGUARD_DOWNSTREAM_V2",
+  "errorCodes": {
+    "UnsupportedInstruction": 0,
+    "InvalidInstructionLength": 1,
+    "InvalidExpectedState": 2,
+    "InvalidAccountCount": 3,
+    "InvalidMintOwner": 4,
+    "InvalidMintData": 5,
+    "MissingScaledUiAmount": 6,
+    "InvalidExtensionCombination": 7,
+    "InvalidMultiplier": 8,
+    "MultiplierChanged": 9,
+    "NewMultiplierChanged": 10,
+    "EffectiveTimestampChanged": 11,
+    "ActivationPhaseChanged": 12,
+    "InsideTransitionWindow": 13,
+    "ArithmeticOverflow": 14,
+    "ClockUnavailable": 15,
+    "UnsupportedVersion": 16,
+    "MintKeyMismatch": 17,
+    "InvalidInstructionsSysvar": 18,
+    "MissingDownstreamInstruction": 19,
+    "UnsupportedDownstreamProgram": 20,
+    "UnsupportedDownstreamInstruction": 21,
+    "DownstreamMintMismatch": 22,
+    "DownstreamCommitmentMismatch": 23,
+    "UnsupportedAdapter": 24,
+    "GuardNotTopLevel": 25
+  },
+  "vectors": [
+    {
+      "name": "unhx-mainnet-activated",
+      "request": {
+        "expectedMint": "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe",
+        "multiplierHex": "9e0dd41d115ef03f",
+        "newMultiplierHex": "d0b18f510470f03f",
+        "newMultiplierEffectiveTimestamp": "1789173000",
+        "expectedPhase": 1,
+        "protectionBeforeSecs": 900,
+        "protectionAfterSecs": 900,
+        "adapterKind": 1,
+        "downstreamCommitmentHex": "bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6"
+      },
+      "encodedHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6"
+    },
+    {
+      "name": "kox-mainnet-pending",
+      "request": {
+        "expectedMint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+        "multiplierHex": "1efbb6d57038f03f",
+        "newMultiplierHex": "73833748164bf03f",
+        "newMultiplierEffectiveTimestamp": "1781481300",
+        "expectedPhase": 0,
+        "protectionBeforeSecs": 900,
+        "protectionAfterSecs": 300,
+        "adapterKind": 1,
+        "downstreamCommitmentHex": "934399641d6044dc1b9002926d90e0f0eccddc8de168aa1cf1be8037211162b2"
+      },
+      "encodedHex": "0207e89b37f89d4291e411740e896b5fc25f2ff288564ff980a5b45ee5c37d645d1efbb6d57038f03f73833748164bf03f543f2f6a0000000000840300002c01000001934399641d6044dc1b9002926d90e0f0eccddc8de168aa1cf1be8037211162b2"
+    },
+    {
+      "name": "eq-b-negative-timestamp-extreme-window",
+      "request": {
+        "expectedMint": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+        "multiplierHex": "000000000000f03f",
+        "newMultiplierHex": "000000000000f03f",
+        "newMultiplierEffectiveTimestamp": "-9223372036854775808",
+        "expectedPhase": 1,
+        "protectionBeforeSecs": 0,
+        "protectionAfterSecs": 4294967295,
+        "adapterKind": 1,
+        "downstreamCommitmentHex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "encodedHex": "0293a8b1542dda79782779bb0fb7b670e479cea581cbdd5946feb5cf67cf798285000000000000f03f000000000000f03f00000000000000800100000000ffffffff01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "dataHex": "",
+      "error": "UnsupportedInstruction"
+    },
+    {
+      "name": "abi-v1-payload",
+      "dataHex": "019e0dd41d115ef03fd0b18f510470f03f089da46a00000000018403000084030000",
+      "error": "UnsupportedVersion"
+    },
+    {
+      "name": "abi-v1-version-byte-on-v2-body",
+      "dataHex": "0107e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "UnsupportedVersion"
+    },
+    {
+      "name": "version-zero",
+      "dataHex": "0007e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "UnsupportedVersion"
+    },
+    {
+      "name": "version-three",
+      "dataHex": "0307e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "UnsupportedVersion"
+    },
+    {
+      "name": "truncated",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1",
+      "error": "InvalidInstructionLength"
+    },
+    {
+      "name": "trailing-byte",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f600",
+      "error": "InvalidInstructionLength"
+    },
+    {
+      "name": "multiplier-positive-zero",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d0000000000000000d0b18f510470f03f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "InvalidExpectedState"
+    },
+    {
+      "name": "new-multiplier-nan",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03f000000000000f87f089da46a0000000001840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "InvalidExpectedState"
+    },
+    {
+      "name": "phase-two",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000002840300008403000001bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "InvalidExpectedState"
+    },
+    {
+      "name": "adapter-zero",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000000bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "UnsupportedAdapter"
+    },
+    {
+      "name": "adapter-two",
+      "dataHex": "0207e916b322a36552b72c78f5f3bacd2a7088fab8e49d95acb0c2644630f1988d9e0dd41d115ef03fd0b18f510470f03f089da46a0000000001840300008403000002bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6",
+      "error": "UnsupportedAdapter"
+    }
+  ],
+  "commitmentVectors": [
+    {
+      "name": "transfer-checked-eq-b-5990000",
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+        {
+          "pubkey": "7w2MRSqKByxbNkYoXWR7vNC2D8yaZ3iPfZCVd4FcrBgT",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "ECrVumzWbWA4c352fohUimkUmRkYm6ubAuyU8hb3Yr3y",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+          "isSigner": true,
+          "isWritable": true
+        }
+      ],
+      "dataHex": "0c70665b000000000006",
+      "commitmentHex": "bf644cab238ffa47d3197cee6972e8d54330c64715133030573b17aac263f1f6"
+    },
+    {
+      "name": "transfer-checked-amount-changed",
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+        {
+          "pubkey": "7w2MRSqKByxbNkYoXWR7vNC2D8yaZ3iPfZCVd4FcrBgT",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "ECrVumzWbWA4c352fohUimkUmRkYm6ubAuyU8hb3Yr3y",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+          "isSigner": true,
+          "isWritable": true
+        }
+      ],
+      "dataHex": "0c71665b000000000006",
+      "commitmentHex": "934399641d6044dc1b9002926d90e0f0eccddc8de168aa1cf1be8037211162b2"
+    },
+    {
+      "name": "transfer-checked-destination-readonly-flag",
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+        {
+          "pubkey": "7w2MRSqKByxbNkYoXWR7vNC2D8yaZ3iPfZCVd4FcrBgT",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "ECrVumzWbWA4c352fohUimkUmRkYm6ubAuyU8hb3Yr3y",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+          "isSigner": true,
+          "isWritable": true
+        }
+      ],
+      "dataHex": "0c70665b000000000006",
+      "commitmentHex": "6599987adb8722dc2d683a33e5a6813e354f9075637fab1798e1c64100c7e91e"
+    },
+    {
+      "name": "transfer-checked-source-destination-swapped",
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+        {
+          "pubkey": "ECrVumzWbWA4c352fohUimkUmRkYm6ubAuyU8hb3Yr3y",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "7w2MRSqKByxbNkYoXWR7vNC2D8yaZ3iPfZCVd4FcrBgT",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+          "isSigner": true,
+          "isWritable": true
+        }
+      ],
+      "dataHex": "0c70665b000000000006",
+      "commitmentHex": "7549f65d5d893fec8828a812a8175bedcbe0b93fd6f64e8596d23f629a2cd1a4"
+    },
+    {
+      "name": "transfer-checked-multisig-extra-signer",
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+        {
+          "pubkey": "7w2MRSqKByxbNkYoXWR7vNC2D8yaZ3iPfZCVd4FcrBgT",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "AwQ8Cx4D4a1fBEcNThsG4kCskmgLNKMnvkf57iQG7wZn",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "ECrVumzWbWA4c352fohUimkUmRkYm6ubAuyU8hb3Yr3y",
+          "isSigner": false,
+          "isWritable": true
+        },
+        {
+          "pubkey": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+          "isSigner": false,
+          "isWritable": false
+        },
+        {
+          "pubkey": "79bhmha3s4GYCamn9sgt1Gm4xYSqPrnMQBS7cEL8ThqF",
+          "isSigner": true,
+          "isWritable": false
+        }
+      ],
+      "dataHex": "0cffffffffffffffffff",
+      "commitmentHex": "2c94a2413a05c1242bcc229ff88e9956ce769b94ddb8f9ef42db3b25d59c8496"
+    },
+    {
+      "name": "other-program-empty",
+      "programId": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+      "accounts": [],
+      "dataHex": "",
+      "commitmentHex": "6c1a0497e86f5c3a7ade94f84591cbfed7312f8a53da6091e71ce91194a047b8"
+    }
+  ]
+}

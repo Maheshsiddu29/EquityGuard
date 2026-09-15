@@ -7,19 +7,22 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use equity_guard::{
+    downstream::{downstream_commitment, CommittedAccount, DOWNSTREAM_COMMITMENT_DOMAIN},
     error::EquityGuardError,
     instruction::{
-        AssertSafeExecution, ProtectionWindow, ASSERT_SAFE_EXECUTION_V1_LEN, VERSION_V1,
+        AssertSafeExecution, AssertSafeExecutionV2, DownstreamAdapter, ProtectionWindow,
+        ASSERT_SAFE_EXECUTION_V2_LEN, VERSION_V2,
     },
     state::{decode_protected_state, ActivationPhase, ProtectedState, StoredMultiplier},
 };
 use serde_json::Value;
+use solana_address::Address;
 
-const GOLDEN: &str = include_str!("fixtures/abi_v1_golden.json");
+const GOLDEN: &str = include_str!("fixtures/abi_v2_golden.json");
 const DECODED: &str = include_str!("fixtures/mainnet/decoded.json");
 
 /// Every error variant, so a new variant without a golden code fails here.
-const ALL_ERRORS: [EquityGuardError; 16] = [
+const ALL_ERRORS: [EquityGuardError; 26] = [
     EquityGuardError::UnsupportedInstruction,
     EquityGuardError::InvalidInstructionLength,
     EquityGuardError::InvalidExpectedState,
@@ -36,6 +39,16 @@ const ALL_ERRORS: [EquityGuardError; 16] = [
     EquityGuardError::InsideTransitionWindow,
     EquityGuardError::ArithmeticOverflow,
     EquityGuardError::ClockUnavailable,
+    EquityGuardError::UnsupportedVersion,
+    EquityGuardError::MintKeyMismatch,
+    EquityGuardError::InvalidInstructionsSysvar,
+    EquityGuardError::MissingDownstreamInstruction,
+    EquityGuardError::UnsupportedDownstreamProgram,
+    EquityGuardError::UnsupportedDownstreamInstruction,
+    EquityGuardError::DownstreamMintMismatch,
+    EquityGuardError::DownstreamCommitmentMismatch,
+    EquityGuardError::UnsupportedAdapter,
+    EquityGuardError::GuardNotTopLevel,
 ];
 
 fn golden() -> Value {
@@ -68,13 +81,21 @@ fn error_named(name: &str) -> EquityGuardError {
 fn layout_constants_match() {
     let golden = golden();
     assert_eq!(
-        u64::from(VERSION_V1),
+        u64::from(VERSION_V2),
         golden["abiVersion"].as_u64().unwrap()
     );
     assert_eq!(
-        ASSERT_SAFE_EXECUTION_V1_LEN as u64,
+        ASSERT_SAFE_EXECUTION_V2_LEN as u64,
         golden["encodedLength"].as_u64().unwrap()
     );
+    assert_eq!(
+        DOWNSTREAM_COMMITMENT_DOMAIN.as_slice(),
+        golden["commitmentDomain"].as_str().unwrap().as_bytes()
+    );
+}
+
+fn array32(hex: &str) -> [u8; 32] {
+    bytes(hex).try_into().unwrap()
 }
 
 #[test]
@@ -86,23 +107,70 @@ fn pack_and_unpack_match_golden_vectors() {
         let name = vector["name"].as_str().unwrap();
         let r = &vector["request"];
         let phase = u8::try_from(r["expectedPhase"].as_u64().unwrap()).unwrap();
-        let request = AssertSafeExecution {
-            expected: ProtectedState {
-                multiplier: multiplier(&r["multiplierHex"]),
-                new_multiplier: multiplier(&r["newMultiplierHex"]),
-                new_multiplier_effective_timestamp: timestamp(
-                    &r["newMultiplierEffectiveTimestamp"],
-                ),
+        let adapter = u8::try_from(r["adapterKind"].as_u64().unwrap()).unwrap();
+        let request = AssertSafeExecutionV2 {
+            expected_mint: r["expectedMint"]
+                .as_str()
+                .unwrap()
+                .parse::<Address>()
+                .unwrap(),
+            execution: AssertSafeExecution {
+                expected: ProtectedState {
+                    multiplier: multiplier(&r["multiplierHex"]),
+                    new_multiplier: multiplier(&r["newMultiplierHex"]),
+                    new_multiplier_effective_timestamp: timestamp(
+                        &r["newMultiplierEffectiveTimestamp"],
+                    ),
+                },
+                expected_phase: ActivationPhase::from_u8(phase).unwrap(),
+                window: ProtectionWindow {
+                    before_secs: u32::try_from(r["protectionBeforeSecs"].as_u64().unwrap())
+                        .unwrap(),
+                    after_secs: u32::try_from(r["protectionAfterSecs"].as_u64().unwrap()).unwrap(),
+                },
             },
-            expected_phase: ActivationPhase::from_u8(phase).unwrap(),
-            window: ProtectionWindow {
-                before_secs: u32::try_from(r["protectionBeforeSecs"].as_u64().unwrap()).unwrap(),
-                after_secs: u32::try_from(r["protectionAfterSecs"].as_u64().unwrap()).unwrap(),
-            },
+            adapter: DownstreamAdapter::from_u8(adapter).unwrap(),
+            downstream_commitment: array32(r["downstreamCommitmentHex"].as_str().unwrap()),
         };
         let encoded = bytes(vector["encodedHex"].as_str().unwrap());
         assert_eq!(request.pack().as_slice(), encoded.as_slice(), "{name}");
-        assert_eq!(AssertSafeExecution::unpack(&encoded), Ok(request), "{name}");
+        assert_eq!(
+            AssertSafeExecutionV2::unpack(&encoded),
+            Ok(request),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn downstream_commitments_match_golden_vectors() {
+    let golden = golden();
+    let vectors = golden["commitmentVectors"].as_array().unwrap();
+    assert!(vectors.len() >= 4);
+    for vector in vectors {
+        let name = vector["name"].as_str().unwrap();
+        let program: Address = vector["programId"].as_str().unwrap().parse().unwrap();
+        let accounts: Vec<CommittedAccount> = vector["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| CommittedAccount {
+                pubkey: a["pubkey"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<Address>()
+                    .unwrap()
+                    .to_bytes(),
+                is_signer: a["isSigner"].as_bool().unwrap(),
+                is_writable: a["isWritable"].as_bool().unwrap(),
+            })
+            .collect();
+        let data = bytes(vector["dataHex"].as_str().unwrap());
+        assert_eq!(
+            downstream_commitment(&program.to_bytes(), &accounts, &data).unwrap(),
+            array32(vector["commitmentHex"].as_str().unwrap()),
+            "{name}"
+        );
     }
 }
 
@@ -113,7 +181,7 @@ fn unpack_rejects_golden_invalid_vectors() {
         let name = vector["name"].as_str().unwrap();
         let expected = error_named(vector["error"].as_str().unwrap());
         assert_eq!(
-            AssertSafeExecution::unpack(&bytes(vector["dataHex"].as_str().unwrap())),
+            AssertSafeExecutionV2::unpack(&bytes(vector["dataHex"].as_str().unwrap())),
             Err(expected),
             "{name}"
         );
