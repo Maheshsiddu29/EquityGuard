@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { address, AccountRole, generateKeyPairSigner } from "@solana/kit";
 import { TOKEN_2022_PROGRAM_ADDRESS, Token2022Instruction, identifyToken2022Instruction } from "@solana-program/token-2022";
-import { EQUITY_GUARD_DEVNET_PROGRAM_ID, type GuardSnapshot } from "@equityguard/guard-client";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "@equityguard/guard-client";
 import {
   Decision,
   RepresentationState,
@@ -11,6 +11,7 @@ import {
   buildRegistry,
   decide,
   devnetExecutionResult,
+  economicStateOf,
   type ChainObservation,
 } from "@equityguard/representation-state";
 
@@ -101,32 +102,42 @@ test("a missing devnet quote yields UNKNOWN_STATE, never execution", () => {
   assert.deepEqual([p.consentOn.decision, p.consentOn.reasonCode], [Decision.UNKNOWN_STATE, "ALTERNATIVE_QUOTE_UNAVAILABLE"]);
 });
 
-test("guarded delivery puts the guard first, bound to the delivered mint", async () => {
+test("guarded delivery puts the guard first and asserts exactly the decision's bound state", async () => {
   const payer = await generateKeyPairSigner();
   const recipient = (await generateKeyPairSigner()).address;
-  const snapshot: GuardSnapshot = {
-    mint: EQ_B.mint,
-    contextSlot: 1n,
-    clock: { slot: 1n, unixTimestamp: NOW },
-    state: ALTERNATIVE.protectedState,
-    phase: 1,
-    hasScheduledChange: false,
-  };
-  const instructions = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, snapshot, policy: DEVNET_DEMO_POLICY, amount: 5_990_000n });
+  const p = plan();
+  assert.ok(p.comparison);
+  const instructions = await guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_B, boundState: p.comparison.alternativeState, policy: DEVNET_DEMO_POLICY, amount: 5_990_000n });
   assert.equal(instructions.length, 3);
   const [guard, , transfer] = instructions;
   assert.equal(guard?.programAddress, EQUITY_GUARD_DEVNET_PROGRAM_ID);
   assert.deepEqual(guard?.accounts, [{ address: EQ_B.mint, role: AccountRole.READONLY }]);
-  // ABI v1 window bytes carry the policy: before 900, after 300.
-  const data = new DataView(Uint8Array.from(guard?.data ?? []).buffer);
-  assert.deepEqual([data.getUint32(26, true), data.getUint32(30, true)], [900, 300]);
+  // ABI v1: multiplier bytes, new multiplier bytes, T, phase, then the policy window (900, 300).
+  const data = Uint8Array.from(guard?.data ?? []);
+  const view = new DataView(data.buffer);
+  const bound = p.comparison.alternativeState;
+  assert.deepEqual(
+    [Buffer.from(data.subarray(1, 9)).toString("hex"), Buffer.from(data.subarray(9, 17)).toString("hex"), view.getBigInt64(17, true), data[25]],
+    [bound.multiplierHex, bound.newMultiplierHex, bound.effectiveTimestamp, bound.phase],
+  );
+  assert.deepEqual([view.getUint32(26, true), view.getUint32(30, true)], [900, 300]);
   assert.equal(transfer?.programAddress, TOKEN_2022_PROGRAM_ADDRESS);
   assert.equal(identifyToken2022Instruction(Uint8Array.from(transfer?.data ?? [])), Token2022Instruction.TransferChecked);
   assert.ok(transfer?.accounts?.some((a) => a.address === EQ_B.mint));
   await assert.rejects(
-    guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_A, snapshot, policy: DEVNET_DEMO_POLICY, amount: 1n }),
+    guardedDeliveryInstructions({ programId: EQUITY_GUARD_DEVNET_PROGRAM_ID, payer, recipient, asset: EQ_A, boundState: bound, policy: DEVNET_DEMO_POLICY, amount: 1n }),
     /different mint/,
   );
+});
+
+test("a devnet comparison built before a state change cannot authorize execution", () => {
+  const p = plan();
+  // EQ-B's multiplier changes immediately after the comparison was built.
+  const updated = observation(EQ_B.mint, 1.1, 1.1, NOW - 1n);
+  const alternative = { ...p.alternative, chainObservation: updated };
+  const result = decide({ preferred: p.preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: p.inputRaw, comparison: p.comparison });
+  assert.deepEqual([result.decision, result.reasonCode], [Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_STALE_STATE"]);
+  assert.deepEqual(p.comparison?.alternativeState, economicStateOf(ALTERNATIVE));
 });
 
 test("execution results are DEVNET_EXECUTION and cannot claim execution for unsafe decisions", () => {

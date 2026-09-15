@@ -5,7 +5,13 @@
  * The cost of switching is derived only from share-equivalents (INV-VAL-01)
  * and rounded AGAINST the alternative: a cost rounds up, a benefit rounds
  * toward zero. The reported cost of switching is never understated.
+ *
+ * Each quote is normalized with the decimals and effective multiplier of the
+ * `EconomicState` it was built against, and the comparison carries both
+ * states so it can never be applied to a different state (see `decide`).
  */
+
+import { effectiveMultiplierBytes, type EconomicState } from "./economic-state.ts";
 
 import {
   NormalizationError,
@@ -28,9 +34,8 @@ export interface NormalizedQuote {
   /** Input notional in the input token's smallest units. */
   readonly inputRaw: bigint;
   readonly outputRaw: bigint;
-  readonly decimals: number | null;
-  /** Stored bytes of the output mint's effective multiplier. */
-  readonly effectiveMultiplier: Uint8Array;
+  /** The output mint's exact state when the quote was built; supplies decimals and the effective multiplier. */
+  readonly state: EconomicState;
 }
 
 export interface QuoteComparison {
@@ -40,6 +45,9 @@ export interface QuoteComparison {
   readonly alternativeMint: string;
   /** Identical input notional of both quotes. */
   readonly inputRaw: bigint;
+  /** State binding: the exact economic states both quotes were normalized with. */
+  readonly preferredState: EconomicState;
+  readonly alternativeState: EconomicState;
   readonly preferredSharesEquivalent: Rational;
   readonly alternativeSharesEquivalent: Rational;
   /** preferred − alternative; positive means the alternative delivers fewer shares. */
@@ -67,8 +75,15 @@ export function compareQuotes(
   if (preferred.inputRaw !== alternative.inputRaw) {
     throw new NormalizationError("NotionalMismatch", "quotes must be for identical input notional");
   }
-  const p = sharesEquivalent(preferred);
-  const a = sharesEquivalent(alternative);
+  for (const quote of [preferred, alternative]) {
+    if (quote.state.mint !== quote.mint) {
+      throw new NormalizationError("StateMismatch", `quote for ${quote.mint} carries state of ${quote.state.mint}`);
+    }
+  }
+  const shares = (quote: NormalizedQuote) =>
+    sharesEquivalent({ outputRaw: quote.outputRaw, decimals: quote.state.decimals, effectiveMultiplier: effectiveMultiplierBytes(quote.state) });
+  const p = shares(preferred);
+  const a = shares(alternative);
   if (p.num === 0n) throw new NormalizationError("NonPositiveOutput", "preferred quote delivers no shares");
 
   // (p − a) / p × 10000 = (p.num·a.den − a.num·p.den) · 10000 / (p.num·a.den)
@@ -81,6 +96,8 @@ export function compareQuotes(
     preferredMint: preferred.mint,
     alternativeMint: alternative.mint,
     inputRaw: preferred.inputRaw,
+    preferredState: preferred.state,
+    alternativeState: alternative.state,
     preferredSharesEquivalent: p,
     alternativeSharesEquivalent: a,
     difference: { sign, magnitude: rational(rawDiff < 0n ? -rawDiff : rawDiff, p.den * a.den) },

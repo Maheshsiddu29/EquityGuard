@@ -9,6 +9,7 @@
  */
 
 import type { QuoteComparison } from "./compare.ts";
+import { economicStateMismatches, economicStateOf, type EconomicState } from "./economic-state.ts";
 import { formatRationalFloor } from "./normalize.ts";
 import { RepresentationState, StateSource, type ResolvedRepresentationState } from "./types.ts";
 
@@ -32,6 +33,7 @@ export type DecisionReasonCode =
   | "ALTERNATIVE_NOT_SAME_UNDERLYING"
   | "ALTERNATIVE_QUOTE_UNAVAILABLE"
   | "QUOTE_COMPARISON_MISMATCH"
+  | "QUOTE_COMPARISON_STALE_STATE"
   | "CONSENT_REQUIRED"
   | "CONSENT_GIVEN";
 
@@ -83,7 +85,8 @@ export interface DecisionInput {
   readonly inputRaw: bigint;
   /**
    * Normalized comparison of preferred vs alternative. It must be bound to
-   * this decision's underlying, both mints and `inputRaw`, or no reroute is
+   * this decision's underlying, both mints and `inputRaw`, and to the exact
+   * economic state of both resolved representations, or no reroute is
    * authorized.
    */
   readonly comparison: QuoteComparison | null;
@@ -107,6 +110,27 @@ export function comparisonBindingMismatch(
     mismatches.push(`alternativeMint ${comparison.alternativeMint} != ${alternative.mint}`);
   }
   if (comparison.inputRaw !== inputRaw) mismatches.push(`inputRaw ${comparison.inputRaw} != ${inputRaw}`);
+  return mismatches.length > 0 ? mismatches.join("; ") : null;
+}
+
+/**
+ * Describes why a comparison was built against a different economic state
+ * than the resolved representations carry, or null if both states match.
+ * A representation without a decoded chain state cannot match.
+ */
+export function comparisonStateMismatch(
+  comparison: QuoteComparison,
+  preferred: ResolvedRepresentationState,
+  alternative: ResolvedRepresentationState,
+): string | null {
+  const mismatches: string[] = [];
+  const check = (role: string, bound: EconomicState, state: ResolvedRepresentationState) => {
+    const current = economicStateOf(state.chainObservation);
+    if (!current) mismatches.push(`${role} ${state.symbol}: no decoded chain state to bind`);
+    else mismatches.push(...economicStateMismatches(bound, current).map((m) => `${role} ${state.symbol}: ${m}`));
+  };
+  check("preferred", comparison.preferredState, preferred);
+  check("alternative", comparison.alternativeState, alternative);
   return mismatches.length > 0 ? mismatches.join("; ") : null;
 }
 
@@ -167,6 +191,11 @@ export function decide(input: DecisionInput): DecisionResult {
   const mismatch = comparisonBindingMismatch(comparison, preferred, alternative, input.inputRaw);
   if (mismatch) {
     return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_MISMATCH", `${unsafeReason}; quote comparison does not match this decision: ${mismatch}`);
+  }
+  // Economics normalized against another state are stale: recompute, never reuse.
+  const stale = comparisonStateMismatch(comparison, preferred, alternative);
+  if (stale) {
+    return result(Decision.UNKNOWN_STATE, "QUOTE_COMPARISON_STALE_STATE", `${unsafeReason}; quote comparison was built against a different economic state and must be recomputed: ${stale}`);
   }
 
   const disclosure: RerouteDisclosure = {

@@ -7,15 +7,19 @@
  * no RPC, signer or transaction code: this path cannot submit anything.
  */
 
-import { ActivationPhase, bytesEqual, phaseAt } from "@equityguard/guard-client";
+import { ActivationPhase, bytesEqual, checkGuardOffline, type EquityGuardErrorName, type ProtectionWindow } from "@equityguard/guard-client";
 import {
+  Decision,
   compareQuotes,
   decide,
+  economicStateMismatches,
+  economicStateOf,
   findRepresentationBySymbol,
   mainnetObservationResult,
   resolveOndoState,
   resolveXStocksState,
   type ChainObservation,
+  type EconomicState,
   type EvidenceReference,
   type MainnetObservationResult,
   type NormalizedQuote,
@@ -39,6 +43,8 @@ export const KO_DEMO_POLICY: TransitionPolicy = {
   basis: "demo policy: 15 min before / 5 min after a scheduled T; immediate updates have no window; not issuer-calibrated",
 };
 
+const windowOf = (policy: TransitionPolicy): ProtectionWindow => ({ beforeSecs: Number(policy.beforeSecs), afterSecs: Number(policy.afterSecs) });
+
 /** The trade notional of the recorded liquidity snapshot (5 USDC). */
 const SNAPSHOT_INPUT_RAW = 5_000_000n;
 
@@ -47,16 +53,45 @@ export interface ScenarioResult {
   readonly title: string;
   readonly evaluatedAt: { readonly preferred: string; readonly alternative: string };
   readonly result: MainnetObservationResult;
+  /**
+   * Route availability, at discovery time, of the representation the decision
+   * selects; null when the decision selects nothing. A state decision is not
+   * a claim that the selected representation was routable.
+   */
+  readonly selectedRouteAtDiscovery: "AVAILABLE" | "UNAVAILABLE" | null;
+}
+
+/** A guard payload built from one recorded state and evaluated against a later one, offline. */
+export interface SnapshotCheck {
+  readonly builtFrom: string;
+  readonly evaluatedAgainst: string;
+  readonly economicStateMismatches: readonly string[];
+  readonly window: ProtectionWindow;
+  readonly guardResult: EquityGuardErrorName | null;
 }
 
 export interface DivergenceFacts {
   readonly koon: { readonly mechanism: "IMMEDIATE_UPDATE"; readonly storedEffectiveTimestamp: bigint; readonly lastOldStateObservedAt: string; readonly firstNewStateObservedAt: string; readonly pendingPhaseObserved: false };
   readonly kox: { readonly mechanism: "SCHEDULED_THEN_CLOCK_CROSSING"; readonly storedEffectiveTimestamp: bigint; readonly pendingFirstObservedAt: string; readonly apiPendingFirstObservedAt: string; readonly activationFirstObservedAt: string; readonly bytesUnchangedAtActivation: boolean };
   readonly effectiveTimestampDivergenceSecs: bigint;
-  /** Mirrors the on-chain guard's check order; computed offline, not executed on mainnet. */
-  readonly guardWouldReject: {
-    readonly koonSnapshotBuiltBeforeUpdate: "MultiplierChanged" | null;
-    readonly koxPendingSnapshotAfterT: "ActivationPhaseChanged" | null;
+  /**
+   * Immediate update: the risk is a payload built from the old state, not the
+   * new state. Mirrors the on-chain guard's check order; computed offline, not
+   * executed on mainnet.
+   */
+  readonly koonImmediateUpdate: {
+    readonly staleSnapshot: SnapshotCheck;
+    readonly freshSnapshot: SnapshotCheck & { readonly state: string | null };
+  };
+  /**
+   * Scheduled update: identical account bytes, but the clock crossed T, so
+   * the pre-T payload's phase is stale. With the demo window the landing is
+   * still inside the window; a zero window isolates the phase check.
+   */
+  readonly koxClockCrossing: {
+    readonly pendingSnapshotDemoWindow: SnapshotCheck;
+    readonly pendingSnapshotZeroWindow: SnapshotCheck;
+    readonly freshActivatedSnapshotZeroWindow: SnapshotCheck;
   };
   readonly sources: CuratedKoFixture["sources"];
 }
@@ -78,14 +113,19 @@ function resolve(fixture: CuratedKoFixture, key: ObservationKey, policy: Transit
       resolveOndoState(representation, { chain: evidence, api: null }, policy);
 }
 
-/** Quote pair from the liquidity snapshot; null unless BOTH routes were available. */
+/**
+ * Quote pair from the liquidity snapshot, normalized against the replayed
+ * states. Null unless BOTH routes were available AND each quote's recorded
+ * chain state (decimals, phase, effective multiplier) matches the replayed
+ * state: a quote observed against another state is not usable for this one.
+ */
 function quotePair(
   snapshot: LiquiditySnapshot,
-  preferredSymbol: string,
-  alternativeSymbol: string,
+  preferred: ResolvedRepresentationState,
+  alternative: ResolvedRepresentationState,
 ): { comparison: QuoteComparison | null; availability: QuoteAvailability } {
-  const p = snapshot.quotes[preferredSymbol];
-  const a = snapshot.quotes[alternativeSymbol];
+  const p = snapshot.quotes[preferred.symbol];
+  const a = snapshot.quotes[alternative.symbol];
   if (!p || !a) throw new Error("liquidity snapshot missing a representation");
   const availability: QuoteAvailability = {
     source: "JUPITER_MAINNET_SNAPSHOT",
@@ -94,23 +134,17 @@ function quotePair(
     alternative: a.route,
     note: `Point-in-time Jupiter /build discovery at ${p.observedAt} for ${snapshot.inputRaw} USDC units; route availability is dynamic and was observed after the corporate action, not at the replayed moment.`,
   };
-  if (p.route !== "AVAILABLE" || a.route !== "AVAILABLE" || !p.outAmountRaw || !a.outAmountRaw) {
-    return { comparison: null, availability };
-  }
-  const quote = (q: typeof p): NormalizedQuote => {
-    const rep = findRepresentationBySymbol(q.symbol);
-    if (!rep) throw new Error(`${q.symbol} not in registry`);
-    return {
-      underlying: rep.underlying,
-      issuer: rep.issuer,
-      mint: rep.mint,
-      inputRaw: BigInt(snapshot.inputRaw),
-      outputRaw: BigInt(q.outAmountRaw ?? "0"),
-      decimals: q.chainAtQuote.decimals,
-      effectiveMultiplier: Uint8Array.from(Buffer.from(q.chainAtQuote.effectiveMultiplierHex, "hex")),
-    };
+  const quote = (q: typeof p, resolved: ResolvedRepresentationState): NormalizedQuote | null => {
+    const state = economicStateOf(resolved.chainObservation);
+    if (q.route !== "AVAILABLE" || !q.outAmountRaw || !state) return null;
+    const effectiveHex = state.phase === ActivationPhase.Activated ? state.newMultiplierHex : state.multiplierHex;
+    const recordedPhase = state.phase === ActivationPhase.Activated ? "activated" : "pending";
+    if (q.chainAtQuote.decimals !== state.decimals || q.chainAtQuote.effectiveMultiplierHex !== effectiveHex || q.chainAtQuote.phase !== recordedPhase) return null;
+    return { underlying: resolved.underlying, issuer: resolved.issuer, mint: resolved.mint, inputRaw: BigInt(snapshot.inputRaw), outputRaw: BigInt(q.outAmountRaw), state };
   };
-  return { comparison: compareQuotes(quote(p), quote(a), { toleranceBps: 0n }), availability };
+  const pq = quote(p, preferred);
+  const aq = quote(a, alternative);
+  return { comparison: pq && aq ? compareQuotes(pq, aq, { toleranceBps: 0n }) : null, availability };
 }
 
 function evidence(fixture: CuratedKoFixture, snapshot: LiquiditySnapshot, keys: readonly ObservationKey[]): EvidenceReference[] {
@@ -134,13 +168,16 @@ function scenario(
 ): ScenarioResult {
   const preferred = resolve(fixture, preferredKey, policy);
   const alternative = resolve(fixture, alternativeKey, policy);
-  const { comparison, availability } = quotePair(snapshot, preferred.symbol, alternative.symbol);
+  const { comparison, availability } = quotePair(snapshot, preferred, alternative);
   const decision = decide({ preferred, alternative, policy: { allowCrossIssuerReroute: true }, inputRaw: SNAPSHOT_INPUT_RAW, comparison });
+  const selectedRouteAtDiscovery =
+    decision.decision === Decision.USE_PREFERRED ? availability.preferred : decision.decision === Decision.USE_ALTERNATIVE ? availability.alternative : null;
   return {
     id,
     title,
     evaluatedAt: { preferred: fixture.observations[preferredKey].wallclock, alternative: fixture.observations[alternativeKey].wallclock },
     result: mainnetObservationResult({ decision, comparison, evidenceSources: evidence(fixture, snapshot, [preferredKey, alternativeKey]), quoteAvailability: availability }),
+    selectedRouteAtDiscovery: selectedRouteAtDiscovery === "NOT_APPLICABLE" ? null : selectedRouteAtDiscovery,
   };
 }
 
@@ -154,23 +191,34 @@ export function replayKoScenarios(policy: TransitionPolicy = KO_DEMO_POLICY): Sc
   ];
 }
 
-export function koDivergenceFacts(): DivergenceFacts {
+function snapshotCheck(fixture: CuratedKoFixture, builtFrom: ObservationKey, evaluatedAgainst: ObservationKey, window: ProtectionWindow): SnapshotCheck {
+  const built = decoded(fixture, builtFrom);
+  const live = decoded(fixture, evaluatedAgainst);
+  const builtState = economicStateOf(built) as EconomicState;
+  const liveState = economicStateOf(live) as EconomicState;
+  if (built.phase === null || live.chainUnixTimestamp === null) throw new Error("curated observations must carry chain time");
+  return {
+    builtFrom,
+    evaluatedAgainst,
+    economicStateMismatches: economicStateMismatches(builtState, liveState),
+    window,
+    guardResult: checkGuardOffline({ expected: built.protectedState, expectedPhase: built.phase, window }, live.protectedState, live.chainUnixTimestamp),
+  };
+}
+
+export function koDivergenceFacts(policy: TransitionPolicy = KO_DEMO_POLICY): DivergenceFacts {
   const fixture = loadKoFixture();
-  const koonPre = decoded(fixture, "koonPreEventLast");
   const koonPost = decoded(fixture, "koonPostEventFirst");
   const koxPending = decoded(fixture, "koxLastPendingBeforeT");
   const koxActivated = decoded(fixture, "koxActivatedFirstObserved");
   const apiPending = JSON.parse(fixture.api.koxApiPendingFirstObserved.rawLine) as { wallclock: string };
+  const demoWindow = windowOf(policy);
+  const zeroWindow: ProtectionWindow = { beforeSecs: 0, afterSecs: 0 };
 
-  // Program order: multiplier, new multiplier, timestamp; then phase for a scheduled change.
-  const staleStored = !bytesEqual(koonPre.protectedState.multiplier, koonPost.protectedState.multiplier)
-    ? ("MultiplierChanged" as const)
-    : null;
   const koxBytesUnchanged =
     bytesEqual(koxPending.protectedState.multiplier, koxActivated.protectedState.multiplier) &&
     bytesEqual(koxPending.protectedState.newMultiplier, koxActivated.protectedState.newMultiplier) &&
     koxPending.protectedState.newMultiplierEffectiveTimestamp === koxActivated.protectedState.newMultiplierEffectiveTimestamp;
-  const phaseAfterT = koxActivated.chainUnixTimestamp === null ? null : phaseAt(koxActivated.protectedState, koxActivated.chainUnixTimestamp);
 
   return {
     koon: {
@@ -190,10 +238,14 @@ export function koDivergenceFacts(): DivergenceFacts {
     },
     effectiveTimestampDivergenceSecs:
       koxActivated.protectedState.newMultiplierEffectiveTimestamp - koonPost.protectedState.newMultiplierEffectiveTimestamp,
-    guardWouldReject: {
-      koonSnapshotBuiltBeforeUpdate: staleStored,
-      koxPendingSnapshotAfterT:
-        koxBytesUnchanged && koxPending.phase === ActivationPhase.Pending && phaseAfterT === ActivationPhase.Activated ? "ActivationPhaseChanged" : null,
+    koonImmediateUpdate: {
+      staleSnapshot: snapshotCheck(fixture, "koonPreEventLast", "koonPostEventFirst", demoWindow),
+      freshSnapshot: { ...snapshotCheck(fixture, "koonPostEventFirst", "koonPostEventFirst", demoWindow), state: resolve(fixture, "koonPostEventFirst", policy).state },
+    },
+    koxClockCrossing: {
+      pendingSnapshotDemoWindow: snapshotCheck(fixture, "koxLastPendingBeforeT", "koxActivatedFirstObserved", demoWindow),
+      pendingSnapshotZeroWindow: snapshotCheck(fixture, "koxLastPendingBeforeT", "koxActivatedFirstObserved", zeroWindow),
+      freshActivatedSnapshotZeroWindow: snapshotCheck(fixture, "koxActivatedFirstObserved", "koxActivatedFirstObserved", zeroWindow),
     },
     sources: fixture.sources,
   };

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { ActivationPhase } from "@equityguard/guard-client";
+
 import {
   Decision,
   RepresentationState,
@@ -8,10 +10,33 @@ import {
   compareQuotes,
   decide,
   findRepresentationBySymbol,
+  type ChainObservation,
+  type EconomicState,
   type NormalizedQuote,
   type QuoteComparison,
   type ResolvedRepresentationState,
 } from "../src/index.ts";
+
+/** Decimals of the synthetic chain states: KOon uses 9 to exercise normalization. */
+const DECIMALS: Record<string, number> = { KOon: 9 };
+
+/** Activated, unscheduled chain observation with multiplier 1. */
+function chainObservation(mint: string, decimals: number): ChainObservation {
+  const one = f64(1);
+  return {
+    kind: "decoded",
+    mint,
+    slot: 1n,
+    blockTime: 2n,
+    observedAt: null,
+    chainUnixTimestamp: 1_789_400_000n,
+    decimals,
+    paused: false,
+    protectedState: { multiplier: one, newMultiplier: one, newMultiplierEffectiveTimestamp: 0n },
+    hasScheduledChange: false,
+    phase: ActivationPhase.Activated,
+  };
+}
 
 function resolved(
   symbol: string,
@@ -32,7 +57,7 @@ function resolved(
     blockTime: 2n,
     observedAt: null,
     reason: `test ${state}`,
-    chainObservation: null,
+    chainObservation: chainObservation(rep.mint, DECIMALS[symbol] ?? 8),
     apiObservation: null,
   };
 }
@@ -46,11 +71,19 @@ function f64(value: number): Uint8Array {
 const INPUT_RAW = 5_000_000n;
 const KOX_MINT = "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ";
 const KOON_MINT = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
-const quoteBase = { underlying: "KO", inputRaw: INPUT_RAW, decimals: 8, effectiveMultiplier: f64(1) };
-/** Correctly bound comparison for KOx (preferred) vs KOon (alternative) at INPUT_RAW. */
+const stateOf = (mint: string, decimals: number): EconomicState => ({
+  mint,
+  decimals,
+  multiplierHex: Buffer.from(f64(1)).toString("hex"),
+  newMultiplierHex: Buffer.from(f64(1)).toString("hex"),
+  effectiveTimestamp: 0n,
+  phase: ActivationPhase.Activated,
+  paused: false,
+});
+/** Correctly bound comparison for KOx (preferred) vs KOon (alternative) at INPUT_RAW, on the states `resolved` carries. */
 const COMPARISON: QuoteComparison = compareQuotes(
-  { ...quoteBase, issuer: "xStocks", mint: KOX_MINT, outputRaw: 10_000n } satisfies NormalizedQuote,
-  { ...quoteBase, issuer: "Ondo", mint: KOON_MINT, outputRaw: 99_800n, decimals: 9 },
+  { underlying: "KO", inputRaw: INPUT_RAW, issuer: "xStocks", mint: KOX_MINT, outputRaw: 10_000n, state: stateOf(KOX_MINT, 8) } satisfies NormalizedQuote,
+  { underlying: "KO", inputRaw: INPUT_RAW, issuer: "Ondo", mint: KOON_MINT, outputRaw: 99_800n, state: stateOf(KOON_MINT, 9) },
   { toleranceBps: 5n },
 );
 

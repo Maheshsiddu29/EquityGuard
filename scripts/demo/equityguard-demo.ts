@@ -25,7 +25,7 @@ import { connectDevnet, readDevnetConfig } from "../devnet/config.ts";
 import { loadDevnetState } from "../devnet/devnet-state.ts";
 import { DEVNET_DEMO_POLICY, runDevnetDemo, type DevnetDemoRun } from "./devnet-execution.ts";
 import { loadLiquiditySnapshot } from "./ko-fixtures.ts";
-import { KO_DEMO_POLICY, koDivergenceFacts, replayKoScenarios, type ScenarioResult } from "./mainnet-replay.ts";
+import { KO_DEMO_POLICY, koDivergenceFacts, replayKoScenarios, type ScenarioResult, type SnapshotCheck } from "./mainnet-replay.ts";
 
 const line = (text = "") => console.log(text);
 const banner = (title: string, environment: string) => {
@@ -58,7 +58,16 @@ function part1(): ReturnType<typeof koDivergenceFacts> {
   line(`                activation first observed ${facts.kox.activationFirstObservedAt}; mint bytes unchanged at activation: ${facts.kox.bytesUnchangedAtActivation}`);
   const d = facts.effectiveTimestampDivergenceSecs;
   line(`Divergence:     stored effective timestamps differ by ${d / 60n}m${d % 60n}s`);
-  line(`Guard (offline, program order): stale KOon snapshot → ${facts.guardWouldReject.koonSnapshotBuiltBeforeUpdate}; KOx pending snapshot after T → ${facts.guardWouldReject.koxPendingSnapshotAfterT}`);
+  const check = (label: string, c: SnapshotCheck) =>
+    line(`  ${label.padEnd(44)} → ${c.guardResult ?? "passes"}${c.economicStateMismatches.length > 0 ? ` (state changed: ${c.economicStateMismatches.map((m) => m.split(" ")[0]).join(", ")})` : " (state identical)"}`);
+  line("Immediate update (KOon): the risk is a payload built from the OLD state, not a timed window.");
+  check("pre-update snapshot, landing after update", facts.koonImmediateUpdate.staleSnapshot);
+  check(`fresh post-update snapshot [${facts.koonImmediateUpdate.freshSnapshot.state}]`, facts.koonImmediateUpdate.freshSnapshot);
+  line("Scheduled update (KOx): same account bytes, but the clock crossed T.");
+  check("pre-T snapshot after T, demo window", facts.koxClockCrossing.pendingSnapshotDemoWindow);
+  check("pre-T snapshot after T, zero window", facts.koxClockCrossing.pendingSnapshotZeroWindow);
+  check("fresh activated snapshot, zero window", facts.koxClockCrossing.freshActivatedSnapshotZeroWindow);
+  line("Guard results above are an offline mirror of the program's check order over recorded state; nothing was submitted on mainnet.");
   line(`Sources:        chain ${facts.sources.finalChainSnapshotSha256}`);
   line(`                api   ${facts.sources.finalApiSnapshotSha256}`);
   line(`                window ${facts.sources.finalEventWindowSha256}`);
@@ -80,6 +89,9 @@ function part2(): ScenarioResult[] {
     line(`Scenario ${s.id}: ${s.title}`);
     line(`  state evaluated at ${s.evaluatedAt.preferred}`);
     formatDecision(s.result);
+    if (s.selectedRouteAtDiscovery === "UNAVAILABLE") {
+      line("  route:        the selected representation had NO Jupiter route at discovery time; this is a state decision only and nothing was executable.");
+    }
   }
   line();
   line("EquityGuard does not fabricate a reroute: at discovery time no underlying (KO, UNH, CRM) had both issuer representations routable.");

@@ -20,6 +20,7 @@ export type NormalizationErrorCode =
   | "NegativeAmount"
   | "NotionalMismatch"
   | "UnderlyingMismatch"
+  | "StateMismatch"
   | "NonPositiveOutput"
   | "InvalidTolerance";
 

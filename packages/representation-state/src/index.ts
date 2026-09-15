@@ -60,10 +60,18 @@ export {
   type Rational,
   type ShareInput,
 } from "./normalize.ts";
+export {
+  economicStateMismatches,
+  economicStateOf,
+  effectiveMultiplierBytes,
+  protectedStateOf,
+  type EconomicState,
+} from "./economic-state.ts";
 export { compareQuotes, type NormalizedQuote, type QuoteComparison } from "./compare.ts";
 export {
   Decision,
   comparisonBindingMismatch,
+  comparisonStateMismatch,
   decide,
   type DecisionInput,
   type DecisionReasonCode,

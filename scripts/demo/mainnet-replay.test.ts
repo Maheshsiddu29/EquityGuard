@@ -17,7 +17,31 @@ test("real KO divergence facts come straight from the curated evidence", () => {
     ["SCHEDULED_THEN_CLOCK_CROSSING", 1789432200n, "2026-09-14T20:26:16.355Z", "2026-09-14T20:26:53Z", "2026-09-15T00:30:17.503Z", true],
   );
   assert.equal(facts.effectiveTimestampDivergenceSecs, 25n * 60n + 56n);
-  assert.deepEqual(facts.guardWouldReject, { koonSnapshotBuiltBeforeUpdate: "MultiplierChanged", koxPendingSnapshotAfterT: "ActivationPhaseChanged" });
+});
+
+test("KOon immediate update: the pre-update snapshot is stale and fails MultiplierChanged", () => {
+  const { staleSnapshot } = koDivergenceFacts().koonImmediateUpdate;
+  assert.deepEqual([staleSnapshot.builtFrom, staleSnapshot.evaluatedAgainst, staleSnapshot.guardResult], ["koonPreEventLast", "koonPostEventFirst", "MultiplierChanged"]);
+  assert.deepEqual(staleSnapshot.economicStateMismatches.map((m) => m.split(" ")[0]), ["multiplierHex", "newMultiplierHex", "effectiveTimestamp"]);
+});
+
+test("KOon immediate update: the fresh post-update snapshot is SAFE and validates immediately", () => {
+  const { freshSnapshot } = koDivergenceFacts().koonImmediateUpdate;
+  assert.deepEqual([freshSnapshot.state, freshSnapshot.guardResult, freshSnapshot.economicStateMismatches], [RepresentationState.SAFE, null, []]);
+  // 12 s after the stored effective timestamp: no cooldown.
+  const koon = resolveCurated("koonPostEventFirst");
+  assert.equal((koon.chainObservation?.kind === "decoded" ? koon.chainObservation.chainUnixTimestamp : null), 1789430656n);
+  assert.equal(koon.reason, "no scheduled multiplier change");
+});
+
+test("KOx clock crossing: identical bytes, stale pre-T phase fails; fresh activated snapshot passes", () => {
+  const facts = koDivergenceFacts();
+  assert.equal(facts.kox.bytesUnchangedAtActivation, true);
+  const { pendingSnapshotDemoWindow, pendingSnapshotZeroWindow, freshActivatedSnapshotZeroWindow } = facts.koxClockCrossing;
+  assert.deepEqual(pendingSnapshotDemoWindow.economicStateMismatches, ["phase 0 != 1"]);
+  assert.equal(pendingSnapshotDemoWindow.guardResult, "InsideTransitionWindow");
+  assert.equal(pendingSnapshotZeroWindow.guardResult, "ActivationPhaseChanged");
+  assert.deepEqual([freshActivatedSnapshotZeroWindow.guardResult, freshActivatedSnapshotZeroWindow.economicStateMismatches], [null, []]);
 });
 
 test("real-state resolution of the curated observations under the demo policy", () => {
@@ -49,9 +73,10 @@ test("scenario A: KOx transition with an unroutable KOon alternative is UNKNOWN_
   );
   assert.deepEqual([a.result.quoteAvailability.preferred, a.result.quoteAvailability.alternative], ["AVAILABLE", "UNAVAILABLE"]);
   assert.equal(a.result.conservativeCostDeltaBps, undefined);
+  assert.equal(a.selectedRouteAtDiscovery, null);
 });
 
-test("scenario B: fresh KOon state is SAFE immediately; no timed TRANSITION after an immediate update", () => {
+test("scenario B: fresh KOon state is SAFE immediately; the decision is state-only because KOon had no route", () => {
   const b = replayKoScenarios()[1];
   assert.ok(b);
   assert.deepEqual(
@@ -59,12 +84,15 @@ test("scenario B: fresh KOon state is SAFE immediately; no timed TRANSITION afte
     ["KOon", "SAFE", "SAFE", "USE_PREFERRED", "PREFERRED_SAFE", false],
   );
   assert.equal(b.result.quoteAvailability.preferred, "UNAVAILABLE");
+  assert.equal(b.selectedRouteAtDiscovery, "UNAVAILABLE");
+  assert.equal(b.result.preferredSharesEquivalent, undefined);
 });
 
 test("scenario C: both SAFE uses the preferred representation", () => {
   const c = replayKoScenarios()[2];
   assert.ok(c);
   assert.deepEqual([c.result.preferredState, c.result.alternativeState, c.result.decision, c.result.reasonCode], ["SAFE", "SAFE", "USE_PREFERRED", "PREFERRED_SAFE"]);
+  assert.equal(c.selectedRouteAtDiscovery, "AVAILABLE");
 });
 
 test("every replay result is MAINNET_OBSERVATION with hashed evidence and no transaction", () => {

@@ -5,7 +5,9 @@
  *
  * Every transaction is `[assert_safe_execution(asset), create recipient ATA,
  * transferChecked(asset)]`: the token delivery settles only if the guard
- * passes. Quotes come from the DEVNET DEMO QUOTE / FIXTURE, never from a live
+ * passes. The guard asserts exactly the economic state the decision and the
+ * quote comparison were built against, so a state change between decision
+ * and landing fails the transaction instead of executing on stale economics. Quotes come from the DEVNET DEMO QUOTE / FIXTURE, never from a live
  * market.
  */
 
@@ -24,8 +26,6 @@ import {
   equityGuardErrorName,
   fetchGuardSnapshot,
   getAssertSafeExecutionInstruction,
-  requestFromSnapshot,
-  type GuardSnapshot,
 } from "@equityguard/guard-client";
 import {
   Decision,
@@ -35,11 +35,14 @@ import {
   compareQuotes,
   decide,
   devnetExecutionResult,
+  economicStateOf,
   fetchChainObservation,
+  protectedStateOf,
   type ChainEvidence,
   type DecisionResult,
   type DevnetExecutionResult,
   type DevnetTransactionEvidence,
+  type EconomicState,
   type EvidenceReference,
   type NormalizedQuote,
   type QuoteAvailability,
@@ -107,16 +110,9 @@ export function resolveDevnetAsset(asset: TestAsset, underlying: string, evidenc
 
 function quoteFor(asset: TestAsset, underlying: string, evidence: ChainEvidence, fixture: DevnetDemoQuoteFixture): NormalizedQuote | null {
   const output = fixture.outputsRaw[asset.label];
-  if (output === undefined || evidence.kind !== "decoded") return null;
-  return {
-    underlying,
-    issuer: "DEVNET_TEST",
-    mint: asset.mint,
-    inputRaw: BigInt(fixture.inputRaw),
-    outputRaw: BigInt(output),
-    decimals: evidence.decimals,
-    effectiveMultiplier: evidence.phase === 1 ? evidence.protectedState.newMultiplier : evidence.protectedState.multiplier,
-  };
+  const state = economicStateOf(evidence);
+  if (output === undefined || !state) return null;
+  return { underlying, issuer: "DEVNET_TEST", mint: asset.mint, inputRaw: BigInt(fixture.inputRaw), outputRaw: BigInt(output), state };
 }
 
 export interface DevnetDemoPlan {
@@ -155,24 +151,32 @@ export function planDevnetDemo(input: {
   };
 }
 
-/** `[guard(asset), create recipient ATA, transferChecked(asset)]`, guard first. */
+/**
+ * `[guard(asset), create recipient ATA, transferChecked(asset)]`, guard first.
+ * The guard expects exactly `boundState`: the state the decision was made on.
+ */
 export async function guardedDeliveryInstructions(input: {
   readonly programId: Address;
   readonly payer: TransactionSigner;
   readonly recipient: Address;
   readonly asset: TestAsset;
-  readonly snapshot: GuardSnapshot;
+  readonly boundState: EconomicState;
   readonly policy: TransitionPolicy;
   readonly amount: bigint;
 }): Promise<Instruction[]> {
-  if (input.snapshot.mint !== input.asset.mint) throw new Error("guard snapshot is for a different mint than the delivered asset");
+  if (input.boundState.mint !== input.asset.mint) throw new Error("bound state is for a different mint than the delivered asset");
+  if (input.boundState.decimals !== input.asset.decimals) throw new Error("bound state decimals differ from the delivered asset");
   const [source] = await findAssociatedTokenPda({ owner: input.payer.address, mint: input.asset.mint, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS });
   const [destination] = await findAssociatedTokenPda({ owner: input.recipient, mint: input.asset.mint, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS });
   return [
     getAssertSafeExecutionInstruction({
       programAddress: input.programId,
       mint: input.asset.mint,
-      request: requestFromSnapshot(input.snapshot, { beforeSecs: Number(input.policy.beforeSecs), afterSecs: Number(input.policy.afterSecs) }),
+      request: {
+        expected: protectedStateOf(input.boundState),
+        expectedPhase: input.boundState.phase,
+        window: { beforeSecs: Number(input.policy.beforeSecs), afterSecs: Number(input.policy.afterSecs) },
+      },
     }),
     await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: input.payer, owner: input.recipient, mint: input.asset.mint }),
     getTransferCheckedInstruction({ source, mint: input.asset.mint, destination, authority: input.payer, amount: input.amount, decimals: input.asset.decimals }),
@@ -194,9 +198,8 @@ async function tokenBalance(ctx: DevnetContext, owner: Address, mint: Address): 
   return BigInt(value.amount);
 }
 
-async function guardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
-  const snapshot = await fetchGuardSnapshot(ctx.rpc, asset.mint);
-  const instructions = await guardedDeliveryInstructions({ programId, payer: ctx.payer, recipient, asset, snapshot, policy: DEVNET_DEMO_POLICY, amount });
+async function guardedDelivery(ctx: DevnetContext, programId: Address, asset: TestAsset, boundState: EconomicState, amount: bigint, recipient: Address): Promise<DevnetTransactionEvidence> {
+  const instructions = await guardedDeliveryInstructions({ programId, payer: ctx.payer, recipient, asset, boundState, policy: DEVNET_DEMO_POLICY, amount });
   const before = await tokenBalance(ctx, recipient, asset.mint);
   // Preflight is skipped so a rejected attempt lands on-chain and is verifiable.
   const outcome = await sendInstructions(ctx, instructions, { skipPreflight: true });
@@ -269,10 +272,13 @@ export async function runDevnetDemo(
     return { scheduleSignature, recipient: options.recipient, consentOff, consentOn: devnetExecutionResult({ decision: plan.consentOn, comparison: plan.comparison, evidenceSources, quoteAvailability }) };
   }
 
+  // USE_ALTERNATIVE implies a state-bound comparison exists.
+  const bound = plan.comparison;
+  if (!bound) throw new Error("USE_ALTERNATIVE without a state-bound comparison");
   // Proof attempt: the unsafe preferred delivery must be rejected atomically.
-  const rejectedPreferredAttempt = await guardedDelivery(ctx, programId, preferredAsset, BigInt(fixture.outputsRaw[preferredAsset.label] ?? "0"), options.recipient);
-  // Consented execution of the SAFE alternative.
-  const executed = await guardedDelivery(ctx, programId, alternativeAsset, BigInt(fixture.outputsRaw[alternativeAsset.label] ?? "0"), options.recipient);
+  const rejectedPreferredAttempt = await guardedDelivery(ctx, programId, preferredAsset, bound.preferredState, BigInt(fixture.outputsRaw[preferredAsset.label] ?? "0"), options.recipient);
+  // Consented execution of the SAFE alternative, guarded by the state it was compared on.
+  const executed = await guardedDelivery(ctx, programId, alternativeAsset, bound.alternativeState, BigInt(fixture.outputsRaw[alternativeAsset.label] ?? "0"), options.recipient);
   const consentOn = devnetExecutionResult({
     decision: plan.consentOn,
     comparison: plan.comparison,

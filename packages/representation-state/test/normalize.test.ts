@@ -8,6 +8,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { ActivationPhase } from "@equityguard/guard-client";
+
 import {
   NormalizationError,
   compareQuotes,
@@ -25,16 +27,14 @@ function f64(value: number): Uint8Array {
   return bytes;
 }
 
-function quote(partial: Partial<NormalizedQuote>): NormalizedQuote {
+/** Quote whose bound state is activated with `effectiveMultiplier` and no scheduled change. */
+function quote(partial: Partial<Omit<NormalizedQuote, "state">> & { decimals?: number; effectiveMultiplier?: Uint8Array }): NormalizedQuote {
+  const { decimals = 8, effectiveMultiplier = f64(1), ...rest } = partial;
+  const base = { underlying: "KO", issuer: "xStocks" as const, mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", inputRaw: 5_000_000n, outputRaw: 100_000_000n, ...rest };
+  const multiplierHex = Buffer.from(effectiveMultiplier).toString("hex");
   return {
-    underlying: "KO",
-    issuer: "xStocks",
-    mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
-    inputRaw: 5_000_000n,
-    outputRaw: 100_000_000n,
-    decimals: 8,
-    effectiveMultiplier: f64(1),
-    ...partial,
+    ...base,
+    state: { mint: base.mint, decimals, multiplierHex, newMultiplierHex: multiplierHex, effectiveTimestamp: 0n, phase: ActivationPhase.Activated, paused: null },
   };
 }
 
@@ -139,13 +139,31 @@ test("quotes must share the same input notional and a positive preferred output"
   );
 });
 
-test("comparisons carry the identity of the quotes they were computed from", () => {
+test("comparisons carry the identity and economic states of the quotes they were computed from", () => {
   const koon = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
-  const comparison = compareQuotes(quote({}), quote({ issuer: "Ondo", mint: koon }), { toleranceBps: 0n });
+  const preferred = quote({});
+  const alternative = quote({ issuer: "Ondo", mint: koon });
+  const comparison = compareQuotes(preferred, alternative, { toleranceBps: 0n });
   assert.deepEqual(
     [comparison.underlying, comparison.preferredMint, comparison.alternativeMint, comparison.inputRaw],
     ["KO", "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", koon, 5_000_000n],
   );
+  assert.deepEqual([comparison.preferredState, comparison.alternativeState], [preferred.state, alternative.state]);
+});
+
+test("a quote cannot be normalized with another mint's state", () => {
+  const koon = "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo";
+  const borrowed = { ...quote({ issuer: "Ondo", mint: koon }), state: quote({}).state };
+  assert.throws(() => compareQuotes(quote({}), borrowed, { toleranceBps: 0n }), (e) => e instanceof NormalizationError && e.code === "StateMismatch");
+});
+
+test("normalization uses the phase-effective multiplier of the bound state", () => {
+  const pending = quote({ effectiveMultiplier: f64(1) });
+  const scheduled = { ...pending.state, newMultiplierHex: Buffer.from(f64(2)).toString("hex"), effectiveTimestamp: 100n };
+  const atPending = compareQuotes({ ...pending, state: { ...scheduled, phase: ActivationPhase.Pending } }, pending, { toleranceBps: 0n });
+  const atActivated = compareQuotes({ ...pending, state: { ...scheduled, phase: ActivationPhase.Activated } }, pending, { toleranceBps: 0n });
+  assert.equal(atPending.conservativeCostDeltaBps, 0n);
+  assert.equal(atActivated.conservativeCostDeltaBps, 5000n); // 2 vs 1 share-equivalents
 });
 
 test("stored multipliers convert to their exact dyadic rational value", () => {
