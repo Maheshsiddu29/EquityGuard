@@ -1,0 +1,155 @@
+{
+  "kind": "equityguard-jupiter-liquidity-snapshot",
+  "environment": "MAINNET_OBSERVATION",
+  "description": "Point-in-time READ-ONLY Jupiter Swap V2 /build route discovery for 5 USDC into each registry representation. A route result is dynamic runtime state at observedAt, not a permanent property of any issuer or token. No transaction was signed, built for submission or submitted.",
+  "sourceFile": "discovery-2026-09-15T042221.417Z.json",
+  "sourceSha256": "8d2e5d822adc92f16d0c11b51eaa60244579eac1b574df80fc15d3ee0e7510da",
+  "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "inputRaw": "5000000",
+  "quotes": {
+    "KOx": {
+      "symbol": "KOx",
+      "underlying": "KO",
+      "issuer": "xStocks",
+      "mint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+      "observedAt": "2026-09-15T04:22:16.045Z",
+      "httpStatus": 200,
+      "route": "AVAILABLE",
+      "outAmountRaw": "5450395",
+      "priceImpactPct": "0.0129548575353999441979940115",
+      "venues": [
+        {
+          "label": "Whirlpool",
+          "ammKey": "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy",
+          "percent": 100
+        }
+      ],
+      "error": null,
+      "chainAtQuote": {
+        "slot": "447157559",
+        "decimals": 8,
+        "phase": "activated",
+        "paused": false,
+        "effectiveMultiplierHex": "df525701685cf03f",
+        "effectiveMultiplierValue": 1.0225601246249238
+      }
+    },
+    "KOon": {
+      "symbol": "KOon",
+      "underlying": "KO",
+      "issuer": "Ondo",
+      "mint": "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo",
+      "observedAt": "2026-09-15T04:22:17.406Z",
+      "httpStatus": 400,
+      "route": "UNAVAILABLE",
+      "outAmountRaw": null,
+      "priceImpactPct": null,
+      "venues": [],
+      "error": "{\"error\":\"No routes found\"}",
+      "chainAtQuote": {
+        "slot": "447157560",
+        "decimals": 9,
+        "phase": "activated",
+        "paused": false,
+        "effectiveMultiplierHex": "e5806002db61f03f",
+        "effectiveMultiplierValue": 1.0238905041551842
+      }
+    },
+    "UNHx": {
+      "symbol": "UNHx",
+      "underlying": "UNH",
+      "issuer": "xStocks",
+      "mint": "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe",
+      "observedAt": "2026-09-15T04:22:17.747Z",
+      "httpStatus": 200,
+      "route": "AVAILABLE",
+      "outAmountRaw": "1274650",
+      "priceImpactPct": "0.0100856575689601148521964987",
+      "venues": [
+        {
+          "label": "Whirlpool",
+          "ammKey": "E46nVgBvWcp8ponjLwwyD5Gf96PcJZufx54gVYs1WEMk",
+          "percent": 100
+        }
+      ],
+      "error": null,
+      "chainAtQuote": {
+        "slot": "447157565",
+        "decimals": 8,
+        "phase": "activated",
+        "paused": false,
+        "effectiveMultiplierHex": "d0b18f510470f03f",
+        "effectiveMultiplierValue": 1.0273478685368111
+      }
+    },
+    "UNHon": {
+      "symbol": "UNHon",
+      "underlying": "UNH",
+      "issuer": "Ondo",
+      "mint": "kPBGL8vAwKN3UGmr9cjkM2dU79SC3nzTC9yu7F8ondo",
+      "observedAt": "2026-09-15T04:22:18.962Z",
+      "httpStatus": 400,
+      "route": "UNAVAILABLE",
+      "outAmountRaw": null,
+      "priceImpactPct": null,
+      "venues": [],
+      "error": "{\"error\":\"No routes found\"}",
+      "chainAtQuote": {
+        "slot": "447157566",
+        "decimals": 9,
+        "phase": "activated",
+        "paused": false,
+        "effectiveMultiplierHex": "969b716f665ef03f",
+        "effectiveMultiplierValue": 1.023046908690707
+      }
+    },
+    "CRMx": {
+      "symbol": "CRMx",
+      "underlying": "CRM",
+      "issuer": "xStocks",
+      "mint": "XsczbcQ3zfcgAEt9qHQES8pxKAVG5rujPSHQEXi4kaN",
+      "observedAt": "2026-09-15T04:22:20.125Z",
+      "httpStatus": 200,
+      "route": "AVAILABLE",
+      "outAmountRaw": "59762",
+      "priceImpactPct": "0.9691132675804876672750742037",
+      "venues": [
+        {
+          "label": "FluxBeam",
+          "ammKey": "7xsePT8WBH2BZu3cv19VzNipSrze8FRLnkV2iCaT3amE",
+          "percent": 100
+        }
+      ],
+      "error": null,
+      "chainAtQuote": {
+        "slot": "447157570",
+        "decimals": 8,
+        "phase": "activated",
+        "paused": false,
+        "effectiveMultiplierHex": "2cbd9b786916f03f",
+        "effectiveMultiplierValue": 1.0054716788543585
+      }
+    },
+    "CRMon": {
+      "symbol": "CRMon",
+      "underlying": "CRM",
+      "issuer": "Ondo",
+      "mint": "7D7ukbcnUNYt7Et5vtsDZhAy28MKu9pkHka1Hp9ondo",
+      "observedAt": "2026-09-15T04:22:21.416Z",
+      "httpStatus": 400,
+      "route": "UNAVAILABLE",
+      "outAmountRaw": null,
+      "priceImpactPct": null,
+      "venues": [],
+      "error": "{\"error\":\"No routes found\"}",
+      "chainAtQuote": {
+        "slot": "447157573",
+        "decimals": 9,
+        "phase": "activated",
+        "paused": false,
+        "effectiveMultiplierHex": "e9198df62418f03f",
+        "effectiveMultiplierValue": 1.005894625750097
+      }
+    }
+  }
+}
