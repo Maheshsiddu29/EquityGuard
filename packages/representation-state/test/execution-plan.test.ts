@@ -36,53 +36,29 @@ import {
   type RouteObservation,
 } from "../src/index.ts";
 import { TEST_POLICY, TOKEN_2022, mainnetMint, withScaledUi } from "./fixtures.ts";
-
-const KOX = findRepresentationBySymbol("KOx")!;
-const KOON = findRepresentationBySymbol("KOon")!;
-const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const T = 1_789_432_200n;
-const INPUT_RAW = 5_000_000n;
-const KOX_SCHEDULED = withScaledUi(mainnetMint("KOx"), { multiplier: 1.0183317967386898, newMultiplier: 1.0225601246249238, effectiveTimestamp: T });
-const KOON_SAFE = withScaledUi(mainnetMint("KOon"), { multiplier: 1.0238905041551842, newMultiplier: 1.0238905041551842, effectiveTimestamp: T - 1556n });
-const TRANSITION_TIME = T - 14n;
-
-const observe = (mint: string, data: Uint8Array, time: bigint) => observeMintAccount({ mint, owner: TOKEN_2022, data, slot: 7n, blockTime: null, observedAt: null, chainUnixTimestamp: time });
-const kox = (time: bigint) => resolveXStocksState(KOX, observe(KOX.mint, KOX_SCHEDULED, time), TEST_POLICY);
-const koon = (time: bigint, data = KOON_SAFE) => resolveOndoState(KOON, { chain: observe(KOON.mint, data, time), api: null }, TEST_POLICY);
-
-const whirlpool = (mint: string) => routeIdentity("TEST_ROUTE", [{ venue: "Whirlpool", poolId: "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy", inputMint: USDC, outputMint: mint, percent: 100 }]);
-
-function quote(r: ResolvedRepresentationState, outputRaw: bigint): NormalizedQuote {
-  const state = economicStateOf(r.chainObservation);
-  assert.ok(state);
-  return { underlying: r.underlying, issuer: r.issuer, inputMint: USDC, mint: r.mint, inputRaw: INPUT_RAW, outputRaw, minOutputRaw: outputRaw - 1_000n, route: whirlpool(r.mint), quotedAt: "2026-09-15T04:22:16.045Z", contextSlot: 447157559n, state };
-}
-const route = (q: NormalizedQuote): RouteObservation => ({ mint: q.mint, status: "AVAILABLE", quote: q, source: "test", detail: null });
-
-const POLICY = { maxAdditionalCostBps: 25n };
-const SLOT = 100n;
-/** KOon raw output about 10 bps below the KOx quote in share-equivalents. */
-const KOON_OUT = 54_153_839n;
-
-/** KOx in transition, KOon SAFE and quoted: the consented reroute is EXECUTABLE. */
-function reroute(consent = true, alternativeRouteQuote?: NormalizedQuote) {
-  const preferred = kox(TRANSITION_TIME);
-  const alternative = koon(TRANSITION_TIME);
-  const preferredQuote = quote(preferred, 5_450_395n);
-  const alternativeQuote = quote(alternative, KOON_OUT);
-  const comparison = compareQuotes(preferredQuote, alternativeQuote);
-  const base = { preferred, alternative, reroutePolicy: POLICY, inputRaw: INPUT_RAW, comparison, currentSlot: SLOT, routes: { preferred: route(preferredQuote), alternative: route(alternativeRouteQuote ?? alternativeQuote) } };
-  const withoutConsent = decideExecution({ ...base, consent: null });
-  if (!consent) return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision: withoutConsent };
-  // The user accepts exactly this disclosure.
-  const record = grantConsent({ decision: withoutConsent.stateDecision, comparison, reroutePolicy: POLICY, currentSlot: SLOT, maxAdditionalCostBps: 25n, validForSlots: 10n });
-  return { preferred, alternative, preferredQuote, alternativeQuote, comparison, decision: decideExecution({ ...base, consent: record }) };
-}
+import {
+  INPUT_RAW,
+  KOON,
+  KOON_OUT,
+  KOON_SAFE,
+  KOX,
+  KOX_SCHEDULED,
+  POLICY,
+  SLOT,
+  T,
+  TEST_DOWNSTREAM,
+  TRANSITION_TIME,
+  USDC,
+  koon,
+  kox,
+  observe,
+  quote,
+  reroute,
+  route,
+  whirlpool,
+} from "./scenario.ts";
 
 const codes = (expected: NormalizedQuote, actual: NormalizedQuote): QuoteMismatchCode[] => quoteMismatches(expected, actual).map((m) => m.code);
-
-/** A stand-in downstream binding; the on-chain commitment is exercised in Rust/LiteSVM. */
-const TEST_DOWNSTREAM = { adapterKind: "TOKEN_2022_TRANSFER_CHECKED" as const, commitmentHex: "a".repeat(64) };
 
 test("1. an identical quote identity is accepted, including a structurally cloned copy", () => {
   const { alternativeQuote, comparison, decision } = reroute();
@@ -134,7 +110,7 @@ test("8. a comparison whose quote state went stale by phase is not executable", 
 });
 
 test("9. an execution plan is only created from an EXECUTABLE decision", () => {
-  const consentOff = reroute(false).decision;
+  const consentOff = reroute({ consent: false }).decision;
   assert.equal(consentOff.executionEligibility, ExecutionEligibility.CONSENT_REQUIRED);
   assert.throws(() => createExecutionPlan(consentOff, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
   const forged = { ...reroute().decision, executableQuote: null };
@@ -176,15 +152,15 @@ test("11. the plan pins exactly the decision's quote, route, state and notional,
 test("12. a substituted route quote is not executable and cannot produce a plan", () => {
   const { alternativeQuote } = reroute();
   const substitute = { ...alternativeQuote, outputRaw: 5_500_000n, route: routeIdentity("TEST_ROUTE", [{ ...alternativeQuote.route.legs[0]!, venue: "Other", poolId: "OtherPool" }]) };
-  const { decision } = reroute(true, substitute);
+  const { decision } = reroute({ alternativeRouteQuote: substitute });
   assert.deepEqual([decision.stateDecision.decision, decision.executionEligibility], [Decision.USE_ALTERNATIVE, ExecutionEligibility.QUOTE_MISMATCH]);
   assert.deepEqual(decision.quoteMismatches.map((m) => m.code), ["OUTPUT_AMOUNT_CHANGED", "VENUE_CHANGED", "ROUTE_CHANGED"]);
   assert.throws(() => createExecutionPlan(decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM }), (e) => e instanceof ExecutionPlanError && e.code === "NOT_EXECUTABLE");
 });
 
 test("13. consent stays bound to the same disclosure and comparison", () => {
-  const off = reroute(false);
-  const on = reroute(true);
+  const off = reroute({ consent: false });
+  const on = reroute();
   assert.deepEqual(off.decision.stateDecision.disclosure, on.decision.stateDecision.disclosure);
   const plan = createExecutionPlan(on.decision, "DEVNET_EXECUTION", { currentSlot: SLOT, freshness: { validForSlots: 100n }, downstream: TEST_DOWNSTREAM });
   assert.equal(plan.comparisonKey, on.comparison.comparisonKey);
