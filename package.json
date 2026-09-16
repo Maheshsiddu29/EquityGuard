@@ -23,7 +23,9 @@
     "observation:snapshot-xstocks-api": "node scripts/observation/snapshot-xstocks-api.ts",
     "observation:correlate-kox": "node scripts/observation/correlate-kox.ts",
     "observation:curate": "node scripts/observation/curate-observations.ts",
-    "demo:equityguard": "node scripts/demo/equityguard-demo.ts"
+    "demo:equityguard": "node scripts/demo/equityguard-demo.ts",
+    "research:jupiter-routes": "node scripts/research/jupiter-route-matrix.ts",
+    "research:jupiter-fields": "node scripts/research/jupiter-field-probe.ts"
   },
   "dependencies": {
     "@solana-program/system": "0.14.1",
