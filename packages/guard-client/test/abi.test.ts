@@ -19,6 +19,7 @@ import {
   downstreamCommitment,
   encodeAssertSafeExecutionV2,
   equityGuardErrorName,
+  isDownstreamAdapterKind,
   getAssertSafeExecutionV2Instruction,
   type AssertSafeExecutionV2Request,
 } from "../src/index.ts";
@@ -29,7 +30,7 @@ const golden = readGolden();
 function requestOf(vector: GoldenVector): AssertSafeExecutionV2Request {
   const r = vector.request;
   assert.ok(r.expectedPhase === ActivationPhase.Pending || r.expectedPhase === ActivationPhase.Activated);
-  assert.equal(r.adapterKind, DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED);
+  assert.ok(isDownstreamAdapterKind(r.adapterKind), `${vector.name}: adapter ${r.adapterKind}`);
   return {
     expectedMint: address(r.expectedMint),
     expected: {
@@ -39,7 +40,7 @@ function requestOf(vector: GoldenVector): AssertSafeExecutionV2Request {
     },
     expectedPhase: r.expectedPhase,
     window: { beforeSecs: r.protectionBeforeSecs, afterSecs: r.protectionAfterSecs },
-    adapterKind: DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED,
+    adapterKind: r.adapterKind,
     downstreamCommitment: fromHex(r.downstreamCommitmentHex),
   };
 }
@@ -55,8 +56,9 @@ test("layout constants and offsets match the golden fixture", () => {
   assert.equal(encoded[o.adapterKind!], 1);
 });
 
-test("encoder matches every golden vector byte-for-byte", () => {
+test("encoder matches every golden vector byte-for-byte, for every adapter kind", () => {
   assert.ok(golden.vectors.length > 0);
+  assert.deepEqual([...new Set(golden.vectors.map((v) => v.request.adapterKind))].sort(), [1, 2, 3]);
   for (const vector of golden.vectors) {
     assert.equal(hex(encodeAssertSafeExecutionV2(requestOf(vector))), vector.encodedHex, vector.name);
   }
@@ -80,6 +82,8 @@ test("error codes match the program's enum, including the ABI v2 codes", () => {
   assert.deepEqual({ ...EQUITY_GUARD_ERROR_CODES }, golden.errorCodes);
   assert.equal(equityGuardErrorName(16), "UnsupportedVersion");
   assert.equal(equityGuardErrorName(23), "DownstreamCommitmentMismatch");
+  assert.equal(equityGuardErrorName(26), "GuardNotFirst");
+  assert.equal(equityGuardErrorName(38), "NonCanonicalDestinationAccount");
   assert.equal(equityGuardErrorName(999), undefined);
 });
 
@@ -94,7 +98,9 @@ test("encoder refuses invalid fields the program would reject", () => {
     ["negative window", { ...base, window: { beforeSecs: -1, afterSecs: 0 } }],
     ["window above u32", { ...base, window: { beforeSecs: 0, afterSecs: 2 ** 32 } }],
     ["fractional window", { ...base, window: { beforeSecs: 1.5, afterSecs: 0 } }],
-    ["unknown adapter", { ...base, adapterKind: 2 as DownstreamAdapterKind }],
+    ["adapter 0", { ...base, adapterKind: 0 as DownstreamAdapterKind }],
+    ["adapter 4", { ...base, adapterKind: 4 as DownstreamAdapterKind }],
+    ["adapter 255", { ...base, adapterKind: 255 as DownstreamAdapterKind }],
     ["31-byte commitment", { ...base, downstreamCommitment: new Uint8Array(31) }],
   ];
   for (const [label, request] of cases) {

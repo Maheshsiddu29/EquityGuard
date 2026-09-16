@@ -114,12 +114,17 @@ export function assertSupportedTransferChecked(instruction: Instruction, mint: A
   }
 }
 
-/** ABI v2 guard instruction: `[mint (read-only), Instructions sysvar (read-only)]`. */
+/**
+ * ABI v2 guard instruction: `[mint (read-only), Instructions sysvar (read-only)]`.
+ * The adapter kind defaults to kind 1; its accounts never depend on the kind or
+ * the commitment.
+ */
 export function getAssertSafeExecutionV2Instruction(input: {
   readonly programAddress: Address;
   readonly mint: Address;
   readonly expectation: AssertSafeExecutionRequest;
   readonly downstreamCommitment: Uint8Array;
+  readonly adapterKind?: DownstreamAdapterKind;
 }): Instruction {
   return {
     programAddress: input.programAddress,
@@ -130,7 +135,7 @@ export function getAssertSafeExecutionV2Instruction(input: {
     data: encodeAssertSafeExecutionV2({
       ...input.expectation,
       expectedMint: input.mint,
-      adapterKind: DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED,
+      adapterKind: input.adapterKind ?? DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED,
       downstreamCommitment: input.downstreamCommitment,
     }),
   };

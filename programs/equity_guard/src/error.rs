@@ -66,6 +66,39 @@ pub enum EquityGuardError {
     UnsupportedAdapter = 24,
     /// The guard is not executing as the current top-level instruction.
     GuardNotTopLevel = 25,
+
+    // Adapter kinds 2 and 3 (Jupiter `route_v2`, USDC only). See
+    // `crate::jupiter` for the grammar these enforce.
+    /// A Jupiter adapter guard is not top-level instruction 0.
+    GuardNotFirst = 26,
+    /// The instructions after the guard are not the supported shape: wrong
+    /// count, or an unsupported program at a position.
+    UnsupportedTransactionGrammar = 27,
+    /// A ComputeBudget position does not hold the exact expected variant
+    /// (`SetComputeUnitPrice` then `SetComputeUnitLimit`) in canonical form.
+    InvalidComputeBudgetInstruction = 28,
+    /// The optional setup instruction is not `CreateIdempotent` of this
+    /// trade's destination token account.
+    InvalidAtaSetup = 29,
+    /// The trade instruction, or its `program` account, is not the pinned
+    /// Jupiter aggregator.
+    InvalidJupiterProgram = 30,
+    /// The trade instruction is not a structurally valid `route_v2`.
+    InvalidJupiterInstruction = 31,
+    /// The protected mint is not in the adapter kind's role.
+    InvalidJupiterDirection = 32,
+    /// The counter mint is not canonical USDC.
+    InvalidCounterMint = 33,
+    /// A trade leg's token program is not the one its mint requires.
+    InvalidTokenProgram = 34,
+    /// `route_v2`'s optional destination override is set.
+    DestinationOverrideUnsupported = 35,
+    /// `route_v2` carries a platform fee or a positive-slippage fee.
+    UnsupportedJupiterFee = 36,
+    /// The source token account is not the authority's canonical ATA.
+    NonCanonicalSourceAccount = 37,
+    /// The destination token account is not the authority's canonical ATA.
+    NonCanonicalDestinationAccount = 38,
 }
 
 impl From<EquityGuardError> for ProgramError {

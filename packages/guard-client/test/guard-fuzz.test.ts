@@ -158,7 +158,7 @@ test("the encoder never emits a payload the decoder rejects", () => {
       expected: decoded.execution.expected,
       expectedPhase: decoded.execution.expectedPhase,
       window: decoded.execution.window,
-      adapterKind: DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED,
+      adapterKind: decoded.adapterKind as DownstreamAdapterKind,
       downstreamCommitment: decoded.downstreamCommitment,
     });
     assert.equal(toHex(bytes), entry.dataHex, `${entry.label} does not round trip`);

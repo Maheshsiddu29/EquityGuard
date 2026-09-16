@@ -6,9 +6,10 @@
  * exists so the shared conformance corpus can be evaluated on both sides.
  *
  * Wherever the client already implements a rule, the mirror calls that code
- * (`decodeProtectedState`, `checkGuardOffline`, `downstreamCommitment`) rather
- * than restating it. Only the ABI v2 decoder, the account checks and the
- * ordering live here, mirroring `programs/equity_guard/src/processor.rs`.
+ * (`decodeProtectedState`, `checkGuardOffline`, `downstreamCommitment`,
+ * `checkGuardedJupiterTransaction`) rather than restating it. Only the ABI v2
+ * decoder, the account checks and the ordering live here, mirroring
+ * `programs/equity_guard/src/processor.rs`.
  */
 
 import {
@@ -20,6 +21,9 @@ import {
   SYSVAR_INSTRUCTIONS_ADDRESS,
   TOKEN_2022_PROGRAM_ADDRESS,
   checkGuardOffline,
+  checkGuardedJupiterTransaction,
+  isDownstreamAdapterKind,
+  isJupiterAdapterKind,
   decodeProtectedState,
   downstreamCommitment,
   isValidStoredMultiplier,
@@ -122,7 +126,7 @@ export function decodeAssertSafeExecutionV2(data: Uint8Array): DecodedV2 {
 
   if (!isValidStoredMultiplier(multiplier) || !isValidStoredMultiplier(newMultiplier)) reject("InvalidExpectedState");
   if (phase !== ActivationPhase.Pending && phase !== ActivationPhase.Activated) reject("InvalidExpectedState");
-  if (adapterKind !== DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED) reject("UnsupportedAdapter");
+  if (!isDownstreamAdapterKind(adapterKind)) reject("UnsupportedAdapter");
 
   return {
     expectedMint,
@@ -137,15 +141,35 @@ export function decodeAssertSafeExecutionV2(data: Uint8Array): DecodedV2 {
 }
 
 /** Mirrors `downstream::verify_downstream`. */
-function verifyDownstream(invocation: MirrorInvocation, request: DecodedV2, mintKey: string): void {
+async function verifyDownstream(invocation: MirrorInvocation, request: DecodedV2, mintKey: string): Promise<void> {
   const current = invocation.instructions[invocation.currentInstructionIndex];
   if (!current) reject("GuardNotTopLevel");
   if (current.programId !== invocation.programId || !bytesEqual(current.data, invocation.data)) reject("GuardNotTopLevel");
 
+  const { adapterKind } = request;
+  if (isJupiterAdapterKind(adapterKind)) {
+    const verdict = await checkGuardedJupiterTransaction({
+      instructions: invocation.instructions.map((i) => ({
+        programAddress: i.programId as never,
+        accounts: i.accounts.map((a) => ({ address: a.pubkey as never, isSigner: a.isSigner, isWritable: a.isWritable })),
+        data: i.data,
+      })),
+      guardIndex: invocation.currentInstructionIndex,
+      adapterKind,
+      protectedMint: mintKey as never,
+      commitment: request.downstreamCommitment,
+    });
+    if (verdict) reject(verdict);
+    return;
+  }
+  verifyTransferChecked(invocation, request, mintKey);
+}
+
+/** Mirrors `downstream::verify_transfer_checked` (adapter kind 1). */
+function verifyTransferChecked(invocation: MirrorInvocation, request: DecodedV2, mintKey: string): void {
   const next = invocation.instructions[invocation.currentInstructionIndex + 1];
   if (!next) reject("MissingDownstreamInstruction");
 
-  // Only one adapter kind exists; the decoder already refused any other.
   if (next.programId !== TOKEN_2022_PROGRAM_ADDRESS) reject("UnsupportedDownstreamProgram");
   const isTransferChecked =
     next.data.length === TRANSFER_CHECKED_DATA_LEN &&
@@ -170,7 +194,7 @@ function verifyDownstream(invocation: MirrorInvocation, request: DecodedV2, mint
  * Instructions sysvar identity, mint decoding, downstream binding, then the
  * economic state and clock.
  */
-export function evaluateGuard(invocation: MirrorInvocation): EquityGuardErrorName | null {
+export async function evaluateGuard(invocation: MirrorInvocation): Promise<EquityGuardErrorName | null> {
   try {
     const request = decodeAssertSafeExecutionV2(invocation.data);
     if (invocation.accounts.length !== 2) reject("InvalidAccountCount");
@@ -187,7 +211,7 @@ export function evaluateGuard(invocation: MirrorInvocation): EquityGuardErrorNam
       throw error;
     }
 
-    verifyDownstream(invocation, request, mint.pubkey);
+    await verifyDownstream(invocation, request, mint.pubkey);
     return checkGuardOffline(request.execution, actual, invocation.clockUnixTimestamp);
   } catch (error) {
     if (error instanceof MirrorRejection) return error.guardError;

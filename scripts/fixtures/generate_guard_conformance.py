@@ -373,12 +373,20 @@ for label, bad in _BAD_MULTIPLIERS.items():
                              commitment_of(transfer_checked())),
            expected=err("InvalidExpectedState"))
 
-for adapter in (0, 2, 3, 255):
+for adapter in (0, 4, 255):
     vector(f"abi-adapter-{adapter}", "abi",
            f"adapter kind {adapter} has no understood semantics and fails closed (INV-SEC-24)",
            guard_data=abi_v2(MINT_X, ONE, ONE, 0, PHASE_ACTIVATED, BEFORE, AFTER,
                              commitment_of(transfer_checked()), adapter=adapter),
            expected=err("UnsupportedAdapter"))
+
+for adapter in (2, 3):
+    vector(f"abi-adapter-{adapter}-over-transfer-checked", "abi",
+           f"adapter kind {adapter} is Jupiter-only: a guard followed by one TransferChecked is "
+           "not its transaction grammar",
+           guard_data=abi_v2(MINT_X, ONE, ONE, 0, PHASE_ACTIVATED, BEFORE, AFTER,
+                             commitment_of(transfer_checked()), adapter=adapter),
+           expected=err("UnsupportedTransactionGrammar"))
 
 # --- 3. accounts --------------------------------------------------------
 

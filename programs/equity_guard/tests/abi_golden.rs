@@ -13,43 +13,19 @@ use equity_guard::{
         AssertSafeExecution, AssertSafeExecutionV2, DownstreamAdapter, ProtectionWindow,
         ASSERT_SAFE_EXECUTION_V2_LEN, VERSION_V2,
     },
+    jupiter::{jupiter_suffix_commitment, JUPITER_SUFFIX_COMMITMENT_DOMAIN},
     state::{decode_protected_state, ActivationPhase, ProtectedState, StoredMultiplier},
 };
 use serde_json::Value;
 use solana_address::Address;
+use solana_instruction::{AccountMeta, Instruction};
 
 const GOLDEN: &str = include_str!("fixtures/abi_v2_golden.json");
 const DECODED: &str = include_str!("fixtures/mainnet/decoded.json");
 
+mod common;
 /// Every error variant, so a new variant without a golden code fails here.
-const ALL_ERRORS: [EquityGuardError; 26] = [
-    EquityGuardError::UnsupportedInstruction,
-    EquityGuardError::InvalidInstructionLength,
-    EquityGuardError::InvalidExpectedState,
-    EquityGuardError::InvalidAccountCount,
-    EquityGuardError::InvalidMintOwner,
-    EquityGuardError::InvalidMintData,
-    EquityGuardError::MissingScaledUiAmount,
-    EquityGuardError::InvalidExtensionCombination,
-    EquityGuardError::InvalidMultiplier,
-    EquityGuardError::MultiplierChanged,
-    EquityGuardError::NewMultiplierChanged,
-    EquityGuardError::EffectiveTimestampChanged,
-    EquityGuardError::ActivationPhaseChanged,
-    EquityGuardError::InsideTransitionWindow,
-    EquityGuardError::ArithmeticOverflow,
-    EquityGuardError::ClockUnavailable,
-    EquityGuardError::UnsupportedVersion,
-    EquityGuardError::MintKeyMismatch,
-    EquityGuardError::InvalidInstructionsSysvar,
-    EquityGuardError::MissingDownstreamInstruction,
-    EquityGuardError::UnsupportedDownstreamProgram,
-    EquityGuardError::UnsupportedDownstreamInstruction,
-    EquityGuardError::DownstreamMintMismatch,
-    EquityGuardError::DownstreamCommitmentMismatch,
-    EquityGuardError::UnsupportedAdapter,
-    EquityGuardError::GuardNotTopLevel,
-];
+use common::ALL_ERRORS;
 
 fn golden() -> Value {
     serde_json::from_str(GOLDEN).unwrap()
@@ -92,6 +68,69 @@ fn layout_constants_match() {
         DOWNSTREAM_COMMITMENT_DOMAIN.as_slice(),
         golden["commitmentDomain"].as_str().unwrap().as_bytes()
     );
+    assert_eq!(
+        JUPITER_SUFFIX_COMMITMENT_DOMAIN.as_slice(),
+        golden["jupiterSuffixCommitmentDomain"]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+    );
+}
+
+#[test]
+fn every_adapter_kind_has_a_golden_payload() {
+    let golden = golden();
+    let mut kinds: Vec<u64> = golden["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["request"]["adapterKind"].as_u64().unwrap())
+        .collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    assert_eq!(kinds, [1, 2, 3]);
+}
+
+#[test]
+fn suffix_commitments_match_golden_vectors() {
+    let golden = golden();
+    let vectors = golden["suffixCommitmentVectors"].as_array().unwrap();
+    assert!(vectors.len() >= 8);
+    for vector in vectors {
+        let name = vector["name"].as_str().unwrap();
+        let suffix: Vec<Instruction> = vector["instructions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| Instruction {
+                program_id: i["programId"].as_str().unwrap().parse().unwrap(),
+                accounts: i["accounts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|a| AccountMeta {
+                        pubkey: a["pubkey"].as_str().unwrap().parse().unwrap(),
+                        is_signer: a["isSigner"].as_bool().unwrap(),
+                        is_writable: a["isWritable"].as_bool().unwrap(),
+                    })
+                    .collect(),
+                data: bytes(i["dataHex"].as_str().unwrap()),
+            })
+            .collect();
+        assert_eq!(
+            jupiter_suffix_commitment(&suffix).unwrap(),
+            array32(vector["commitmentHex"].as_str().unwrap()),
+            "{name}"
+        );
+    }
+    // The same TransferChecked hashes differently in the two domains.
+    let single = vectors
+        .iter()
+        .find(|v| v["name"] == "single-instruction-in-the-suffix-domain")
+        .unwrap();
+    let kind_one = &golden["commitmentVectors"][0];
+    assert_eq!(single["instructions"][0]["dataHex"], kind_one["dataHex"]);
+    assert_ne!(single["commitmentHex"], kind_one["commitmentHex"]);
 }
 
 fn array32(hex: &str) -> [u8; 32] {

@@ -10,7 +10,7 @@
  "token2022ProgramId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
  "instructionsSysvar": "Sysvar1nstructions1111111111111111111111111",
  "commitmentDomain": "EQUITYGUARD_DOWNSTREAM_V2",
- "vectorCount": 229,
+ "vectorCount": 230,
  "vectors": [
   {
    "id": "valid-stable-activated",
@@ -3497,13 +3497,13 @@
    }
   },
   {
-   "id": "abi-adapter-2",
+   "id": "abi-adapter-4",
    "group": "abi",
-   "description": "adapter kind 2 has no understood semantics and fails closed (INV-SEC-24)",
+   "description": "adapter kind 4 has no understood semantics and fails closed (INV-SEC-24)",
    "clientRule": "same",
    "invocation": {
     "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
-    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000002a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c",
+    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000004a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c",
     "accounts": [
      {
       "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
@@ -3534,81 +3534,7 @@
         "isWritable": false
        }
       ],
-      "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000002a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c"
-     },
-     {
-      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-      "accounts": [
-       {
-        "pubkey": "CxeKLJRofna6h2GqCsjdVwc2D7EdDFX8uDy9KGw3Ey68",
-        "isSigner": false,
-        "isWritable": true
-       },
-       {
-        "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
-        "isSigner": false,
-        "isWritable": false
-       },
-       {
-        "pubkey": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
-        "isSigner": false,
-        "isWritable": true
-       },
-       {
-        "pubkey": "D6UucuMprPAYyCmr5UPU5h9YhRf2ZNtn23JTS32EjdjY",
-        "isSigner": true,
-        "isWritable": true
-       }
-      ],
-      "dataHex": "0c70665b000000000006"
-     }
-    ]
-   },
-   "clockUnixTimestamp": "1789400000",
-   "expected": {
-    "result": "error",
-    "error": "UnsupportedAdapter"
-   }
-  },
-  {
-   "id": "abi-adapter-3",
-   "group": "abi",
-   "description": "adapter kind 3 has no understood semantics and fails closed (INV-SEC-24)",
-   "clientRule": "same",
-   "invocation": {
-    "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
-    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000003a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c",
-    "accounts": [
-     {
-      "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
-      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-      "dataHex": "01000000555555555555555555555555555555555555555555555555555555555555555500ca9a3b000000000601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001190038007777777777777777777777777777777777777777777777777777777777777777000000000000f03f0000000000000000000000000000f03f"
-     },
-     {
-      "pubkey": "Sysvar1nstructions1111111111111111111111111",
-      "owner": "11111111111111111111111111111111",
-      "dataHex": ""
-     }
-    ]
-   },
-   "transaction": {
-    "currentInstructionIndex": 0,
-    "instructions": [
-     {
-      "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
-      "accounts": [
-       {
-        "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
-        "isSigner": false,
-        "isWritable": false
-       },
-       {
-        "pubkey": "Sysvar1nstructions1111111111111111111111111",
-        "isSigner": false,
-        "isWritable": false
-       }
-      ],
-      "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000003a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c"
+      "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000004a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c"
      },
      {
       "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
@@ -3716,6 +3642,154 @@
    "expected": {
     "result": "error",
     "error": "UnsupportedAdapter"
+   }
+  },
+  {
+   "id": "abi-adapter-2-over-transfer-checked",
+   "group": "abi",
+   "description": "adapter kind 2 is Jupiter-only: a guard followed by one TransferChecked is not its transaction grammar",
+   "clientRule": "same",
+   "invocation": {
+    "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000002a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c",
+    "accounts": [
+     {
+      "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "dataHex": "01000000555555555555555555555555555555555555555555555555555555555555555500ca9a3b000000000601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001190038007777777777777777777777777777777777777777777777777777777777777777000000000000f03f0000000000000000000000000000f03f"
+     },
+     {
+      "pubkey": "Sysvar1nstructions1111111111111111111111111",
+      "owner": "11111111111111111111111111111111",
+      "dataHex": ""
+     }
+    ]
+   },
+   "transaction": {
+    "currentInstructionIndex": 0,
+    "instructions": [
+     {
+      "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+      "accounts": [
+       {
+        "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+        "isSigner": false,
+        "isWritable": false
+       },
+       {
+        "pubkey": "Sysvar1nstructions1111111111111111111111111",
+        "isSigner": false,
+        "isWritable": false
+       }
+      ],
+      "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000002a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c"
+     },
+     {
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+       {
+        "pubkey": "CxeKLJRofna6h2GqCsjdVwc2D7EdDFX8uDy9KGw3Ey68",
+        "isSigner": false,
+        "isWritable": true
+       },
+       {
+        "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+        "isSigner": false,
+        "isWritable": false
+       },
+       {
+        "pubkey": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
+        "isSigner": false,
+        "isWritable": true
+       },
+       {
+        "pubkey": "D6UucuMprPAYyCmr5UPU5h9YhRf2ZNtn23JTS32EjdjY",
+        "isSigner": true,
+        "isWritable": true
+       }
+      ],
+      "dataHex": "0c70665b000000000006"
+     }
+    ]
+   },
+   "clockUnixTimestamp": "1789400000",
+   "expected": {
+    "result": "error",
+    "error": "UnsupportedTransactionGrammar"
+   }
+  },
+  {
+   "id": "abi-adapter-3-over-transfer-checked",
+   "group": "abi",
+   "description": "adapter kind 3 is Jupiter-only: a guard followed by one TransferChecked is not its transaction grammar",
+   "clientRule": "same",
+   "invocation": {
+    "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000003a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c",
+    "accounts": [
+     {
+      "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "dataHex": "01000000555555555555555555555555555555555555555555555555555555555555555500ca9a3b000000000601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001190038007777777777777777777777777777777777777777777777777777777777777777000000000000f03f0000000000000000000000000000f03f"
+     },
+     {
+      "pubkey": "Sysvar1nstructions1111111111111111111111111",
+      "owner": "11111111111111111111111111111111",
+      "dataHex": ""
+     }
+    ]
+   },
+   "transaction": {
+    "currentInstructionIndex": 0,
+    "instructions": [
+     {
+      "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+      "accounts": [
+       {
+        "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+        "isSigner": false,
+        "isWritable": false
+       },
+       {
+        "pubkey": "Sysvar1nstructions1111111111111111111111111",
+        "isSigner": false,
+        "isWritable": false
+       }
+      ],
+      "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c01000003a0548d9f8d21f528c473fd7069e58665b3754e4cd2a21ea66dc94f718a2a9b0c"
+     },
+     {
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "accounts": [
+       {
+        "pubkey": "CxeKLJRofna6h2GqCsjdVwc2D7EdDFX8uDy9KGw3Ey68",
+        "isSigner": false,
+        "isWritable": true
+       },
+       {
+        "pubkey": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+        "isSigner": false,
+        "isWritable": false
+       },
+       {
+        "pubkey": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
+        "isSigner": false,
+        "isWritable": true
+       },
+       {
+        "pubkey": "D6UucuMprPAYyCmr5UPU5h9YhRf2ZNtn23JTS32EjdjY",
+        "isSigner": true,
+        "isWritable": true
+       }
+      ],
+      "dataHex": "0c70665b000000000006"
+     }
+    ]
+   },
+   "clockUnixTimestamp": "1789400000",
+   "expected": {
+    "result": "error",
+    "error": "UnsupportedTransactionGrammar"
    }
   },
   {

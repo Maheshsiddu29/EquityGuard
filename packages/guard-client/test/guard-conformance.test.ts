@@ -78,10 +78,10 @@ test("the shared corpus is intact", () => {
   }
 });
 
-test("every conformance vector produces its expected result", () => {
+test("every conformance vector produces its expected result", async () => {
   const failures: string[] = [];
   for (const vector of corpus.vectors) {
-    const actual = evaluateGuard(invocationOf(vector));
+    const actual = await evaluateGuard(invocationOf(vector));
     const expected = expectedOf(vector);
     if (actual === expected) continue;
     // A client that rejects where the program accepts is fail-closed and allowed;
@@ -92,21 +92,25 @@ test("every conformance vector produces its expected result", () => {
   assert.deepEqual(failures, [], `${failures.length} of ${corpus.vectors.length} vectors disagree:\n${failures.join("\n")}`);
 });
 
-test("no vector the corpus rejects is ever classified safe", () => {
+test("no vector the corpus rejects is ever classified safe", async () => {
   for (const vector of corpus.vectors) {
-    const passed = evaluateGuard(invocationOf(vector)) === null;
+    const passed = (await evaluateGuard(invocationOf(vector))) === null;
     if (expectedOf(vector) !== null) {
       assert.equal(passed, false, `${vector.id}: the client accepted an invocation the program rejects`);
     }
   }
 });
 
-test("the corpus reaches every guard outcome on the client side too", () => {
-  const produced = new Set(corpus.vectors.map((v) => evaluateGuard(invocationOf(v)) ?? "ok"));
+test("the corpus reaches every guard outcome on the client side too", async () => {
+  const produced = new Set<string>();
+  for (const vector of corpus.vectors) produced.add((await evaluateGuard(invocationOf(vector))) ?? "ok");
   // The clock is a syscall the client never performs, so it cannot fail client-side.
   const unreachableOnChainOnly = new Set(["ClockUnavailable"]);
+  // The Jupiter adapter codes are exercised by jupiter.test.ts until the
+  // shared corpus carries Jupiter transactions.
+  const notYetInCorpus = new Set(Object.keys(EQUITY_GUARD_ERROR_CODES).filter((name) => (EQUITY_GUARD_ERROR_CODES as Record<string, number>)[name]! >= 26 && name !== "UnsupportedTransactionGrammar"));
   for (const name of Object.keys(EQUITY_GUARD_ERROR_CODES) as EquityGuardErrorName[]) {
-    if (unreachableOnChainOnly.has(name)) continue;
+    if (unreachableOnChainOnly.has(name) || notYetInCorpus.has(name)) continue;
     assert.ok(produced.has(name), `no vector makes the client produce ${name}`);
   }
   assert.ok(produced.has("ok"));

@@ -1006,12 +1006,14 @@ name = "equity_guard"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "borsh",
  "litesvm",
  "serde_json",
  "solana-account",
  "solana-account-info",
  "solana-address 2.6.1",
  "solana-clock",
+ "solana-compute-budget-interface",
  "solana-get-sysvar",
  "solana-instruction",
  "solana-instructions-sysvar 4.0.0",

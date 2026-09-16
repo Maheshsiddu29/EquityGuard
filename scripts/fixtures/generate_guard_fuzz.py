@@ -153,6 +153,8 @@ for _i in range(60):
 ABI_LEN = 99
 VERSION_V2 = 2
 ADAPTER_TRANSFER_CHECKED = 1
+#: 1 Token-2022 TransferChecked, 2 Jupiter route_v2 BUY (USDC), 3 SELL (USDC).
+KNOWN_ADAPTERS = (1, 2, 3)
 
 
 def decode_expectation(data: bytes) -> str:
@@ -169,7 +171,7 @@ def decode_expectation(data: bytes) -> str:
         return "InvalidExpectedState"
     if data[57] not in (0, 1):
         return "InvalidExpectedState"
-    if data[66] != ADAPTER_TRANSFER_CHECKED:
+    if data[66] not in KNOWN_ADAPTERS:
         return "UnsupportedAdapter"
     return "ok"
 

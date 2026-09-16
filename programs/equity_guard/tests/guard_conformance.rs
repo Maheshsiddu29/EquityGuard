@@ -189,6 +189,7 @@ fn corpus_reaches_every_expected_outcome() {
         "DownstreamCommitmentMismatch",
         "UnsupportedAdapter",
         "GuardNotTopLevel",
+        "UnsupportedTransactionGrammar",
     ] {
         assert!(
             produced.iter().any(|p| p == required),
@@ -318,18 +319,25 @@ fn inv_sec_23_abi_v1_can_never_authorize_execution() {
 /// INV-SEC-24: an adapter with no understood semantics fails closed.
 #[test]
 fn inv_sec_24_unsupported_adapters_fail_closed() {
-    for adapter in [0_u8, 2, 3, 255] {
+    for adapter in [0_u8, 4, 255] {
         assert_invariant(
             "INV-SEC-24",
             &format!("abi-adapter-{adapter}"),
             "UnsupportedAdapter",
         );
     }
+    // Kinds 2 and 3 are defined, but only for their own grammar.
+    for adapter in [2_u8, 3] {
+        assert_invariant(
+            "INV-SEC-24",
+            &format!("abi-adapter-{adapter}-over-transfer-checked"),
+            "UnsupportedTransactionGrammar",
+        );
+    }
     for vector in parse() {
         if evaluate(&vector.invocation).is_ok() {
-            assert_eq!(
-                vector.invocation.guard_data.get(66),
-                Some(&1),
+            assert!(
+                matches!(vector.invocation.guard_data.get(66), Some(1..=3)),
                 "{} was accepted with an unsupported adapter",
                 vector.id
             );

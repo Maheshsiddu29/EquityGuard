@@ -12,16 +12,20 @@ export type GuardClientErrorCode =
   | "InvalidMintOwner"
   | "InvalidMultiplier"
   | "InvalidProtectionWindow"
-  | "MissingScaledUiAmount";
+  | "MissingScaledUiAmount"
+  | "UnsupportedJupiterTrade";
 
 /** Structured error thrown by the guard client. */
 export class GuardClientError extends Error {
   readonly code: GuardClientErrorCode;
+  /** For a refused Jupiter trade: the error the program would return. */
+  readonly guardError: EquityGuardErrorName | null;
 
-  constructor(code: GuardClientErrorCode, message: string) {
+  constructor(code: GuardClientErrorCode, message: string, guardError: EquityGuardErrorName | null = null) {
     super(`${code}: ${message}`);
     this.name = "GuardClientError";
     this.code = code;
+    this.guardError = guardError;
   }
 }
 
@@ -56,6 +60,20 @@ export const EQUITY_GUARD_ERROR_CODES = {
   DownstreamCommitmentMismatch: 23,
   UnsupportedAdapter: 24,
   GuardNotTopLevel: 25,
+  // Adapter kinds 2 and 3 (Jupiter route_v2, USDC only).
+  GuardNotFirst: 26,
+  UnsupportedTransactionGrammar: 27,
+  InvalidComputeBudgetInstruction: 28,
+  InvalidAtaSetup: 29,
+  InvalidJupiterProgram: 30,
+  InvalidJupiterInstruction: 31,
+  InvalidJupiterDirection: 32,
+  InvalidCounterMint: 33,
+  InvalidTokenProgram: 34,
+  DestinationOverrideUnsupported: 35,
+  UnsupportedJupiterFee: 36,
+  NonCanonicalSourceAccount: 37,
+  NonCanonicalDestinationAccount: 38,
 } as const;
 
 export type EquityGuardErrorName = keyof typeof EQUITY_GUARD_ERROR_CODES;

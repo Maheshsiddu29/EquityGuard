@@ -5701,12 +5701,12 @@
   {
    "label": "adapter-2",
    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c010000025c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-   "expected": "UnsupportedAdapter"
+   "expected": "ok"
   },
   {
    "label": "adapter-3",
    "dataHex": "02a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000000f03f000000000000f03f000000000000000001840300002c010000035c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-   "expected": "UnsupportedAdapter"
+   "expected": "ok"
   },
   {
    "label": "adapter-4",

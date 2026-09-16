@@ -40,7 +40,7 @@ use spl_token_2022_interface::{
 };
 
 mod common;
-use common::{evaluate, outcome, GuardAccount, GuardInvocation, Prng};
+use common::{error_name, evaluate, outcome, GuardAccount, GuardInvocation, Prng};
 
 const PROGRAM_ID: Address = equity_guard::ID;
 const TOKEN_2022: Address = spl_token_2022_interface::ID;
@@ -584,46 +584,11 @@ fn program_verdict(result: Result<(), TransactionError>, guard_index: usize) -> 
         Err(TransactionError::InstructionError(index, InstructionError::Custom(code)))
             if usize::from(index) == guard_index =>
         {
-            equity_guard_error_name(code)
+            error_name(code)
         }
         // A failure elsewhere in the transaction means the guard itself allowed it.
         Err(_) => "ok".to_owned(),
     }
-}
-
-fn equity_guard_error_name(code: u32) -> String {
-    use equity_guard::error::EquityGuardError as E;
-    const ALL: [E; 26] = [
-        E::UnsupportedInstruction,
-        E::InvalidInstructionLength,
-        E::InvalidExpectedState,
-        E::InvalidAccountCount,
-        E::InvalidMintOwner,
-        E::InvalidMintData,
-        E::MissingScaledUiAmount,
-        E::InvalidExtensionCombination,
-        E::InvalidMultiplier,
-        E::MultiplierChanged,
-        E::NewMultiplierChanged,
-        E::EffectiveTimestampChanged,
-        E::ActivationPhaseChanged,
-        E::InsideTransitionWindow,
-        E::ArithmeticOverflow,
-        E::ClockUnavailable,
-        E::UnsupportedVersion,
-        E::MintKeyMismatch,
-        E::InvalidInstructionsSysvar,
-        E::MissingDownstreamInstruction,
-        E::UnsupportedDownstreamProgram,
-        E::UnsupportedDownstreamInstruction,
-        E::DownstreamMintMismatch,
-        E::DownstreamCommitmentMismatch,
-        E::UnsupportedAdapter,
-        E::GuardNotTopLevel,
-    ];
-    ALL.iter()
-        .find(|e| **e as u32 == code)
-        .map_or_else(|| format!("unknown-custom-{code}"), |e| format!("{e:?}"))
 }
 
 /// Bounded corpus: large enough to cross every branch combination that

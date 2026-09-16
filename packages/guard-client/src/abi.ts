@@ -11,9 +11,21 @@ import { GuardClientError } from "./errors.ts";
 export const ABI_VERSION_V2 = 2;
 export const ASSERT_SAFE_EXECUTION_V2_LEN = 99;
 
-/** Supported downstream actions (ABI byte). */
+/**
+ * Supported downstream actions (ABI byte). The kind alone fixes the program's
+ * validator, commitment domain and commitment scope.
+ *
+ * Kinds 2 and 3 are USDC-specific: ABI v2 authenticates only the protected
+ * mint, so the counter asset is pinned to canonical USDC rather than read
+ * from the payload. They are not generic Jupiter adapters.
+ */
 export const DownstreamAdapterKind = {
+  /** The next instruction is Token-2022 `TransferChecked` of the protected mint. */
   TOKEN_2022_TRANSFER_CHECKED: 1,
+  /** Guard at 0, then a supported Jupiter `route_v2` buying the protected mint with USDC. */
+  JUPITER_ROUTE_V2_BUY_USDC: 2,
+  /** Guard at 0, then a supported Jupiter `route_v2` selling the protected mint for USDC. */
+  JUPITER_ROUTE_V2_SELL_USDC: 3,
 } as const;
 export type DownstreamAdapterKind = (typeof DownstreamAdapterKind)[keyof typeof DownstreamAdapterKind];
 
@@ -53,7 +65,11 @@ export interface AssertSafeExecutionRequest {
 export interface AssertSafeExecutionV2Request extends AssertSafeExecutionRequest {
   readonly expectedMint: Address;
   readonly adapterKind: DownstreamAdapterKind;
-  /** SHA-256 commitment to the exact next instruction (see downstream.ts). */
+  /**
+   * SHA-256 commitment to the protected action, in the kind's domain: the next
+   * instruction for kind 1 (downstream.ts), the whole suffix for kinds 2/3
+   * (jupiter.ts).
+   */
   readonly downstreamCommitment: Uint8Array;
 }
 
@@ -91,6 +107,10 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }
 
+export function isDownstreamAdapterKind(value: unknown): value is DownstreamAdapterKind {
+  return Object.values(DownstreamAdapterKind).some((kind) => kind === value);
+}
+
 /** Encodes and validates an ABI v2 instruction payload. */
 export function encodeAssertSafeExecutionV2(request: AssertSafeExecutionV2Request): Uint8Array {
   const { expected, expectedPhase, window } = request;
@@ -109,7 +129,7 @@ export function encodeAssertSafeExecutionV2(request: AssertSafeExecutionV2Reques
       throw new GuardClientError("InvalidProtectionWindow", `${name} must be a u32`);
     }
   }
-  if (request.adapterKind !== DownstreamAdapterKind.TOKEN_2022_TRANSFER_CHECKED) {
+  if (!isDownstreamAdapterKind(request.adapterKind)) {
     throw new GuardClientError("InvalidDownstream", `unsupported adapter kind ${String(request.adapterKind)}`);
   }
   if (!(request.downstreamCommitment instanceof Uint8Array) || request.downstreamCommitment.length !== 32) {

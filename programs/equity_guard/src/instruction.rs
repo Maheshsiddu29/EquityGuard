@@ -16,8 +16,8 @@
 //! | 57 | 1 | expected activation phase: `0` pending, `1` activated |
 //! | 58 | 4 | `protection_before_secs`, `u32` LE |
 //! | 62 | 4 | `protection_after_secs`, `u32` LE |
-//! | 66 | 1 | downstream adapter kind: `1` Token-2022 `TransferChecked` |
-//! | 67 | 32 | downstream commitment, SHA-256 (see [`crate::downstream`]) |
+//! | 66 | 1 | downstream adapter kind, see [`DownstreamAdapter`] |
+//! | 67 | 32 | downstream commitment, SHA-256; its domain and scope are set by the adapter kind |
 //!
 //! Accounts:
 //! - `[0]` the protected Token-2022 mint (read-only);
@@ -62,19 +62,33 @@ pub struct AssertSafeExecution {
 }
 
 /// The downstream action kinds the guard understands.
+///
+/// The kind alone determines the semantic validator, the commitment domain and
+/// the commitment scope, so a digest can never be read under another kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DownstreamAdapter {
     /// The next top-level instruction is Token-2022 `TransferChecked` of the
-    /// protected mint.
+    /// protected mint. Commitment: `EQUITYGUARD_DOWNSTREAM_V2` over that one
+    /// instruction ([`crate::downstream`]).
     Token2022TransferChecked = 1,
+    /// The whole transaction is a guarded Jupiter `route_v2` buying the
+    /// protected mint with canonical USDC. Commitment:
+    /// `EQUITYGUARD_JUPITER_SUFFIX_V1` over every instruction after the guard
+    /// ([`crate::jupiter`]).
+    JupiterRouteV2BuyUsdc = 2,
+    /// As [`Self::JupiterRouteV2BuyUsdc`], selling the protected mint for
+    /// canonical USDC.
+    JupiterRouteV2SellUsdc = 3,
 }
 
 impl DownstreamAdapter {
-    /// Decodes the ABI byte.
+    /// Decodes the ABI byte. Unknown kinds have no semantics and are `None`.
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             1 => Some(Self::Token2022TransferChecked),
+            2 => Some(Self::JupiterRouteV2BuyUsdc),
+            3 => Some(Self::JupiterRouteV2SellUsdc),
             _ => None,
         }
     }
@@ -89,7 +103,8 @@ pub struct AssertSafeExecutionV2 {
     pub execution: AssertSafeExecution,
     /// Supported downstream action kind.
     pub adapter: DownstreamAdapter,
-    /// SHA-256 commitment to the exact immediately following instruction.
+    /// SHA-256 commitment to the exact downstream action, in the domain and
+    /// scope `adapter` defines.
     pub downstream_commitment: [u8; 32],
 }
 
@@ -305,12 +320,34 @@ mod tests {
                 Err(EquityGuardError::InvalidExpectedState)
             );
         }
-        for adapter in [0, 2, u8::MAX] {
+        for adapter in [0, 4, 5, u8::MAX] {
             let mut data = request().pack();
             data[66] = adapter;
             assert_eq!(
                 AssertSafeExecutionV2::unpack(&data),
                 Err(EquityGuardError::UnsupportedAdapter)
+            );
+        }
+    }
+
+    #[test]
+    fn adapter_byte_round_trips_for_every_known_kind() {
+        for (byte, adapter) in [
+            (1, DownstreamAdapter::Token2022TransferChecked),
+            (2, DownstreamAdapter::JupiterRouteV2BuyUsdc),
+            (3, DownstreamAdapter::JupiterRouteV2SellUsdc),
+        ] {
+            assert_eq!(DownstreamAdapter::from_u8(byte), Some(adapter));
+            let packed = AssertSafeExecutionV2 {
+                adapter,
+                ..request()
+            }
+            .pack();
+            assert_eq!(packed.len(), ASSERT_SAFE_EXECUTION_V2_LEN);
+            assert_eq!(packed[66], byte);
+            assert_eq!(
+                AssertSafeExecutionV2::unpack(&packed).map(|r| r.adapter),
+                Ok(adapter)
             );
         }
     }

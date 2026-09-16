@@ -115,6 +115,61 @@ pub fn evaluate(invocation: &GuardInvocation) -> Result<(), EquityGuardError> {
     guard::check(&request.execution, &actual, invocation.clock)
 }
 
+/// Every error variant, in discriminant order, so tests can name a custom
+/// code and so a new variant cannot be forgotten silently.
+pub const ALL_ERRORS: [EquityGuardError; 39] = {
+    use EquityGuardError as E;
+    [
+        E::UnsupportedInstruction,
+        E::InvalidInstructionLength,
+        E::InvalidExpectedState,
+        E::InvalidAccountCount,
+        E::InvalidMintOwner,
+        E::InvalidMintData,
+        E::MissingScaledUiAmount,
+        E::InvalidExtensionCombination,
+        E::InvalidMultiplier,
+        E::MultiplierChanged,
+        E::NewMultiplierChanged,
+        E::EffectiveTimestampChanged,
+        E::ActivationPhaseChanged,
+        E::InsideTransitionWindow,
+        E::ArithmeticOverflow,
+        E::ClockUnavailable,
+        E::UnsupportedVersion,
+        E::MintKeyMismatch,
+        E::InvalidInstructionsSysvar,
+        E::MissingDownstreamInstruction,
+        E::UnsupportedDownstreamProgram,
+        E::UnsupportedDownstreamInstruction,
+        E::DownstreamMintMismatch,
+        E::DownstreamCommitmentMismatch,
+        E::UnsupportedAdapter,
+        E::GuardNotTopLevel,
+        E::GuardNotFirst,
+        E::UnsupportedTransactionGrammar,
+        E::InvalidComputeBudgetInstruction,
+        E::InvalidAtaSetup,
+        E::InvalidJupiterProgram,
+        E::InvalidJupiterInstruction,
+        E::InvalidJupiterDirection,
+        E::InvalidCounterMint,
+        E::InvalidTokenProgram,
+        E::DestinationOverrideUnsupported,
+        E::UnsupportedJupiterFee,
+        E::NonCanonicalSourceAccount,
+        E::NonCanonicalDestinationAccount,
+    ]
+};
+
+/// The name of an on-chain custom error code.
+pub fn error_name(code: u32) -> String {
+    ALL_ERRORS
+        .iter()
+        .find(|e| **e as u32 == code)
+        .map_or_else(|| format!("unknown-custom-{code}"), |e| format!("{e:?}"))
+}
+
 /// A stable name for a verdict, for corpus comparison and failure messages.
 pub fn outcome(result: &Result<(), EquityGuardError>) -> String {
     match result {

@@ -1,15 +1,23 @@
 //! ABI v2 downstream action binding.
 //!
-//! The guard protects exactly the top-level instruction immediately after
-//! itself, read from the Instructions sysvar. Two checks are both required:
+//! Every adapter kind first proves the guard is executing as the current
+//! top-level instruction (`GuardNotTopLevel`), then dispatches on the kind:
 //!
-//! 1. **Adapter**: the next instruction is a supported action with understood
-//!    semantics. Only Token-2022 `TransferChecked` of the protected mint is
-//!    supported.
-//! 2. **Commitment**: the next instruction is byte-for-byte the instruction
-//!    the payload committed to.
+//! - kind 1, Token-2022 `TransferChecked` (this module): the guard protects
+//!   exactly the top-level instruction immediately after itself;
+//! - kinds 2 and 3, Jupiter `route_v2` against USDC ([`crate::jupiter`]): the
+//!   guard is instruction 0 and protects the whole rest of the transaction.
 //!
-//! # Commitment encoding
+//! For every kind two checks are both required:
+//!
+//! 1. **Adapter**: the protected instructions are supported actions with
+//!    understood semantics.
+//! 2. **Commitment**: they are byte-for-byte what the payload committed to.
+//!
+//! Neither substitutes for the other: a builder that writes the transaction
+//! also writes a matching commitment.
+//!
+//! # Kind 1 commitment encoding
 //!
 //! SHA-256 over the concatenation of:
 //!
@@ -35,6 +43,7 @@ use spl_token_2022_interface::instruction::TokenInstruction;
 use crate::{
     error::EquityGuardError,
     instruction::{AssertSafeExecutionV2, DownstreamAdapter},
+    jupiter::{verify_jupiter_suffix, ProtectedRole},
 };
 
 /// Domain separator for downstream commitments.
@@ -56,7 +65,8 @@ pub struct CommittedAccount {
     pub is_writable: bool,
 }
 
-/// Computes the downstream commitment (see the module docs for the encoding).
+/// Computes the kind 1 downstream commitment (see the module docs for the
+/// encoding).
 pub fn downstream_commitment(
     program_id: &[u8; 32],
     accounts: &[CommittedAccount],
@@ -82,8 +92,8 @@ pub fn downstream_commitment(
 }
 
 /// Verifies the guard is the current top-level instruction and that the
-/// immediately following top-level instruction is the supported, committed
-/// action on `mint_key`.
+/// action `request.adapter` names is the supported, committed action on
+/// `mint_key`.
 pub fn verify_downstream(
     program_id: &Address,
     guard_data: &[u8],
@@ -106,6 +116,35 @@ pub fn verify_downstream(
         return Err(EquityGuardError::GuardNotTopLevel);
     }
 
+    match request.adapter {
+        DownstreamAdapter::Token2022TransferChecked => {
+            verify_transfer_checked(current, request, mint_key, instructions_sysvar)
+        }
+        DownstreamAdapter::JupiterRouteV2BuyUsdc => verify_jupiter_suffix(
+            current,
+            ProtectedRole::Destination,
+            request,
+            mint_key,
+            instructions_sysvar,
+        ),
+        DownstreamAdapter::JupiterRouteV2SellUsdc => verify_jupiter_suffix(
+            current,
+            ProtectedRole::Source,
+            request,
+            mint_key,
+            instructions_sysvar,
+        ),
+    }
+}
+
+/// Kind 1: the immediately following top-level instruction is the committed
+/// Token-2022 `TransferChecked` of `mint_key`. The guard may sit at any index.
+fn verify_transfer_checked(
+    current: u16,
+    request: &AssertSafeExecutionV2,
+    mint_key: &Address,
+    instructions_sysvar: &AccountInfo,
+) -> Result<(), EquityGuardError> {
     let next_index = usize::from(current)
         .checked_add(1)
         .ok_or(EquityGuardError::ArithmeticOverflow)?;
@@ -117,28 +156,24 @@ pub fn verify_downstream(
             },
         )?;
 
-    match request.adapter {
-        DownstreamAdapter::Token2022TransferChecked => {
-            if next.program_id != spl_token_2022_interface::ID {
-                return Err(EquityGuardError::UnsupportedDownstreamProgram);
-            }
-            let is_transfer_checked = next.data.len() == TRANSFER_CHECKED_DATA_LEN
-                && matches!(
-                    TokenInstruction::unpack(&next.data),
-                    Ok(TokenInstruction::TransferChecked { .. })
-                )
-                && next.accounts.len() >= TRANSFER_CHECKED_MIN_ACCOUNTS;
-            if !is_transfer_checked {
-                return Err(EquityGuardError::UnsupportedDownstreamInstruction);
-            }
-            let mint = next
-                .accounts
-                .get(TRANSFER_CHECKED_MINT_INDEX)
-                .ok_or(EquityGuardError::UnsupportedDownstreamInstruction)?;
-            if mint.pubkey != *mint_key {
-                return Err(EquityGuardError::DownstreamMintMismatch);
-            }
-        }
+    if next.program_id != spl_token_2022_interface::ID {
+        return Err(EquityGuardError::UnsupportedDownstreamProgram);
+    }
+    let is_transfer_checked = next.data.len() == TRANSFER_CHECKED_DATA_LEN
+        && matches!(
+            TokenInstruction::unpack(&next.data),
+            Ok(TokenInstruction::TransferChecked { .. })
+        )
+        && next.accounts.len() >= TRANSFER_CHECKED_MIN_ACCOUNTS;
+    if !is_transfer_checked {
+        return Err(EquityGuardError::UnsupportedDownstreamInstruction);
+    }
+    let mint = next
+        .accounts
+        .get(TRANSFER_CHECKED_MINT_INDEX)
+        .ok_or(EquityGuardError::UnsupportedDownstreamInstruction)?;
+    if mint.pubkey != *mint_key {
+        return Err(EquityGuardError::DownstreamMintMismatch);
     }
 
     let accounts: Vec<CommittedAccount> = next

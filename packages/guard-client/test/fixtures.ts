@@ -27,11 +27,21 @@ export interface CommitmentVector {
   commitmentHex: string;
 }
 
+export interface SuffixCommitmentVector {
+  name: string;
+  feePayer: string | null;
+  /** The suffix as the Instructions sysvar exposes it. */
+  instructions: { programId: string; accounts: { pubkey: string; isSigner: boolean; isWritable: boolean }[]; dataHex: string }[];
+  commitmentHex: string;
+}
+
 export interface Golden {
   abiVersion: number;
   encodedLength: number;
   offsets: Record<string, number>;
   commitmentDomain: string;
+  jupiterSuffixCommitmentDomain: string;
+  suffixCommitmentVectors: SuffixCommitmentVector[];
   errorCodes: Record<string, number>;
   vectors: GoldenVector[];
   invalid: { name: string; dataHex: string; error: string }[];
