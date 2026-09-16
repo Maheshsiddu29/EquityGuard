@@ -71,6 +71,42 @@ test("inside the product executor, sending is reachable only through the gated e
   for (const hidden of ["submitGuardedDelivery", "resetDemoState", "sendInstructions", "requireDevnet"]) assert.ok(!exported.includes(hidden), hidden);
 });
 
+test("the transport itself verifies the context and re-checks genesis immediately before signing", () => {
+  const transport = files.find((f) => f.path === "scripts/devnet/send.ts");
+  assert.ok(transport);
+  const body = transport.text.slice(transport.text.indexOf("export async function sendInstructions"));
+  // Provenance first, then the genesis re-check, and only then a signature.
+  const order = ["assertVerifiedDevnetContext(", 'assertDevnetGenesis(', "signTransactionMessageWithSigners(", ".sendTransaction("].map((token) => body.indexOf(token));
+  assert.ok(order.every((i) => i >= 0), `a transport gate is missing: ${order.join(",")}`);
+  assert.ok(order.every((i, k) => k === 0 || i > (order[k - 1] as number)), `transport gate order ${order.join(",")}`);
+
+  // The genesis re-check must be the one done for signing, not the connect-time one.
+  const recheck = body.slice(order[1], order[2]);
+  assert.match(recheck, /assertDevnetGenesis\(\s*ctx\.rpc,\s*"before signing"\s*\)/);
+});
+
+test("the executor's gate set is complete, not merely ordered", () => {
+  // Losing a gate is the failure this pins: the order test above would still
+  // pass with any subset, so the set itself is asserted.
+  const executor = files.find((f) => f.path === "scripts/demo/devnet-execution.ts");
+  assert.ok(executor);
+  const body = executor.text.slice(executor.text.indexOf("export async function executeGuardedPlan"));
+  const gates = {
+    "the plan was issued and matches the presented quote": "verifyExecutionPlan(",
+    "the executor policy is the plan's": "assertPlanPolicy(",
+    "the cluster is devnet": "requireDevnet(",
+    "the action is the planned action": "assertPlanDownstream(",
+    "the plan is unused, and is now spent": "consumeExecutionPlan(",
+    "the plan is still fresh at the current slot": "assertPlanFresh(",
+  };
+  for (const [description, token] of Object.entries(gates)) {
+    assert.ok(body.includes(token), `executeGuardedPlan no longer checks that ${description} (${token})`);
+  }
+  // Nothing is sent before the last gate.
+  const lastGate = Math.max(...Object.values(gates).map((token) => body.indexOf(token)));
+  assert.ok(body.indexOf("submitGuardedDelivery(") > lastGate, "the delivery is built or sent before the gates complete");
+});
+
 test("package code never signs, sends or builds RPC clients", () => {
   for (const f of files.filter((file) => file.path.startsWith("packages/representation-state/"))) {
     for (const forbidden of [/createSolanaRpc/, /KeyPairSigner/, /sendTransaction/, /devnet\/send/]) {
