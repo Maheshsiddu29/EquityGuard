@@ -58,6 +58,26 @@ const WINDOW: ProtectionWindow = ProtectionWindow {
 };
 /// Upper bound on the whole guard + transfer transaction's compute units.
 const MAX_TRANSACTION_COMPUTE_UNITS: u64 = 40_000;
+/// Measured ABI v2 guard cost, as a regression baseline rather than a target:
+/// a pass reads the mint, the sysvar and the clock and hashes the committed
+/// instruction; a reject stops earlier or later depending on the check.
+const GUARD_PASS_COMPUTE_UNITS: u64 = 4_658;
+const GUARD_REJECT_COMPUTE_UNITS: u64 = 4_899;
+/// Room for toolchain and dependency drift. Growth past this is not a
+/// failure of correctness but it is unexplained, so it must be looked at.
+const COMPUTE_UNIT_TOLERANCE: u64 = 400;
+
+/// Fails when measured cost drifts meaningfully from the recorded baseline.
+fn assert_compute_baseline(label: &str, measured: u64, baseline: u64) {
+    let low = baseline.saturating_sub(COMPUTE_UNIT_TOLERANCE);
+    let high = baseline + COMPUTE_UNIT_TOLERANCE;
+    assert!(
+        (low..=high).contains(&measured),
+        "{label} compute units moved to {measured}, outside {low}..={high} around the \
+         recorded baseline {baseline}. If the change is intended, update the baseline \
+         in this file and say why in the commit."
+    );
+}
 
 fn program_path() -> PathBuf {
     let dir = std::env::var_os("SBF_OUT_DIR").map_or_else(
@@ -380,6 +400,7 @@ fn q_valid_exact_guarded_transfer_passes_and_delivers() {
         meta.compute_units_consumed
     );
     assert!(meta.compute_units_consumed <= MAX_TRANSACTION_COMPUTE_UNITS);
+    assert_compute_baseline("ABI v2 guard pass", units, GUARD_PASS_COMPUTE_UNITS);
 }
 
 /// Asserts `layout` with `guard` fails with `error` at the guard's index and moves no tokens.
@@ -893,9 +914,12 @@ fn kox_clock_crossing_with_identical_mint_bytes_is_still_rejected() {
         meta_err.err,
         custom(0, EquityGuardError::ActivationPhaseChanged)
     );
-    println!(
-        "ABI v2 guard reject compute units: {}",
-        guard_units(&meta_err.meta.logs)
+    let reject_units = guard_units(&meta_err.meta.logs);
+    println!("ABI v2 guard reject compute units: {reject_units}");
+    assert_compute_baseline(
+        "ABI v2 guard reject",
+        reject_units,
+        GUARD_REJECT_COMPUTE_UNITS,
     );
 
     assert_eq!(

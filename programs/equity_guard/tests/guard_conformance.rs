@@ -14,18 +14,12 @@
 // Test harness code: a panic is the correct way to fail a test.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::result_large_err)]
 
-use equity_guard::{
-    downstream::verify_downstream,
-    error::EquityGuardError,
-    guard,
-    instruction::AssertSafeExecutionV2,
-    state::{decode_protected_state, ProtectedState},
-};
 use serde_json::Value;
-use solana_account_info::AccountInfo;
 use solana_address::Address;
-use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction};
-use solana_instructions_sysvar::construct_instructions_data;
+use solana_instruction::{AccountMeta, Instruction};
+
+mod common;
+use common::{evaluate, outcome, GuardAccount, GuardInvocation};
 
 const CORPUS: &str = include_str!("fixtures/guard_conformance_v1.json");
 
@@ -43,30 +37,11 @@ fn address(text: &str) -> Address {
     text.parse().unwrap()
 }
 
-/// One account as the guard receives it.
-struct GuardAccount {
-    pubkey: Address,
-    owner: Address,
-    data: Vec<u8>,
-}
-
-/// One top-level instruction as the Instructions sysvar exposes it.
-struct TopLevel {
-    program_id: Address,
-    accounts: Vec<(Address, bool, bool)>,
-    data: Vec<u8>,
-}
-
 struct Vector {
     id: String,
     group: String,
     description: String,
-    program_id: Address,
-    guard_data: Vec<u8>,
-    accounts: Vec<GuardAccount>,
-    instructions: Vec<TopLevel>,
-    current_index: u16,
-    clock: i64,
+    invocation: GuardInvocation,
     /// `None` means the vector expects the guard to pass.
     expected: Option<String>,
 }
@@ -90,41 +65,41 @@ fn parse() -> Vec<Vector> {
                 id: v["id"].as_str().unwrap().to_owned(),
                 group: v["group"].as_str().unwrap().to_owned(),
                 description: v["description"].as_str().unwrap().to_owned(),
-                program_id: address(invocation["programId"].as_str().unwrap()),
-                guard_data: hex_bytes(invocation["dataHex"].as_str().unwrap()),
-                accounts: invocation["accounts"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|a| GuardAccount {
-                        pubkey: address(a["pubkey"].as_str().unwrap()),
-                        owner: address(a["owner"].as_str().unwrap()),
-                        data: hex_bytes(a["dataHex"].as_str().unwrap()),
-                    })
-                    .collect(),
-                instructions: transaction["instructions"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|i| TopLevel {
-                        program_id: address(i["programId"].as_str().unwrap()),
-                        accounts: i["accounts"]
-                            .as_array()
-                            .unwrap()
-                            .iter()
-                            .map(|m| {
-                                (
-                                    address(m["pubkey"].as_str().unwrap()),
-                                    m["isSigner"].as_bool().unwrap(),
-                                    m["isWritable"].as_bool().unwrap(),
-                                )
-                            })
-                            .collect(),
-                        data: hex_bytes(i["dataHex"].as_str().unwrap()),
-                    })
-                    .collect(),
-                current_index: transaction["currentInstructionIndex"].as_u64().unwrap() as u16,
-                clock: v["clockUnixTimestamp"].as_str().unwrap().parse().unwrap(),
+                invocation: GuardInvocation {
+                    program_id: address(invocation["programId"].as_str().unwrap()),
+                    guard_data: hex_bytes(invocation["dataHex"].as_str().unwrap()),
+                    accounts: invocation["accounts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|a| GuardAccount {
+                            pubkey: address(a["pubkey"].as_str().unwrap()),
+                            owner: address(a["owner"].as_str().unwrap()),
+                            data: hex_bytes(a["dataHex"].as_str().unwrap()),
+                        })
+                        .collect(),
+                    instructions: transaction["instructions"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|i| Instruction {
+                            program_id: address(i["programId"].as_str().unwrap()),
+                            accounts: i["accounts"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|m| AccountMeta {
+                                    pubkey: address(m["pubkey"].as_str().unwrap()),
+                                    is_signer: m["isSigner"].as_bool().unwrap(),
+                                    is_writable: m["isWritable"].as_bool().unwrap(),
+                                })
+                                .collect(),
+                            data: hex_bytes(i["dataHex"].as_str().unwrap()),
+                        })
+                        .collect(),
+                    current_index: transaction["currentInstructionIndex"].as_u64().unwrap() as u16,
+                    clock: v["clockUnixTimestamp"].as_str().unwrap().parse().unwrap(),
+                },
                 expected: match expected["result"].as_str().unwrap() {
                     "ok" => None,
                     "error" => Some(expected["error"].as_str().unwrap().to_owned()),
@@ -133,78 +108,6 @@ fn parse() -> Vec<Vector> {
             }
         })
         .collect()
-}
-
-// ------------------------------------------------------------ evaluation
-
-/// The Instructions sysvar account data for `vector`, with its current index.
-fn sysvar_data(vector: &Vector) -> Vec<u8> {
-    let borrowed: Vec<BorrowedInstruction> = vector
-        .instructions
-        .iter()
-        .map(|i| BorrowedInstruction {
-            program_id: &i.program_id,
-            accounts: i
-                .accounts
-                .iter()
-                .map(|(pubkey, is_signer, is_writable)| BorrowedAccountMeta {
-                    pubkey,
-                    is_signer: *is_signer,
-                    is_writable: *is_writable,
-                })
-                .collect(),
-            data: &i.data,
-        })
-        .collect();
-    let mut data = construct_instructions_data(&borrowed).unwrap();
-    // The runtime writes the executing instruction's index into the trailing u16.
-    let end = data.len() - 2;
-    data[end..].copy_from_slice(&vector.current_index.to_le_bytes());
-    data
-}
-
-/// The program's decoders in `processor.rs` order, with the clock supplied
-/// instead of read from a syscall.
-fn evaluate(vector: &Vector) -> Result<(), EquityGuardError> {
-    let request = AssertSafeExecutionV2::unpack(&vector.guard_data)?;
-    let [mint, instructions_sysvar] = vector.accounts.as_slice() else {
-        return Err(EquityGuardError::InvalidAccountCount);
-    };
-    if mint.pubkey != request.expected_mint {
-        return Err(EquityGuardError::MintKeyMismatch);
-    }
-    if !solana_instructions_sysvar::check_id(&instructions_sysvar.pubkey) {
-        return Err(EquityGuardError::InvalidInstructionsSysvar);
-    }
-    let actual: ProtectedState = decode_protected_state(&mint.owner, &mint.data)?;
-
-    let mut data = sysvar_data(vector);
-    let owner = Address::default();
-    let mut lamports = 0;
-    let info = AccountInfo::new(
-        &instructions_sysvar.pubkey,
-        false,
-        false,
-        &mut lamports,
-        &mut data,
-        &owner,
-        false,
-    );
-    verify_downstream(
-        &vector.program_id,
-        &vector.guard_data,
-        &request,
-        &mint.pubkey,
-        &info,
-    )?;
-    guard::check(&request.execution, &actual, vector.clock)
-}
-
-fn outcome(result: &Result<(), EquityGuardError>) -> String {
-    match result {
-        Ok(()) => "ok".to_owned(),
-        Err(error) => format!("{error:?}"),
-    }
 }
 
 fn expected_outcome(vector: &Vector) -> String {
@@ -229,7 +132,7 @@ fn every_vector_matches_its_expected_result() {
     let vectors = parse();
     let mut failures = Vec::new();
     for vector in &vectors {
-        let actual = outcome(&evaluate(vector));
+        let actual = outcome(&evaluate(&vector.invocation));
         let expected = expected_outcome(vector);
         if actual != expected {
             failures.push(format!(
@@ -252,7 +155,10 @@ fn every_vector_matches_its_expected_result() {
 #[test]
 fn corpus_reaches_every_expected_outcome() {
     let vectors = parse();
-    let mut produced: Vec<String> = vectors.iter().map(|v| outcome(&evaluate(v))).collect();
+    let mut produced: Vec<String> = vectors
+        .iter()
+        .map(|v| outcome(&evaluate(&v.invocation)))
+        .collect();
     produced.sort_unstable();
     produced.dedup();
 
@@ -296,7 +202,7 @@ fn corpus_reaches_every_expected_outcome() {
 #[test]
 fn only_declared_valid_vectors_pass() {
     for vector in parse() {
-        let passed = evaluate(&vector).is_ok();
+        let passed = evaluate(&vector.invocation).is_ok();
         assert_eq!(
             passed,
             vector.expected.is_none(),
@@ -305,4 +211,140 @@ fn only_declared_valid_vectors_pass() {
             expected_outcome(&vector)
         );
     }
+}
+
+// ------------------------------------------------- named program invariants
+
+/// Asserts the corpus contains a vector matching `id` whose evaluated outcome
+/// is `expected`, so an invariant cannot silently lose its evidence.
+fn assert_invariant(invariant: &str, id: &str, expected: &str) {
+    let vectors = parse();
+    let vector = vectors
+        .iter()
+        .find(|v| v.id == id)
+        .unwrap_or_else(|| panic!("{invariant}: the corpus no longer contains {id}"));
+    assert_eq!(
+        outcome(&evaluate(&vector.invocation)),
+        expected,
+        "{invariant} ({id})"
+    );
+    assert_eq!(
+        expected_outcome(vector),
+        expected,
+        "{invariant}: the corpus expectation for {id} changed"
+    );
+}
+
+/// INV-SEC-11: the guard's mint is the mint the downstream action moves.
+#[test]
+fn inv_sec_11_guard_mint_equals_downstream_mint() {
+    // Both halves: the account handed to the guard, and the mint in the action.
+    assert_invariant("INV-SEC-11", "mint-key-mismatch", "MintKeyMismatch");
+    assert_invariant(
+        "INV-SEC-11",
+        "downstream-mint-mismatch",
+        "DownstreamMintMismatch",
+    );
+    assert_invariant(
+        "INV-SEC-11",
+        "downstream-substituted-mint-account-index",
+        "DownstreamMintMismatch",
+    );
+}
+
+/// INV-SEC-21: the guard protects only the immediately following supported action.
+#[test]
+fn inv_sec_21_only_the_immediately_following_action_is_protected() {
+    assert_invariant(
+        "INV-SEC-21",
+        "downstream-missing",
+        "MissingDownstreamInstruction",
+    );
+    assert_invariant(
+        "INV-SEC-21",
+        "downstream-wrong-program-system",
+        "UnsupportedDownstreamProgram",
+    );
+    // A guard that is not last still only reaches the instruction after itself.
+    assert_invariant("INV-SEC-21", "valid-guard-at-index-2", "ok");
+}
+
+/// INV-SEC-22: the commitment covers every security-relevant downstream field.
+#[test]
+fn inv_sec_22_commitment_covers_every_downstream_field() {
+    for field in [
+        "amount",
+        "decimals",
+        "destination",
+        "source",
+        "authority",
+        "extra-account",
+        "account-order",
+        "signer-flag",
+        "writable-flag",
+    ] {
+        assert_invariant(
+            "INV-SEC-22",
+            &format!("downstream-substituted-{field}"),
+            "DownstreamCommitmentMismatch",
+        );
+    }
+}
+
+/// INV-SEC-23: ABI v1 can never authorize execution.
+#[test]
+fn inv_sec_23_abi_v1_can_never_authorize_execution() {
+    assert_invariant("INV-SEC-23", "abi-v1-payload", "UnsupportedVersion");
+    for version in [0_u8, 1, 3, 255] {
+        assert_invariant(
+            "INV-SEC-23",
+            &format!("abi-version-{version}"),
+            "UnsupportedVersion",
+        );
+    }
+    // No vector in the whole corpus is accepted with a version byte other than 2.
+    for vector in parse() {
+        if evaluate(&vector.invocation).is_ok() {
+            assert_eq!(
+                vector.invocation.guard_data.first(),
+                Some(&2),
+                "{} was accepted with a non-v2 version byte",
+                vector.id
+            );
+        }
+    }
+}
+
+/// INV-SEC-24: an adapter with no understood semantics fails closed.
+#[test]
+fn inv_sec_24_unsupported_adapters_fail_closed() {
+    for adapter in [0_u8, 2, 3, 255] {
+        assert_invariant(
+            "INV-SEC-24",
+            &format!("abi-adapter-{adapter}"),
+            "UnsupportedAdapter",
+        );
+    }
+    for vector in parse() {
+        if evaluate(&vector.invocation).is_ok() {
+            assert_eq!(
+                vector.invocation.guard_data.get(66),
+                Some(&1),
+                "{} was accepted with an unsupported adapter",
+                vector.id
+            );
+        }
+    }
+}
+
+/// INV-SEC-25: invoked via CPI, the guard cannot borrow another top-level
+/// instruction as the action it protects.
+#[test]
+fn inv_sec_25_a_cpi_invocation_cannot_borrow_a_top_level_action() {
+    assert_invariant("INV-SEC-25", "guard-not-top-level-cpi", "GuardNotTopLevel");
+    assert_invariant(
+        "INV-SEC-25",
+        "guard-not-top-level-other-data",
+        "GuardNotTopLevel",
+    );
 }
