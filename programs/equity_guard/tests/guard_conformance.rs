@@ -189,7 +189,19 @@ fn corpus_reaches_every_expected_outcome() {
         "DownstreamCommitmentMismatch",
         "UnsupportedAdapter",
         "GuardNotTopLevel",
+        "GuardNotFirst",
         "UnsupportedTransactionGrammar",
+        "InvalidComputeBudgetInstruction",
+        "InvalidAtaSetup",
+        "InvalidJupiterProgram",
+        "InvalidJupiterInstruction",
+        "InvalidJupiterDirection",
+        "InvalidCounterMint",
+        "InvalidTokenProgram",
+        "DestinationOverrideUnsupported",
+        "UnsupportedJupiterFee",
+        "NonCanonicalSourceAccount",
+        "NonCanonicalDestinationAccount",
     ] {
         assert!(
             produced.iter().any(|p| p == required),
@@ -343,6 +355,129 @@ fn inv_sec_24_unsupported_adapters_fail_closed() {
             );
         }
     }
+}
+
+const TOKEN_2022: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const JUPITER: &str = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+const USDC: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+/// INV-SEC-50: a Jupiter-kind guard that passes is instruction 0, followed by
+/// exactly price, limit, optional setup and one `route_v2`, which is last, and
+/// trades the protected mint against USDC in the kind's role.
+#[test]
+fn inv_sec_50_an_accepted_jupiter_guard_means_the_supported_shape() {
+    let mut accepted = 0;
+    for vector in parse() {
+        let kind = vector.invocation.guard_data.get(66).copied();
+        if !matches!(kind, Some(2 | 3)) || evaluate(&vector.invocation).is_err() {
+            continue;
+        }
+        accepted += 1;
+        let invocation = &vector.invocation;
+        assert_eq!(invocation.current_index, 0, "{}", vector.id);
+        let suffix = &invocation.instructions[1..];
+        assert!(matches!(suffix.len(), 3 | 4), "{}", vector.id);
+        let trade = suffix.last().unwrap();
+        assert_eq!(trade.program_id.to_string(), JUPITER, "{}", vector.id);
+        assert_eq!(
+            suffix
+                .iter()
+                .filter(|i| i.program_id.to_string() == JUPITER)
+                .count(),
+            1,
+            "{}",
+            vector.id
+        );
+        let (protected, counter, protected_program) = if kind == Some(2) {
+            (4, 3, 6)
+        } else {
+            (3, 4, 5)
+        };
+        assert_eq!(
+            trade.accounts[protected].pubkey, invocation.accounts[0].pubkey,
+            "{}",
+            vector.id
+        );
+        assert_eq!(
+            trade.accounts[counter].pubkey.to_string(),
+            USDC,
+            "{}",
+            vector.id
+        );
+        assert_eq!(
+            trade.accounts[protected_program].pubkey.to_string(),
+            TOKEN_2022,
+            "{}",
+            vector.id
+        );
+    }
+    assert!(accepted >= 10, "only {accepted} accepted Jupiter vectors");
+}
+
+/// INV-SEC-51: the suffix commitment is not semantic validation. Every
+/// malicious-builder vector carries a commitment that matches its own
+/// transaction, and every one is still rejected, never with a commitment error.
+#[test]
+fn inv_sec_51_matching_commitments_do_not_make_malicious_suffixes_safe() {
+    let vectors = parse();
+    let malicious: Vec<&Vector> = vectors
+        .iter()
+        .filter(|v| v.group == "jupiter-malicious")
+        .collect();
+    assert!(malicious.len() >= 60, "{}", malicious.len());
+    for vector in malicious {
+        let invocation = &vector.invocation;
+        if invocation.current_index == 0 {
+            let suffix = &invocation.instructions[1..];
+            assert_eq!(
+                equity_guard::jupiter::jupiter_suffix_commitment(suffix)
+                    .unwrap()
+                    .as_slice(),
+                &invocation.guard_data[67..99],
+                "{}: the vector must carry a matching commitment",
+                vector.id
+            );
+        }
+        let verdict = outcome(&evaluate(invocation));
+        assert_ne!(verdict, "ok", "{}", vector.id);
+        assert_ne!(verdict, "DownstreamCommitmentMismatch", "{}", vector.id);
+        assert_eq!(Some(verdict), vector.expected, "{}", vector.id);
+    }
+}
+
+/// INV-SEC-52: after the commitment is fixed, any change to a grammatical
+/// transaction is caught by identity binding.
+#[test]
+fn inv_sec_52_post_commitment_changes_are_caught_by_the_commitment() {
+    let vectors = parse();
+    let mutated: Vec<&Vector> = vectors
+        .iter()
+        .filter(|v| v.group == "jupiter-post-commitment")
+        .collect();
+    assert!(mutated.len() >= 20, "{}", mutated.len());
+    for vector in mutated {
+        assert_eq!(
+            outcome(&evaluate(&vector.invocation)),
+            "DownstreamCommitmentMismatch",
+            "{}",
+            vector.id
+        );
+    }
+}
+
+/// INV-SEC-53: kind 1 keeps its semantics: it never accepts a Jupiter trade.
+#[test]
+fn inv_sec_53_kind_one_never_accepts_jupiter() {
+    assert_invariant(
+        "INV-SEC-53",
+        "jupiter-relabelled-kind-1",
+        "UnsupportedDownstreamProgram",
+    );
+    assert_invariant(
+        "INV-SEC-53",
+        "jupiter-kind-1-over-route-v2",
+        "UnsupportedDownstreamProgram",
+    );
 }
 
 /// INV-SEC-25: invoked via CPI, the guard cannot borrow another top-level

@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { EQUITY_GUARD_ERROR_CODES, type EquityGuardErrorName } from "../src/index.ts";
+import { EQUITY_GUARD_ERROR_CODES, jupiterSuffixCommitment, type EquityGuardErrorName } from "../src/index.ts";
 import { evaluateGuard, type MirrorInvocation } from "./guard-mirror.ts";
 
 const CORPUS_PATH = new URL("../../../programs/equity_guard/tests/fixtures/guard_conformance_v1.json", import.meta.url);
@@ -106,11 +106,8 @@ test("the corpus reaches every guard outcome on the client side too", async () =
   for (const vector of corpus.vectors) produced.add((await evaluateGuard(invocationOf(vector))) ?? "ok");
   // The clock is a syscall the client never performs, so it cannot fail client-side.
   const unreachableOnChainOnly = new Set(["ClockUnavailable"]);
-  // The Jupiter adapter codes are exercised by jupiter.test.ts until the
-  // shared corpus carries Jupiter transactions.
-  const notYetInCorpus = new Set(Object.keys(EQUITY_GUARD_ERROR_CODES).filter((name) => (EQUITY_GUARD_ERROR_CODES as Record<string, number>)[name]! >= 26 && name !== "UnsupportedTransactionGrammar"));
   for (const name of Object.keys(EQUITY_GUARD_ERROR_CODES) as EquityGuardErrorName[]) {
-    if (unreachableOnChainOnly.has(name) || notYetInCorpus.has(name)) continue;
+    if (unreachableOnChainOnly.has(name)) continue;
     assert.ok(produced.has(name), `no vector makes the client produce ${name}`);
   }
   assert.ok(produced.has("ok"));
@@ -118,5 +115,39 @@ test("the corpus reaches every guard outcome on the client side too", async () =
 
 test("every vector group is represented", () => {
   const groups = new Set(corpus.vectors.map((v) => v.group));
-  assert.deepEqual([...groups].sort(), ["abi", "accounts", "clock", "downstream", "mint", "random", "state", "valid"]);
+  assert.deepEqual([...groups].sort(), [
+    "abi",
+    "accounts",
+    "clock",
+    "downstream",
+    "jupiter-grammar",
+    "jupiter-kind-one",
+    "jupiter-malicious",
+    "jupiter-post-commitment",
+    "jupiter-semantic",
+    "jupiter-valid",
+    "mint",
+    "random",
+    "state",
+    "valid",
+  ]);
+});
+
+test("Jupiter malicious-builder vectors carry matching commitments and are still rejected by semantics", async () => {
+  const malicious = corpus.vectors.filter((v) => v.group === "jupiter-malicious");
+  assert.ok(malicious.length >= 60);
+  for (const vector of malicious) {
+    const invocation = invocationOf(vector);
+    if (invocation.currentInstructionIndex === 0) {
+      const suffix = invocation.instructions.slice(1).map((i) => ({
+        programAddress: i.programId as never,
+        accounts: i.accounts.map((a) => ({ address: a.pubkey as never, isSigner: a.isSigner, isWritable: a.isWritable })),
+        data: i.data,
+      }));
+      assert.equal(Buffer.from(jupiterSuffixCommitment(suffix)).toString("hex"), vector.invocation.dataHex.slice(134), `${vector.id}: commitment must match`);
+    }
+    const verdict = await evaluateGuard(invocation);
+    assert.notEqual(verdict, null, vector.id);
+    assert.notEqual(verdict, "DownstreamCommitmentMismatch", vector.id);
+  }
 });
