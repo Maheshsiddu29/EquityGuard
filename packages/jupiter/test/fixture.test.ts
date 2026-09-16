@@ -2,8 +2,9 @@
  * Offline tests over a REAL recorded Jupiter Swap V2 /build response
  * (USDC -> KOx, mainnet, 2026-09-14) and the real KOx mainnet snapshot it was
  * composed with. HISTORICAL sizing evidence: the recording used the ABI v1
- * guard layout, reproduced here by a test-only encoder. ABI v2 does not guard
- * Jupiter swaps, and the live composition script was retired.
+ * guard layout and ordering, reproduced here by test-only code. The current
+ * composer (adapter kind 2) is exercised on the same response in
+ * `compose.test.ts`.
  */
 
 import assert from "node:assert/strict";
@@ -13,18 +14,14 @@ import { test } from "node:test";
 import { address, type Address } from "@solana/kit";
 import { ActivationPhase, EQUITY_GUARD_DEVNET_PROGRAM_ID, type AssertSafeExecutionRequest } from "@equityguard/guard-client";
 
+import { MAX_TRANSACTION_BYTES, compileAndMeasure, parseBuildResponse, type BuildResponse } from "../src/index.ts";
 import {
-  GuardBindingError,
-  MAX_TRANSACTION_BYTES,
-  compileAndMeasure,
-  composeWithGuard,
-  orderInstructions,
-  parseBuildResponse,
-  type BuildResponse,
-  type CompositionResult,
-  type GuardComponent,
-} from "../src/index.ts";
-import { encodeHistoricalAbiV1, historicalAbiV1GuardInstruction } from "./historical-v1-guard.ts";
+  encodeHistoricalAbiV1,
+  historicalAbiV1GuardInstruction,
+  historicalComposeWithGuard as composeWithGuard,
+  historicalOrderInstructions as orderInstructions,
+  type HistoricalGuard as GuardComponent,
+} from "./historical-v1-guard.ts";
 
 interface Fixture {
   recordedAt: string;
@@ -37,7 +34,7 @@ interface Fixture {
     phase: "pending" | "activated";
   };
   guardInstructionDataHex: string;
-  expectedComposition: CompositionResult;
+  expectedComposition: ReturnType<typeof composeWithGuard>;
   response: unknown;
 }
 
@@ -92,7 +89,7 @@ test("recorded historical ABI v1 guard bytes are reproduced from the recorded ma
 
 test("guard bound to anything but Jupiter's outputMint is rejected", () => {
   for (const wrong of [USDC_MINT, UNHX_MINT]) {
-    assert.throws(() => composeWithGuard(build, taker, guardFor(wrong)), GuardBindingError);
+    assert.throws(() => composeWithGuard(build, taker, guardFor(wrong)));
   }
   assert.doesNotThrow(() => composeWithGuard(build, taker, guardFor(KOX_MINT)));
 });

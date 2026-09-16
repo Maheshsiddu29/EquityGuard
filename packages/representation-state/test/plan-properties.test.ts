@@ -61,7 +61,7 @@ test("an issued plan verifies, and is a faithful record of the decision", () => 
   assert.equal(issued.executionEligibility, "EXECUTABLE");
   assert.equal(issued.planDigest, planDigestOf(stripDigest(issued)));
   assert.equal(issued.expiresAtSlot, SLOT + FRESHNESS.validForSlots);
-  assert.equal(issued.downstream.commitmentHex, TEST_DOWNSTREAM.commitmentHex);
+  assert.deepEqual(issued.downstream, TEST_DOWNSTREAM);
 });
 
 // -------------------------------------------------------- provenance

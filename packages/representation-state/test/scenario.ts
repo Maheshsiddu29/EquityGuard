@@ -12,6 +12,8 @@
 
 import assert from "node:assert/strict";
 
+import { minimumOutFromQuote } from "@equityguard/guard-client";
+
 import {
   compareQuotes,
   decideExecution,
@@ -72,7 +74,12 @@ export const whirlpool = (mint: string) =>
     { venue: "Whirlpool", poolId: "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy", inputMint: USDC, outputMint: mint, percent: 100 },
   ]);
 
-export function quote(representation: ResolvedRepresentationState, outputRaw: bigint): NormalizedQuote {
+/**
+ * `slippageBps` makes the minimum output Jupiter's own
+ * (`minimumOutFromQuote`), as a Jupiter-executed plan needs; without it the
+ * minimum is simply 1,000 raw below the output.
+ */
+export function quote(representation: ResolvedRepresentationState, outputRaw: bigint, slippageBps?: number): NormalizedQuote {
   const state = economicStateOf(representation.chainObservation);
   assert.ok(state, `${representation.symbol} has no decoded chain state`);
   return {
@@ -82,7 +89,7 @@ export function quote(representation: ResolvedRepresentationState, outputRaw: bi
     mint: representation.mint,
     inputRaw: INPUT_RAW,
     outputRaw,
-    minOutputRaw: outputRaw - 1_000n,
+    minOutputRaw: slippageBps === undefined ? outputRaw - 1_000n : minimumOutFromQuote(outputRaw, slippageBps),
     route: whirlpool(representation.mint),
     quotedAt: "2026-09-15T04:22:16.045Z",
     contextSlot: 447157559n,
@@ -105,11 +112,13 @@ export interface Reroute {
 }
 
 /** KOx in transition, KOon SAFE and quoted: with consent the reroute is EXECUTABLE. */
-export function reroute(options: { consent?: boolean; alternativeRouteQuote?: NormalizedQuote; maxAdditionalCostBps?: bigint; validForSlots?: bigint } = {}): Reroute {
+export function reroute(
+  options: { consent?: boolean; alternativeRouteQuote?: NormalizedQuote; maxAdditionalCostBps?: bigint; validForSlots?: bigint; slippageBps?: number } = {},
+): Reroute {
   const preferred = kox(TRANSITION_TIME);
   const alternative = koon(TRANSITION_TIME);
-  const preferredQuote = quote(preferred, PREFERRED_OUT);
-  const alternativeQuote = quote(alternative, KOON_OUT);
+  const preferredQuote = quote(preferred, PREFERRED_OUT, options.slippageBps);
+  const alternativeQuote = quote(alternative, KOON_OUT, options.slippageBps);
   const comparison = compareQuotes(preferredQuote, alternativeQuote);
   const base = {
     preferred,

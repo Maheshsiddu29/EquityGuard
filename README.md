@@ -51,9 +51,18 @@ EquityGuard has been composed into a real Jupiter Swap V2 mainnet transaction
 build for a real xStock. The composition was build-only: a USDC → KOx `/build`
 route, with a guard instruction encoded from KOx's live mainnet ScaledUiAmount
 state, compiled into one v0 transaction using Jupiter's lookup table. The
-guarded transaction is 577 bytes against the 1232-byte limit, 70 bytes more
-than the unguarded one. Nothing was signed or submitted, and EquityGuard is not
-deployed on mainnet, so the guard has not executed alongside a Jupiter swap.
+original (ABI v1) guarded transaction was 577 bytes; with the local ABI v2
+Jupiter adapter candidate (below) the recorded KOx and UNHx builds compile to
+675 bytes against the 1232-byte limit. Nothing was signed or submitted, and
+EquityGuard is not deployed on mainnet, so the guard has not executed alongside
+a Jupiter swap.
+
+**Local candidate, not deployed:** ABI v2 adapter kinds 2 and 3 guard a whole
+Jupiter `route_v2` transaction (`guard, price, limit, [destination ATA],
+route_v2`). Adapter kinds 2 and 3 support only USDC ↔ protected-equity
+`route_v2` trades. The program checks the transaction grammar and the trade's
+semantics itself; the suffix commitment is not treated as semantic
+validation. The devnet program still runs the deployed kind-1-only binary.
 
 ### Claim boundary
 
@@ -73,6 +82,9 @@ Not proven:
 
 - EquityGuard execution on mainnet (the program is deployed on devnet only);
 - guard + Jupiter atomicity on mainnet;
+- the Jupiter adapter (kinds 2 and 3) on any cluster: it is verified locally
+  in LiteSVM, where a stand-in occupies the Jupiter address and no trade
+  executes;
 - protection of live xStocks trades, or any real purchase;
 - automatic cross-issuer rerouting (the decision engine decides; nothing
   executes the alternative), a UI, or calibrated issuer transition policies.
@@ -100,11 +112,11 @@ Implemented without any execution path:
 
 | Component | Status |
 | --- | --- |
-| `programs/equity_guard` — `assert_safe_execution` | ABI v1 deployed on devnet; ABI v2 candidate (mint identity + committed Token-2022 `TransferChecked` binding) tested locally in LiteSVM, not yet deployed |
+| `programs/equity_guard` — `assert_safe_execution` | ABI v2 deployed on devnet with adapter kind 1 (committed Token-2022 `TransferChecked`); adapter kinds 2/3 (USDC ↔ protected-equity Jupiter `route_v2`) are a local candidate tested in LiteSVM, not deployed |
 | Token-2022 ScaledUiAmount decoding | implemented in Rust and TypeScript; cross-checked on golden vectors and real mainnet mint bytes |
-| `packages/guard-client` | TypeScript builder for ABI v2 guarded `TransferChecked` (chain-clock snapshot, downstream commitment) |
+| `packages/guard-client` | TypeScript builders for ABI v2 guards: kind 1 `TransferChecked`, kinds 2/3 Jupiter `route_v2` (grammar mirror, suffix commitment) |
 | `scripts/devnet/` | devnet test mints EQ-A/EQ-B, scenario runner, evidence |
-| `packages/jupiter` | Jupiter Swap V2 `/build` client and v0 composition sizing over a recorded response (build-only; ABI v2 does not guard swaps) |
+| `packages/jupiter` | Jupiter Swap V2 `/build` client and guard-first v0 composition for adapter kinds 2/3 (build-only; unsupported builds are refused) |
 | `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
 | `packages/representation-state` | registry, issuer state adapters, capture decoding, normalization, decision engine (no execution) |
 | `scripts/observation/` | read-only decoding and event detection over capture copies |
@@ -135,10 +147,9 @@ cargo test --workspace --locked        # unit, golden, deployment-ID, LiteSVM (n
 npm ci && npm run typecheck && npm test   # offline; includes the recorded Jupiter fixture
 ```
 
-The ABI v2 guard protects only an immediately following Token-2022
-`TransferChecked` of the protected mint, so the former live Jupiter swap
-composition script was retired; the recorded composition fixture remains as
-historical sizing evidence. CI is credential-free and never calls Jupiter.
+The Jupiter tests compose recorded mainnet `/build` responses offline; the
+2026-09-14 ABI v1 composition remains as historical sizing evidence. CI is
+credential-free and never calls Jupiter.
 
 Capture analysis reads only a copy of a capture file. The tools require
 `--input`, open it read-only, refuse files modified in the last 90 seconds or

@@ -8,7 +8,10 @@
  * classified the state), the decision, the consent and disclosure for a
  * reroute, an explicit slot-based freshness window, and the ABI v2
  * downstream binding: the adapter kind and the SHA-256 commitment to the exact
- * action instruction the guard will protect.
+ * action the guard will protect. For a Jupiter adapter (kinds 2/3) the binding
+ * also pins every field of the trade the guard's grammar leaves to the client
+ * — amounts, slippage, minimum output, accounts — and must describe exactly
+ * the planned quote.
  *
  * Authenticity is runtime provenance, not content: only `createExecutionPlan`
  * registers a plan (module-private WeakSet), so hand-built, copied or
@@ -22,6 +25,15 @@
  * authentication: anyone can compute it.
  */
 
+import { isAddress } from "@solana/kit";
+import {
+  JUPITER_V6_PROGRAM_ADDRESS,
+  ROUTE_V2_DISCRIMINATOR_HEX,
+  USDC_MINT_ADDRESS,
+  minimumOutFromQuote,
+  type JupiterTradeBinding,
+} from "@equityguard/guard-client";
+
 import type { QuoteComparison } from "./compare.ts";
 import { ConsentError, consumeConsent } from "./consent.ts";
 import { Decision, type DecisionReasonCode, type RepresentationSummary, type RerouteDisclosure } from "./decision.ts";
@@ -32,16 +44,26 @@ import type { TransitionPolicy } from "./types.ts";
 import { canonicalKey, quoteIdentityOf, quoteKey, quoteMismatches, type QuoteIdentity, type QuoteMismatch, type RouteIdentity } from "./quote-identity.ts";
 import { sha256Hex } from "./sha256.ts";
 
-/**
- * The exact downstream action the plan executes, committed as ABI v2 does
- * on-chain. The executor must rebuild the action and prove its commitment
- * equals this before anything is signed.
- */
-export interface DownstreamBinding {
+/** Adapter kind 1: the commitment to the single protected instruction. */
+export interface TransferCheckedDownstreamBinding {
   readonly adapterKind: "TOKEN_2022_TRANSFER_CHECKED";
   /** Lowercase hex SHA-256 downstream commitment (64 digits). */
   readonly commitmentHex: string;
 }
+
+/**
+ * Adapter kinds 2/3: a USDC ↔ protected-equity Jupiter `route_v2`, built by
+ * `jupiterTradeBindingOf`. The on-chain guard cannot know the intended
+ * amounts, slippage or route; this binding is where they are pinned.
+ */
+export type JupiterDownstreamBinding = JupiterTradeBinding;
+
+/**
+ * The exact downstream action the plan executes, committed as ABI v2 does
+ * on-chain. The executor must rebuild the action and prove it equals this
+ * before anything is signed.
+ */
+export type DownstreamBinding = TransferCheckedDownstreamBinding | JupiterDownstreamBinding;
 
 /** How long a plan stays executable, in slots after the slot it was created at. Explicit per executor. */
 export interface PlanFreshnessPolicy {
@@ -94,6 +116,7 @@ export type ExecutionPlanErrorCode =
   | "INVALID_FRESHNESS"
   | "POLICY_MISMATCH"
   | "INVALID_DOWNSTREAM"
+  | "DOWNSTREAM_NOT_FOR_QUOTE"
   | "DOWNSTREAM_COMMITMENT_MISMATCH";
 
 export class ExecutionPlanError extends Error {
@@ -119,8 +142,85 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const isDownstreamBinding = (value: DownstreamBinding | undefined): value is DownstreamBinding =>
-  typeof value === "object" && value !== null && value.adapterKind === "TOKEN_2022_TRANSFER_CHECKED" && typeof value.commitmentHex === "string" && /^[0-9a-f]{64}$/.test(value.commitmentHex);
+const isCommitmentHex = (v: unknown) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+const isAddressString = (v: unknown): v is string => typeof v === "string" && isAddress(v);
+const isPositive = (v: unknown): v is bigint => typeof v === "bigint" && v > 0n && v < 2n ** 64n;
+
+const JUPITER_KINDS = {
+  JUPITER_ROUTE_V2_BUY_USDC: "DESTINATION",
+  JUPITER_ROUTE_V2_SELL_USDC: "SOURCE",
+} as const;
+
+/** Why `value` is not a well-formed binding; empty when it is. */
+function downstreamProblems(value: unknown): string[] {
+  if (typeof value !== "object" || value === null) return ["a downstream binding is required"];
+  const b = value as Record<string, unknown>;
+  if (b.adapterKind === "TOKEN_2022_TRANSFER_CHECKED") {
+    return isCommitmentHex(b.commitmentHex) ? [] : ["commitmentHex must be 64 lowercase hex digits"];
+  }
+  const role = JUPITER_KINDS[b.adapterKind as keyof typeof JUPITER_KINDS];
+  if (!role) return [`unknown adapter kind ${String(b.adapterKind)}`];
+  const problems: string[] = [];
+  if (b.jupiterProgramId !== JUPITER_V6_PROGRAM_ADDRESS) problems.push("jupiterProgramId is not the pinned Jupiter program");
+  if (b.routeDiscriminatorHex !== ROUTE_V2_DISCRIMINATOR_HEX) problems.push("routeDiscriminatorHex is not route_v2");
+  if (b.protectedMintRole !== role) problems.push(`${String(b.adapterKind)} protects the ${role} mint`);
+  for (const k of ["protectedMint", "counterMint", "authority", "sourceMint", "destinationMint", "sourceTokenAccount", "destinationTokenAccount"]) {
+    if (!isAddressString(b[k])) problems.push(`${k} must be an address`);
+  }
+  if (b.counterMint !== USDC_MINT_ADDRESS) problems.push("the counter mint must be canonical USDC");
+  const [protectedSide, counterSide] = role === "DESTINATION" ? [b.destinationMint, b.sourceMint] : [b.sourceMint, b.destinationMint];
+  if (protectedSide !== b.protectedMint || counterSide !== b.counterMint) problems.push("source and destination mints do not match the role");
+  if (!isPositive(b.inAmountRaw) || !isPositive(b.quotedOutRaw)) problems.push("inAmountRaw and quotedOutRaw must be positive u64 bigints");
+  const slippage = b.slippageBps;
+  if (typeof slippage !== "number" || !Number.isInteger(slippage) || slippage < 0 || slippage > 10_000) problems.push("slippageBps must be an integer in [0, 10000]");
+  else if (isPositive(b.quotedOutRaw) && b.minOutRaw !== minimumOutFromQuote(b.quotedOutRaw, slippage)) problems.push("minOutRaw is not the minimum Jupiter derives from quotedOutRaw and slippageBps");
+  if (!isCommitmentHex(b.suffixCommitmentHex)) problems.push("suffixCommitmentHex must be 64 lowercase hex digits");
+  if (b.suffixInstructionCount !== 3 && b.suffixInstructionCount !== 4) problems.push("suffixInstructionCount must be 3 or 4");
+  return problems;
+}
+
+const isDownstreamBinding = (value: unknown): value is DownstreamBinding => downstreamProblems(value).length === 0;
+
+/** A detached copy holding exactly the binding's own fields. */
+function canonicalDownstream(value: DownstreamBinding): DownstreamBinding {
+  if (value.adapterKind === "TOKEN_2022_TRANSFER_CHECKED") return { adapterKind: value.adapterKind, commitmentHex: value.commitmentHex };
+  return {
+    adapterKind: value.adapterKind,
+    jupiterProgramId: value.jupiterProgramId,
+    routeDiscriminatorHex: value.routeDiscriminatorHex,
+    protectedMintRole: value.protectedMintRole,
+    protectedMint: value.protectedMint,
+    counterMint: value.counterMint,
+    authority: value.authority,
+    sourceMint: value.sourceMint,
+    destinationMint: value.destinationMint,
+    sourceTokenAccount: value.sourceTokenAccount,
+    destinationTokenAccount: value.destinationTokenAccount,
+    inAmountRaw: value.inAmountRaw,
+    quotedOutRaw: value.quotedOutRaw,
+    slippageBps: value.slippageBps,
+    minOutRaw: value.minOutRaw,
+    suffixCommitmentHex: value.suffixCommitmentHex,
+    suffixInstructionCount: value.suffixInstructionCount,
+  };
+}
+
+/**
+ * How a Jupiter binding fails to be the trade of `quote`. Plans model
+ * acquisitions (the quote's `mint` is the representation acquired with
+ * `inputMint`), so only a BUY of the selected representation can match.
+ */
+function jupiterQuoteMismatches(binding: DownstreamBinding, quote: QuoteIdentity, representationMint: string): string[] {
+  if (binding.adapterKind === "TOKEN_2022_TRANSFER_CHECKED") return [];
+  const out: string[] = [];
+  if (binding.adapterKind !== "JUPITER_ROUTE_V2_BUY_USDC") out.push("plans acquire the selected representation; only a BUY can execute one");
+  if (binding.protectedMint !== representationMint || binding.destinationMint !== quote.mint) out.push("the trade does not acquire the planned representation");
+  if (binding.sourceMint !== quote.inputMint) out.push("the trade does not spend the planned input mint");
+  if (binding.inAmountRaw !== quote.inputRaw) out.push("inAmountRaw differs from the planned input");
+  if (binding.quotedOutRaw !== quote.outputRaw) out.push("quotedOutRaw differs from the planned output");
+  if (binding.minOutRaw !== quote.minOutputRaw) out.push("minOutRaw differs from the planned minimum output");
+  return out;
+}
 
 function contentOf(plan: ExecutionPlan): ExecutionPlanContent {
   const { planDigest: _digest, ...content } = plan;
@@ -148,8 +248,9 @@ export function createExecutionPlan(
   if (typeof options.freshness?.validForSlots !== "bigint" || options.freshness.validForSlots <= 0n || typeof options.currentSlot !== "bigint") {
     throw new ExecutionPlanError("INVALID_FRESHNESS", "an explicit positive bigint validForSlots and currentSlot are required");
   }
-  if (!isDownstreamBinding(options.downstream)) {
-    throw new ExecutionPlanError("INVALID_DOWNSTREAM", "a TOKEN_2022_TRANSFER_CHECKED downstream binding with a 64-digit lowercase hex commitment is required");
+  const downstreamIssues = downstreamProblems(options.downstream);
+  if (downstreamIssues.length > 0) {
+    throw new ExecutionPlanError("INVALID_DOWNSTREAM", `a well-formed downstream binding is required: ${downstreamIssues.join("; ")}`);
   }
   try {
     assertExecutable(decision);
@@ -163,6 +264,10 @@ export function createExecutionPlan(
     throw new ExecutionPlanError("DISCLOSURE_NOT_FOR_COMPARISON", "a consented reroute needs the disclosure of the exact comparison");
   }
   const quote = quoteIdentityOf(decision.executableQuote);
+  const notForQuote = jupiterQuoteMismatches(options.downstream, quote, decision.selectedRepresentation.mint);
+  if (notForQuote.length > 0) {
+    throw new ExecutionPlanError("DOWNSTREAM_NOT_FOR_QUOTE", `the Jupiter trade is not the planned quote: ${notForQuote.join("; ")}`);
+  }
   if (!decision.transitionPolicy) {
     throw new ExecutionPlanError("POLICY_MISMATCH", "an executable decision must carry the transition policy its state was classified under");
   }
@@ -200,7 +305,7 @@ export function createExecutionPlan(
     consentId: rerouted ? (decision.consent?.consentId ?? null) : null,
     createdAtSlot: options.currentSlot,
     expiresAtSlot: options.currentSlot + options.freshness.validForSlots,
-    downstream: { adapterKind: options.downstream.adapterKind, commitmentHex: options.downstream.commitmentHex },
+    downstream: canonicalDownstream(options.downstream),
   };
   // Structured clone detaches the plan from caller-owned objects before freezing.
   const detached = structuredClone(content);
@@ -235,7 +340,8 @@ export function verifyExecutionPlan(
     plan.minOutputRaw !== plan.quote.minOutputRaw ||
     canonicalKey(plan.route) !== canonicalKey(plan.quote.route) ||
     plan.selectedRepresentation.mint !== plan.quote.mint ||
-    !isDownstreamBinding(plan.downstream)
+    !isDownstreamBinding(plan.downstream) ||
+    jupiterQuoteMismatches(plan.downstream, plan.quote, plan.selectedRepresentation.mint).length > 0
   ) {
     throw new ExecutionPlanError("PLAN_TAMPERED", "plan fields are inconsistent with the planned quote");
   }
@@ -270,13 +376,13 @@ export function consumeExecutionPlan(
 }
 
 /**
- * Throws DOWNSTREAM_COMMITMENT_MISMATCH unless `actualCommitmentHex` — the
- * commitment of the action instruction about to be submitted — is exactly the
- * planned one. Call before signing.
+ * Throws DOWNSTREAM_COMMITMENT_MISMATCH unless `actual` — the binding of the
+ * action about to be submitted, rebuilt from the final transaction — is
+ * exactly the planned one, field for field. Call before signing.
  */
 export function assertPlanDownstream(plan: ExecutionPlan, actual: DownstreamBinding): void {
-  if (!isDownstreamBinding(actual) || actual.adapterKind !== plan.downstream.adapterKind || actual.commitmentHex !== plan.downstream.commitmentHex) {
-    throw new ExecutionPlanError("DOWNSTREAM_COMMITMENT_MISMATCH", "the action instruction being submitted is not the planned action");
+  if (!isDownstreamBinding(actual) || canonicalKey(canonicalDownstream(actual)) !== canonicalKey(plan.downstream)) {
+    throw new ExecutionPlanError("DOWNSTREAM_COMMITMENT_MISMATCH", "the action being submitted is not the planned action");
   }
 }
 

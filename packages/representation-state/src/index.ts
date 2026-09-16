@@ -95,6 +95,8 @@ export {
   type ExecutionPlanContent,
   type DownstreamBinding,
   type ExecutionPlanErrorCode,
+  type JupiterDownstreamBinding,
+  type TransferCheckedDownstreamBinding,
   type PlanFreshnessPolicy,
 } from "./execution-plan.ts";
 export { compareQuotes, type EconomicEffect, type NormalizedQuote, type QuoteComparison } from "./compare.ts";

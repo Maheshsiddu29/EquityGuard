@@ -1,0 +1,146 @@
+{
+  "description": "Address lookup table entries used by the M9D-A mainnet builds recorded read-only on 2026-09-16 (the same run as scripts/research/fixtures/route-v2-builds-2026-09-16.json). Sparse: only the entries those transactions resolved, keyed by table index, as the research tooling recorded them after compiling and re-resolving each v0 message. Every account a transaction could look up is present, so compiling against these maps reproduces the real compression. researchSizes are the M9D-A measurements, whose guarded layout used the same guard instruction size and accounts but a different order.",
+  "recordedAt": "2026-09-16T07:13:56.026Z",
+  "builds": [
+    {
+      "symbol": "KOx",
+      "direction": "BUY",
+      "lookupTables": {
+        "BQmY8aEryjTKtS49senN9djnEJrTaxCZrAwPV7ufnnuc": {
+          "9": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "46": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "48": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "105": "25EovkJdEqT4fxS6qAAj8vyEyb7Vjoq84DmUHEJeoCDV",
+          "108": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "109": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+          "134": "7ATYAtZbcStZ5XKgy1uFJce73Q4nrXXFXvetdQMXndnj",
+          "135": "AzP4rXLMSM5WLECESGJ7vYXFCjFz549wgVdfANEr1cbR",
+          "136": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+          "137": "AzgB3qQhPyQGbXP9UYXhS3YUzgty8rkxqZexXzz1X2QF",
+          "138": "AnqDubB4qtDmnC9FPMLvVizqULkEtAt2155x6G2JD7gE",
+          "139": "D1QvHAUo9PxyCbyztanhwM3yfykxEB3f4pvSC7gKKHKR",
+          "141": "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy"
+        }
+      },
+      "researchSizes": {
+        "baselineBytes": 499,
+        "guardedBytes": 667
+      }
+    },
+    {
+      "symbol": "KOx",
+      "direction": "SELL",
+      "lookupTables": {
+        "BQmY8aEryjTKtS49senN9djnEJrTaxCZrAwPV7ufnnuc": {
+          "9": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "46": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "48": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "105": "25EovkJdEqT4fxS6qAAj8vyEyb7Vjoq84DmUHEJeoCDV",
+          "108": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "109": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+          "132": "6S6QFpCGwUthTfAShAoLmcFXkamWUU9eRkuzytQ4sTTu",
+          "133": "DH7w2CsE2KiBmCL4XZnVzQVjQvTF1s3TcjsFZKMB8Vm5",
+          "134": "7ATYAtZbcStZ5XKgy1uFJce73Q4nrXXFXvetdQMXndnj",
+          "135": "AzP4rXLMSM5WLECESGJ7vYXFCjFz549wgVdfANEr1cbR",
+          "136": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+          "138": "AnqDubB4qtDmnC9FPMLvVizqULkEtAt2155x6G2JD7gE",
+          "141": "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy"
+        }
+      },
+      "researchSizes": {
+        "baselineBytes": 499,
+        "guardedBytes": 667
+      }
+    },
+    {
+      "symbol": "UNHx",
+      "direction": "BUY",
+      "lookupTables": {
+        "CyMmGJ3ZL2Af2PVE7EWVYp68VW1i32khzRGd51inRTKt": {
+          "1": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "15": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "23": "21gzeJGipmKukwJUu2qCajG8X4dkC556YdTFPnuzw7kZ",
+          "24": "V5MgwWxspHTq2LixCnDAcptUjMV7oqnYDs2jXquncyb",
+          "25": "E46nVgBvWcp8ponjLwwyD5Gf96PcJZufx54gVYs1WEMk",
+          "27": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+          "28": "3VqJb9fpPqhCvbobno9dK6L7PeS5HzAK4tRiA41B9y5s",
+          "30": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "32": "4q7RQwsQZAoBq3YVs6Fe5jFwvkpbqbvCkW7QVu1dEmZn",
+          "33": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "34": "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe",
+          "35": "AmbH757mBqbuRLR4FXtoxpN23rcN9jqBhqdeKxZtyejP",
+          "36": "2j1jni41k3D9Wp5LQKimpw25c1E3iopfAGnNU8Zir5qW"
+        }
+      },
+      "researchSizes": {
+        "baselineBytes": 499,
+        "guardedBytes": 667
+      }
+    },
+    {
+      "symbol": "UNHx",
+      "direction": "SELL",
+      "lookupTables": {
+        "CyMmGJ3ZL2Af2PVE7EWVYp68VW1i32khzRGd51inRTKt": {
+          "1": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "15": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "22": "CN5muc597FTQS1h1aAN2NJrwNqUxgzY358YvtaMMu2xU",
+          "23": "21gzeJGipmKukwJUu2qCajG8X4dkC556YdTFPnuzw7kZ",
+          "24": "V5MgwWxspHTq2LixCnDAcptUjMV7oqnYDs2jXquncyb",
+          "25": "E46nVgBvWcp8ponjLwwyD5Gf96PcJZufx54gVYs1WEMk",
+          "27": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+          "29": "HjEQja9hPoQESLT5V1e5dhmMGiEM2VWpSungWVr2hSGM",
+          "30": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "32": "4q7RQwsQZAoBq3YVs6Fe5jFwvkpbqbvCkW7QVu1dEmZn",
+          "33": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "34": "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe",
+          "35": "AmbH757mBqbuRLR4FXtoxpN23rcN9jqBhqdeKxZtyejP"
+        }
+      },
+      "researchSizes": {
+        "baselineBytes": 499,
+        "guardedBytes": 667
+      }
+    },
+    {
+      "symbol": "CRMx",
+      "direction": "BUY",
+      "lookupTables": {
+        "54SzVQeT2secwwQgjWk3tDbAQ9Mn5AmwFiHsgKWEkaa9": {
+          "28": "So11111111111111111111111111111111111111112",
+          "193": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "204": "Sysvar1nstructions1111111111111111111111111",
+          "205": "3rmHSu74h1ZcmAisVcWerTCiRDQbUrBKmcwptYGjHfet",
+          "207": "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC",
+          "208": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"
+        },
+        "Hu5cMUbiMKS39q8Xjhxx2Rqx7fThUBHAH3rKVnBMaaby": {
+          "2": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "109": "784tzUM1PzWBC7cGfsPpFDGrPypgCisV85LQAmiz95AN",
+          "111": "44X92BsHwLxrLm7mxPws7axfqEUViscA3qXex3g988qQ",
+          "112": "F3ds62W3NNEBQrwi2ZFy2vX3xu5fxL6f7VMtRdmKjoCv",
+          "115": "FLUX6xBayGxLX9UcimVRxXFMHH6q43mAbRvDzSpCsvfK"
+        }
+      },
+      "researchSizes": {
+        "baselineBytes": 764,
+        "guardedBytes": 900
+      }
+    },
+    {
+      "symbol": "CRMx",
+      "direction": "SELL",
+      "lookupTables": {
+        "Gt6F1uF98sF8NHUNwtTujuQneFL8FLBoDj3FWXXZhDRt": {
+          "3": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "23": "FLUXubRmkEi2q6K3Y9kBPg9248ggaZVsoSFhtJHSrm1X",
+          "32": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      },
+      "researchSizes": {
+        "baselineBytes": 742,
+        "guardedBytes": 910
+      }
+    }
+  ]
+}

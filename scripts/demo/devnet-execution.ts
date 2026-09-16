@@ -62,7 +62,7 @@ import {
   type EvidenceReference,
   type ExecutionDecision,
   type ConsentRecord,
-  type DownstreamBinding,
+  type TransferCheckedDownstreamBinding,
   type ExecutionPlan,
   type PlanFreshnessPolicy,
   type NormalizedQuote,
@@ -306,7 +306,7 @@ export function demoSetupMismatches(preferred: ProtectedState, alternative: Prot
 
 /** A built guarded delivery and its downstream binding (no RPC involved in building it). */
 export interface GuardedDelivery extends GuardedTransferChecked {
-  readonly downstream: DownstreamBinding;
+  readonly downstream: TransferCheckedDownstreamBinding;
 }
 
 /**
