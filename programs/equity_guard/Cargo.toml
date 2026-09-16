@@ -30,6 +30,9 @@ spl-token-2022-interface.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+# Integration tests reach these through the test crate, not through the lib.
+solana-account-info.workspace = true
+solana-instructions-sysvar.workspace = true
 # Host-side program-address derivation for associated token accounts in tests.
 solana-address = { workspace = true, features = ["curve25519"] }
 litesvm = "0.16.0"
