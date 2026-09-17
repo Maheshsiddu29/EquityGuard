@@ -100,7 +100,8 @@ Not proven:
   where a stand-in occupies the Jupiter address and no trade executes;
 - protection of live xStocks trades, or any real purchase;
 - automatic cross-issuer rerouting (the decision engine decides; nothing
-  executes the alternative), a UI, or calibrated issuer transition policies.
+  executes the alternative), live protection in a UI (the reference app
+  renders recorded evidence only), or calibrated issuer transition policies.
 
 ### Off-chain representation state
 
@@ -133,7 +134,37 @@ Implemented without any execution path:
 | `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
 | `packages/representation-state` | registry, issuer state adapters, capture decoding, normalization, decision engine (no execution) |
 | `scripts/observation/` | read-only decoding and event detection over capture copies |
-| Rerouting, demo UI | later |
+| `apps/reference` | reference integration UI over recorded evidence (no signing, no network) |
+| Executed rerouting | later |
+
+## Reference app
+
+`apps/reference` shows how a wallet, trading app or agent platform could
+surface EquityGuard. It renders one KOx trade in three steps: prepared
+(**ALLOW**), the same payload after KOx's scheduled dividend adjustment
+activated (**BLOCK: ECONOMIC_STATE_CHANGED**), and a refreshed trade
+(**ALLOW**). Two extra cases show a swap altered after approval
+(**BLOCK: INTENT_MISMATCH**) and an issuer switch that needs approval
+(**REQUIRES_CONSENT: REPRESENTATION_CHANGE**).
+
+```sh
+npm run app:build          # derive state, compile, write apps/reference/dist
+npm run app:serve          # http://127.0.0.1:4173/  (?state=stale, ?demo, #advanced)
+```
+
+Every decision is computed at build time by the existing code:
+`checkGuardOffline` over the curated mainnet KOx/KOon bytes, and the
+representation decision engine for the consent case. The stale and
+altered-route results match what the program returned in the M9D-C1 local
+replay (`apps/reference/data/local-replay-2026-09-17.json`, an excerpt with
+the SHA-256 of its source record). The browser only renders; it has no
+network, wallet or signing code, and the tests pin that.
+
+Boundary: the page shows recorded evidence, not live state. It does not
+show mainnet EquityGuard execution, a real purchase, a guarded Jupiter trade
+on devnet, or a real cross-issuer reroute. The consent case's KOon quote is
+illustrative, because Jupiter returned no KOon route. The 15 min / 5 min
+window is an uncalibrated demo policy.
 
 ## Repository layout
 
@@ -145,6 +176,7 @@ packages/representation-state/  representation registry, state, normalization, d
 scripts/observation/      read-only capture decoding and event detection
 scripts/devnet/           devnet test mints, scenarios, deployment record
 scripts/evidence/         raw mainnet evidence capture (output is local, gitignored)
+apps/reference/           reference integration UI over recorded evidence
 ```
 
 ## Development
