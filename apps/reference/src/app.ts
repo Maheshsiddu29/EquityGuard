@@ -3,18 +3,22 @@
  * switches between its precomputed scenarios. It has no network, wallet or
  * signing code: every button either changes the displayed scenario or
  * explains that nothing is sent.
+ *
+ * The Sep 15 state-transition cases and the separate Sep 17 local replay are
+ * rendered in separate sections and never share values.
  */
 
 import type { BlockReason, GuardDecision } from "./decision.ts";
-import type { EconomicStateView, Provenance, ReferenceState, Scenario, ScenarioId } from "./model.ts";
+import type { EconomicStateView, GuardWindowView, Provenance, ReferenceState, ReplayCase, Scenario, ScenarioId } from "./model.ts";
 
-const SCENARIO_ORDER: readonly ScenarioId[] = ["safe", "stale", "refreshed", "tampered", "consent"];
+const SCENARIO_ORDER: readonly ScenarioId[] = ["safe", "stale", "refreshed", "consent"];
 const MAIN_FLOW: readonly ScenarioId[] = ["safe", "stale", "refreshed"];
 
 const esc = (value: unknown) =>
   String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 
 const short = (value: string, head = 4, tail = 4) => (value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`);
+const grouped = (raw: string) => raw.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function utc(isoTime: string, withSeconds = true): string {
@@ -23,6 +27,10 @@ function utc(isoTime: string, withSeconds = true): string {
   const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}${withSeconds ? `:${pad(d.getUTCSeconds())}` : ""}`;
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time} UTC`;
 }
+const day = (isoTime: string) => {
+  const d = new Date(isoTime);
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+};
 const clock = (isoTime: string) => new Date(isoTime).toISOString().slice(11, 19);
 const minSec = (secs: number) => `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
 
@@ -69,39 +77,55 @@ function chip(p: Provenance) {
   return `<span class="prov prov-${p.toLowerCase().replace("_", "-")}">${esc(PROVENANCE_LABEL[p])}</span>`;
 }
 
-function stepper(active: ScenarioId, state: ReferenceState) {
+const windowShort = (w: GuardWindowView) => (w.beforeSecs === 0 && w.afterSecs === 0 ? "None (0 s)" : `${w.beforeSecs / 60} min before / ${w.afterSecs / 60} min after`);
+
+function flowBar(active: ScenarioId, state: ReferenceState, demoOpen: boolean) {
   const labels: Record<string, string> = { safe: "Trade prepared", stale: "KOx changed state", refreshed: "Trade refreshed" };
   const index = MAIN_FLOW.indexOf(active);
   const steps = MAIN_FLOW.map((id, i) => {
     const status = index === -1 ? "idle" : i < index ? "done" : i === index ? "current" : "idle";
     return `<li class="step step-${status}"><span class="step-n">${i + 1}</span><span>${esc(labels[id])}</span></li>`;
   }).join('<li class="step-sep" aria-hidden="true"></li>');
-  const extra = index === -1 ? `<span class="case-tag">Additional case · ${esc(state.scenarios[active].label)}</span>` : "";
-  return `<div class="flow"><ol class="steps" aria-label="Trade flow">${steps}</ol>${extra}</div>`;
+  const extra = index === -1 ? `<span class="case-tag">Illustrative case · ${esc(state.scenarios[active].label)}</span>` : "";
+  const controls = SCENARIO_ORDER.map((id, i) => {
+    const s = state.scenarios[id];
+    const sep = s.illustrative ? '<span class="seg-divider" aria-hidden="true"></span>' : "";
+    return `${sep}<button role="radio" aria-checked="${id === active}" class="${id === active ? "on" : ""}${s.illustrative ? " seg-illustrative" : ""}" data-scenario="${id}"><kbd>${i + 1}</kbd>${esc(s.label)}${s.illustrative ? " (illustrative)" : ""}</button>`;
+  }).join("");
+  return `
+  <div class="flow">
+    <ol class="steps" aria-label="Trade flow">${steps}</ol>
+    <div class="flow-right">${extra}<button class="demo-toggle" data-action="toggle-demo" aria-expanded="${demoOpen}">Demo controls</button></div>
+  </div>
+  <div class="demo-panel" ${demoOpen ? "" : "hidden"}>
+    <span class="demo-note">Precomputed cases · keys 1–4</span>
+    <div class="seg-control" role="radiogroup" aria-label="Demo case">${controls}</div>
+  </div>`;
 }
 
 function tradeCard(s: Scenario, state: ReferenceState) {
-  const { trade, asset } = state;
+  const { order, asset } = state;
   const tone = toneOf(s.decision);
   const icon = tone === "allow" ? ICON.shield : tone === "block" ? ICON.stop : ICON.question;
   let actions: string;
   if (s.id === "stale") {
     actions = `<button class="btn btn-primary" data-action="refresh">${ICON.refresh}<span>Refresh trade</span></button>`;
-  } else if (s.id === "tampered") {
-    actions = `<button class="btn btn-primary" data-action="refresh">${ICON.refresh}<span>Rebuild trade</span></button>`;
-  } else if (s.id === "consent" && s.decision.type === "REQUIRES_CONSENT") {
+  } else if (s.decision.type === "REQUIRES_CONSENT") {
     const d = s.decision.disclosure;
-    actions = `<button class="btn btn-consent" data-action="approve">Review switch to ${esc(d.toSymbol)}</button>
+    actions = `<button class="btn btn-consent" data-action="approve">Review switch to ${esc(d.toSymbol)} (illustrative)</button>
       <button class="btn btn-ghost" data-action="wait">Keep ${esc(d.fromSymbol)} and refresh later</button>`;
   } else {
     actions = `<button class="btn btn-primary" data-action="submit">Continue to wallet</button>`;
     if (s.id === "safe") actions += `<button class="btn btn-link" data-action="what-if">What if KOx changes state first?${ICON.arrow}</button>`;
   }
+  const banner = s.illustrative
+    ? `<div class="illustrative-banner">${chip("ILLUSTRATIVE")}<span>Not a real reroute. No KOon route existed; the quote is made up to show the approval step.</span></div>`
+    : "";
   return `
   <section class="card trade" aria-labelledby="trade-title">
     <div class="card-head">
       <h2 id="trade-title">Buy</h2>
-      <span class="muted small">Route captured ${esc(utc(trade.routeObservedAt, false))}</span>
+      <span class="muted small">Example order</span>
     </div>
     <div class="asset">
       <div class="asset-logo" aria-hidden="true">KO</div>
@@ -114,18 +138,18 @@ function tradeCard(s: Scenario, state: ReferenceState) {
     <div class="fields">
       <div class="field">
         <span class="field-label">You pay</span>
-        <span class="field-value"><span class="amount">${esc(trade.inputUsdc)}</span><span class="unit">USDC</span></span>
+        <span class="field-value"><span class="amount">${esc(order.inputUsdc)}</span><span class="unit">USDC</span></span>
       </div>
       <div class="field">
         <span class="field-label">You receive</span>
-        <span class="field-value"><span class="amount">≈ ${esc(trade.outputUi)}</span><span class="unit">${esc(asset.symbol)}</span></span>
+        <span class="field-value"><span class="amount amount-soft">${esc(asset.symbol)}</span><span class="unit">quoted at signing</span></span>
       </div>
     </div>
     <dl class="route">
-      <div><dt>Route</dt><dd>${esc(trade.aggregator)} ${ICON.arrow} ${esc(trade.venue)}</dd></div>
-      <div><dt>Max slippage</dt><dd>${(trade.slippageBps / 100).toFixed(1)}%</dd></div>
+      <div><dt>Route</dt><dd>${esc(order.aggregator)}</dd></div>
       <div><dt>Protection</dt><dd class="protect-on">${ICON.check}EquityGuard</dd></div>
     </dl>
+    ${banner}
     <div class="status status-${tone}" role="status" aria-live="polite">
       <div class="status-icon">${icon}</div>
       <div>
@@ -140,16 +164,14 @@ function tradeCard(s: Scenario, state: ReferenceState) {
 }
 
 function stateLine(v: EconomicStateView) {
-  return `<span class="state-tag">${esc(v.tag)}</span><span>${esc(v.summary)}</span>`;
+  return `<span class="state-tag">${esc(v.tag)}</span><span>${esc(v.summary)}</span><span class="muted small">${esc(clock(v.chainTime))} UTC</span>`;
 }
 
 function protectionPanel(s: Scenario, state: ReferenceState) {
   const d = s.decision;
   const tone = toneOf(d);
   const stateChanged = s.authorized.fingerprint !== s.current.fingerprint;
-  const windowed = s.id === "consent";
-  const currentOk = !stateChanged && !windowed;
-  const commitmentOk = s.commitment.status === "BOUND";
+  const currentOk = !stateChanged && !s.illustrative;
   const row = (ok: boolean | null, title: string, body: string) => `
     <li class="check ${ok === null ? "check-neutral" : ok ? "check-ok" : "check-bad"}">
       <span class="check-icon">${ok === null ? ICON.dot : ok ? ICON.check : ICON.cross}</span>
@@ -160,12 +182,12 @@ function protectionPanel(s: Scenario, state: ReferenceState) {
       ? `<div class="verdict-word">ALLOW</div><div class="verdict-sub">Guard passes · trade can proceed</div>`
       : d.type === "BLOCK"
         ? `<div class="verdict-word">BLOCK</div><div class="verdict-sub">${esc(BLOCK_COPY[d.reason])}</div>`
-        : `<div class="verdict-word">CONSENT</div><div class="verdict-sub">Representation change needs approval</div>`;
+        : `<div class="verdict-word">CONSENT</div><div class="verdict-sub">Illustrative · representation change needs approval</div>`;
   const consent =
     d.type === "REQUIRES_CONSENT"
       ? `<div class="disclosure">
           <div class="disclosure-head"><span>${esc(d.disclosure.fromSymbol)} <span class="muted">${esc(d.disclosure.fromIssuer)}</span></span>${ICON.arrow}<span>${esc(d.disclosure.toSymbol)} <span class="muted">${esc(d.disclosure.toIssuer)}</span></span>${chip("ILLUSTRATIVE")}</div>
-          <p>Switching costs about <strong>${esc(d.disclosure.additionalCostBps)} bps</strong> more in share terms (limit ${esc(d.disclosure.policyMaxAdditionalCostBps)} bps). ${esc(d.disclosure.notice)}</p>
+          <p>With the made-up quote, switching would cost about <strong>${esc(d.disclosure.additionalCostBps)} bps</strong> more in share terms (limit ${esc(d.disclosure.policyMaxAdditionalCostBps)} bps). ${esc(d.disclosure.notice)}</p>
         </div>`
       : "";
   return `
@@ -179,13 +201,31 @@ function protectionPanel(s: Scenario, state: ReferenceState) {
       ${row(true, "Representation verified", `${esc(s.symbol)} · ${esc(s.issuer)} · Token-2022 mint <span class="mono">${esc(short(state.asset.mint))}</span>`)}
       ${row(null, "Authorized economic state", stateLine(s.authorized))}
       ${row(currentOk, "Current economic state", `${stateLine(s.current)}${stateChanged ? `<span class="delta">changed since authorization</span>` : ""}`)}
-      ${row(commitmentOk, "Transaction commitment", commitmentOk ? "Bound to the approved swap" : `<span>The swap was modified after approval</span>`)}
+      ${row(null, "Protection window", `<span>${esc(windowShort(s.window))}</span><span class="muted small">${esc(s.window.note)}</span>`)}
+      ${row(null, "Swap binding", `<span>Enforced by the program at execution. Not part of this state check; see the separate local replay below.</span>`)}
     </ul>
     ${consent}
     <div class="typed"><span class="muted">Decision</span><code>${esc(decisionCode(d))}</code></div>
     <ul class="backing">
       ${s.backing.map((b) => `<li>${chip(b.provenance)}<span>${esc(b.text)}</span></li>`).join("")}
     </ul>
+  </section>`;
+}
+
+function transitionSection(s: Scenario, state: ReferenceState, active: ScenarioId, demoOpen: boolean) {
+  const { kox } = state.divergence;
+  return `
+  <section class="section section-first" aria-labelledby="transition-title">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">State-transition case · ${esc(day(kox.effectiveAt))}</div>
+        <h2 id="transition-title">A stale KOx trade, stopped</h2>
+        <p class="muted">Real KOx states recorded at ${esc(clock(kox.lastPendingBlockTime))} and ${esc(clock(kox.firstActivatedBlockTime))} UTC, either side of its ${esc(clock(kox.effectiveAt))} dividend adjustment. Checked by EquityGuard's guard model; no transaction was sent.</p>
+      </div>
+      <div class="chips">${chip("MAINNET_OBSERVATION")}${chip("GUARD_MODEL")}</div>
+    </div>
+    ${flowBar(active, state, demoOpen)}
+    <div class="grid">${tradeCard(s, state)}${protectionPanel(s, state)}</div>
   </section>`;
 }
 
@@ -207,16 +247,17 @@ function timeline(state: ReferenceState) {
   <section class="section" aria-labelledby="timeline-title">
     <div class="section-head">
       <div>
+        <div class="eyebrow">Observed evidence · ${esc(day(kox.effectiveAt))}</div>
         <h2 id="timeline-title">Corporate-action timeline</h2>
-        <p class="muted">Coca-Cola dividend adjustment, September 2026. Two tokenized representations, two update mechanisms.</p>
+        <p class="muted">Coca-Cola dividend adjustment. Two tokenized representations, two update mechanisms.</p>
       </div>
       ${chip("MAINNET_OBSERVATION")}
     </div>
 
     <ol class="sequence" aria-label="How a stale trade is stopped">
-      <li><span class="seq-k">Prepared under</span><span class="seq-v"><span class="state-tag">S</span> adjustment scheduled</span></li>
-      <li><span class="seq-k">Corporate action</span><span class="seq-v">KOx activates ${esc(clock(kox.effectiveAt))} UTC</span></li>
-      <li><span class="seq-k">Current state</span><span class="seq-v"><span class="state-tag">S′</span> adjustment active</span></li>
+      <li><span class="seq-k">Prepared ${esc(clock(kox.lastPendingBlockTime))}</span><span class="seq-v"><span class="state-tag">S</span> adjustment scheduled</span></li>
+      <li><span class="seq-k">Corporate action</span><span class="seq-v">KOx activates ${esc(clock(kox.effectiveAt))}</span></li>
+      <li><span class="seq-k">Current ${esc(clock(kox.firstActivatedBlockTime))}</span><span class="seq-v"><span class="state-tag">S′</span> adjustment active</span></li>
       <li class="seq-end"><span class="seq-k">Result</span><span class="seq-v">Stale transaction rejected</span></li>
     </ol>
 
@@ -274,6 +315,45 @@ function timeline(state: ReferenceState) {
   </section>`;
 }
 
+function replayCaseCard(c: ReplayCase) {
+  const tone = toneOf(c.decision);
+  const outcome = c.succeeded
+    ? `<span class="ok">Executed</span> · ${esc(Number(c.usdcDelta) / -1e6)} USDC in, ${esc(grouped(c.stockDelta))} raw KOx out`
+    : `<span class="bad">Rejected at instruction ${esc(c.failedInstruction)}</span> · no tokens moved · ${esc(c.feeLamports)} lamport fee`;
+  return `
+  <div class="rcase rcase-${tone}">
+    <div class="rcase-head"><h3>${esc(c.title)}</h3><code>${esc(decisionCode(c.decision))}</code></div>
+    <p class="muted">${esc(c.description)}</p>
+    <p class="rcase-out">${outcome}</p>
+    <p class="muted small">Jupiter ${c.jupiterRan ? "ran" : "never ran"} · ${esc(c.programsInvoked)} program${c.programsInvoked === 1 ? "" : "s"} invoked${c.decision.type === "BLOCK" ? ` · ${esc(c.decision.guardResult)}` : ""}</p>
+  </div>`;
+}
+
+function replaySection(state: ReferenceState) {
+  const r = state.replay;
+  return `
+  <section class="section replay" aria-labelledby="replay-title">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow eyebrow-replay">Separate test · ${esc(day(r.recordedAt))}</div>
+        <h2 id="replay-title">Local execution replay</h2>
+        <p class="muted">A real Jupiter route for KOx, captured from mainnet and run with EquityGuard on a local validator loaded with the real Jupiter and Orca Whirlpool programs.</p>
+      </div>
+      ${chip("LOCAL_REPLAY")}
+    </div>
+    <div class="boundary-note">
+      <strong>Not the Sep 15 event.</strong> This replay ran two days after KOx's activation. The KOx mint was already active on the local clock (${esc(utc(r.localClock, false))}), and no corporate action happened during it. Its outdated-state case uses a deliberately wrong phase expectation. Not mainnet, not devnet, not a real purchase.
+    </div>
+    <div class="replay-route">
+      <div><span class="muted">Route</span><span>${esc(r.inputUsdc)} USDC → KOx · Jupiter → ${esc(r.venue)}</span></div>
+      <div><span class="muted">Captured</span><span>${esc(utc(r.routeObservedAt, false))}</span></div>
+      <div><span class="muted">Max slippage</span><span>${(r.slippageBps / 100).toFixed(1)}%</span></div>
+      <div><span class="muted">Transaction</span><span>${esc(r.transactionBytes)} bytes, guard first</span></div>
+    </div>
+    <div class="rcases">${r.cases.map(replayCaseCard).join("")}</div>
+  </section>`;
+}
+
 function evidence(state: ReferenceState) {
   const { seconds } = state.divergence;
   const card = (title: string, tone: string, items: string[]) => `
@@ -287,7 +367,7 @@ function evidence(state: ReferenceState) {
     <div class="ev-grid">
       ${card("What we observed", "observed", [
         "KOx (xStocks) and KOon (Ondo) are two tokenized representations of Coca-Cola.",
-        `They applied the same dividend adjustment differently: KOx scheduled it and activated on the Solana Clock; KOon updated immediately.`,
+        "They applied the same dividend adjustment differently: KOx scheduled it and activated on the Solana Clock; KOon updated immediately.",
         `Their stored effective times differ by ${esc(minSec(seconds))}.`,
         "Recorded read-only from Solana mainnet account state; no mainnet transaction was sent.",
       ])}
@@ -298,14 +378,15 @@ function evidence(state: ReferenceState) {
         "If anything differs, the whole transaction fails and the trade never runs.",
       ])}
       ${card("What this demo proves", "proves", [
-        "Locally, with a mainnet-derived Jupiter route, mainnet-derived account state, and the real Jupiter and Orca Whirlpool program binaries, a guarded KOx trade executed.",
-        "A stale-state transaction and a modified transaction were rejected at the guard, before Jupiter ran.",
-        "The ALLOW/BLOCK decisions on this page come from EquityGuard's guard model over the recorded KOx state.",
+        "Sep 15: on real KOx states recorded 14 s before and 16 s after activation, the guard model allows the earlier authorization before activation and rejects it after.",
+        "Sep 17, separately: locally, with a mainnet-derived Jupiter route, mainnet-derived account state, and the real Jupiter and Orca Whirlpool program binaries, a guarded KOx trade executed.",
+        "In that replay, a stale-state transaction and a modified transaction were rejected at the guard, before Jupiter ran.",
       ])}
       ${card("What this demo does not prove", "not", [
         "EquityGuard running on mainnet, or a real purchase. It is deployed on devnet only.",
+        "A trade that crossed the Sep 15 event. The local replay ran two days later.",
         "A guarded Jupiter trade on devnet (Jupiter is not executable there).",
-        "A real cross-issuer reroute. The KOon quote above is illustrative.",
+        "A real cross-issuer reroute. The issuer-switch case is illustrative.",
         "Calibrated issuer policies: the 15 min / 5 min protection window is an uncalibrated demo value.",
         "Support for other DEXs, other corporate actions, production readiness, or an external audit.",
       ])}
@@ -314,7 +395,7 @@ function evidence(state: ReferenceState) {
 }
 
 function advanced(s: Scenario, state: ReferenceState) {
-  const { trade, asset, replay } = state;
+  const { asset, replay } = state;
   const row = (k: string, v: string) => `<div class="kv"><dt>${esc(k)}</dt><dd>${v}</dd></div>`;
   const mono = (v: string) => `<span class="mono">${esc(v)}</span>`;
   const stateRows = (v: EconomicStateView) =>
@@ -324,7 +405,7 @@ function advanced(s: Scenario, state: ReferenceState) {
     <summary><span>Advanced details</span><span class="muted small">For integrators · current case: ${esc(s.label)}</span></summary>
     <div class="adv-grid">
       <dl>
-        <h3>Asset</h3>
+        <h3>State-transition case · Sep 15 mainnet state</h3>
         ${row("Mint", mono(asset.mint))}
         ${row("Issuer", esc(asset.issuer))}
         ${row("Decimals", esc(asset.decimals))}
@@ -332,60 +413,48 @@ function advanced(s: Scenario, state: ReferenceState) {
         ${row("Live multiplier (at check)", stateRows(s.current))}
         ${row("Scheduled activation", esc(utc(s.current.effectiveAt)))}
         ${row("Phase", `${esc(s.authorized.phase)} → ${esc(s.current.phase)}`)}
-        ${row("Protection window", `${trade.guardWindow.beforeSecs}s before / ${trade.guardWindow.afterSecs}s after · <span class="muted">${esc(trade.guardWindow.basis)}</span>`)}
+        ${row("Protection window", `${esc(windowShort(s.window))} · <span class="muted">${esc(s.window.note)}</span>`)}
+        ${row("Typed decision", `<pre class="mono">${esc(JSON.stringify(s.decision, null, 2))}</pre>`)}
       </dl>
       <dl>
-        <h3>Execution binding</h3>
-        ${row("Jupiter route binding", `adapter kind ${trade.adapterKind} · ${mono(trade.adapterName)}`)}
-        ${row("Route", `${esc(trade.aggregator)} route_v2 → ${esc(trade.venue)} · captured ${esc(trade.routeObservedAt)}`)}
-        ${row("Amounts (raw)", mono(`in 5000000 USDC · out ${trade.outputRaw} · min ${trade.minOutputRaw}`))}
-        ${row("Transaction size", `${trade.transactionBytes} bytes (limit 1232)`)}
-        ${row("Downstream commitment", `${mono(s.commitment.hex)}<br><span class="muted">${s.commitment.status === "BOUND" ? "matches the swap in the transaction" : "the swap in the transaction no longer hashes to this value"}</span>`)}
-        ${row("Typed decision", `<pre class="mono">${esc(JSON.stringify(s.decision, null, 2))}</pre>`)}
+        <h3>Local execution replay · Sep 17</h3>
+        ${row("Jupiter route binding", `adapter kind ${replay.adapterKind} · ${mono(replay.adapterName)}`)}
+        ${row("Route", `Jupiter route_v2 → ${esc(replay.venue)} · captured ${esc(replay.routeObservedAt)}`)}
+        ${row("Amounts (raw)", mono(`in ${Number(replay.inputUsdc) * 1e6} USDC · out ${replay.outputRaw} KOx · min ${replay.minOutputRaw}`))}
+        ${row("Transaction size", `${replay.transactionBytes} bytes (limit 1232)`)}
+        ${row("Downstream commitment", mono(replay.commitmentHex))}
+        ${row("Replay window", `${replay.window.beforeSecs}s before / ${replay.window.afterSecs}s after`)}
+        ${row("Local clock", `${esc(replay.localClock)} · KOx ${esc(replay.localClockPhase)}`)}
         ${row("Guard program", `${mono(replay.guardProgram)}<br><span class="muted">devnet deployment · binary sha256 ${esc(short(replay.guardBinarySha256, 8, 8))}</span>`)}
+        ${row("Other binaries", `<span class="muted">Jupiter v6 ${esc(short(replay.jupiterBinarySha256, 8, 8))} · Whirlpool ${esc(short(replay.whirlpoolBinarySha256, 8, 8))}</span>`)}
       </dl>
     </div>
     <h3 class="adv-sub">Local replay outcomes ${chip("LOCAL_REPLAY")}</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Case</th><th>Result</th><th>Guard</th><th>Programs run</th><th>USDC Δ</th><th>KOx Δ (raw)</th><th>Fee</th></tr></thead>
+        <thead><tr><th>Case</th><th>Expected phase</th><th>Result</th><th>Guard</th><th>Programs run</th><th>USDC Δ</th><th>KOx Δ (raw)</th><th>Fee</th></tr></thead>
         <tbody>
-          ${replay.outcomes
+          ${replay.cases
             .map(
-              (o) => `<tr>
-                <td class="mono">${esc(o.label)}</td>
-                <td>${o.succeeded ? '<span class="ok">executed</span>' : `<span class="bad">rejected at ix ${esc(o.failedInstruction)}</span>`}</td>
-                <td class="mono">${esc(o.guardError ?? "safe")}</td>
-                <td>${esc(o.programsInvoked)}</td>
-                <td class="mono">${esc(o.usdcDelta)}</td>
-                <td class="mono">${esc(o.stockDelta)}</td>
-                <td class="mono">${o.feeLamports === "n/a" ? "—" : `${esc(o.feeLamports)} lamports`}</td>
+              (c) => `<tr>
+                <td class="mono">${esc(c.label)}</td>
+                <td class="mono">${esc(c.expectedPhase)}</td>
+                <td>${c.succeeded ? '<span class="ok">executed</span>' : `<span class="bad">rejected at ix ${esc(c.failedInstruction)}</span>`}</td>
+                <td class="mono">${esc(c.decision.guardResult ?? "safe")}</td>
+                <td>${esc(c.programsInvoked)}</td>
+                <td class="mono">${esc(c.usdcDelta)}</td>
+                <td class="mono">${esc(c.stockDelta)}</td>
+                <td class="mono">${c.feeLamports === null ? "—" : `${esc(c.feeLamports)} lamports`}</td>
               </tr>`,
             )
             .join("")}
         </tbody>
       </table>
     </div>
-    <p class="muted small">Local solana-test-validator, recorded ${esc(replay.recordedAt)}. Jupiter v6 binary sha256 ${esc(short(replay.jupiterBinarySha256, 8, 8))}, Whirlpool ${esc(short(replay.whirlpoolBinarySha256, 8, 8))}. The taker's USDC balance was created locally.</p>
+    <p class="muted small">Local solana-test-validator, recorded ${esc(replay.recordedAt)}. The taker's USDC balance was created locally.</p>
     <h3 class="adv-sub">Generated from</h3>
     <ul class="sources">${state.generatedFrom.map((g) => `<li><span>${esc(g.name)}</span><span class="mono muted">${esc(short(g.sha256, 10, 10))}</span></li>`).join("")}</ul>
   </details>`;
-}
-
-function demoControls(active: ScenarioId, state: ReferenceState, open: boolean) {
-  return `
-  <div class="demo ${open ? "demo-open" : ""}">
-    <button class="demo-toggle" data-action="toggle-demo" aria-expanded="${open}">Demo controls</button>
-    <div class="demo-panel" ${open ? "" : "hidden"}>
-      <div class="demo-note">Switch between precomputed cases. Keys 1–5.</div>
-      <div class="seg-control" role="radiogroup" aria-label="Demo case">
-        ${SCENARIO_ORDER.map(
-          (id, i) =>
-            `<button role="radio" aria-checked="${id === active}" class="${id === active ? "on" : ""}" data-scenario="${id}"><kbd>${i + 1}</kbd>${esc(state.scenarios[id].label)}</button>`,
-        ).join("")}
-      </div>
-    </div>
-  </div>`;
 }
 
 function main() {
@@ -402,12 +471,11 @@ function main() {
     const advancedOpen = root.querySelector<HTMLDetailsElement>("details.advanced")?.open ?? location.hash === "#advanced";
     root.innerHTML = `
       ${hero}
-      ${stepper(active, state)}
-      <div class="grid">${tradeCard(s, state)}${protectionPanel(s, state)}</div>
+      ${transitionSection(s, state, active, demoOpen)}
       ${timeline(state)}
+      ${replaySection(state)}
       ${evidence(state)}
-      ${advanced(s, state)}
-      ${demoControls(active, state, demoOpen)}`;
+      ${advanced(s, state)}`;
     const details = root.querySelector<HTMLDetailsElement>("details.advanced");
     if (details) details.open = advancedOpen;
     document.body.dataset.decision = toneOf(s.decision);
@@ -458,7 +526,7 @@ function main() {
       case "submit":
         return toast("Reference app: this is where a wallet would sign the guarded transaction. Nothing is signed or sent from this page.");
       case "approve":
-        return toast("Illustrative only: switching issuer needs a fresh, real quote and your explicit approval. This reference app never executes the alternative.");
+        return toast("Illustrative only: there is no real KOon route or quote. A real switch would need a fresh quote and your explicit approval, and this reference app never executes it.");
       case "toggle-demo":
         demoOpen = !demoOpen;
         return render();

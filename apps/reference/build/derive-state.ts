@@ -7,6 +7,11 @@
  * representation decision engine for the consent prompt. The browser never
  * computes a decision and never touches a network or a signer.
  *
+ * The state-transition cases use two adjacent real KOx observations: the
+ * last one before the Clock-driven activation and the first one after it.
+ * The separate Sep 17 local replay is summarised on its own and never mixed
+ * into those cases: it ran two days after the activation.
+ *
  * The only non-observed value is the KOon quote in the consent scenario:
  * Jupiter returned no KOon route, so that quote is ILLUSTRATIVE and labelled.
  */
@@ -29,8 +34,8 @@ import {
 
 import { decodeObservation, loadKoFixture, type CuratedKoFixture, type ObservationKey } from "../../../scripts/demo/ko-fixtures.ts";
 import { KO_DEMO_POLICY, KO_REPLAY_REROUTE_POLICY, koDivergenceFacts, resolveCurated } from "../../../scripts/demo/mainnet-replay.ts";
-import { fromGuardResult, fromRepresentationDecision, type GuardDecision } from "../src/decision.ts";
-import type { EconomicStateView, ReferenceState, Scenario, ScenarioId } from "../src/model.ts";
+import { fromGuardResult, fromRepresentationDecision } from "../src/decision.ts";
+import type { EconomicStateView, GuardWindowView, ReferenceState, ReplayCase, Scenario, ScenarioId } from "../src/model.ts";
 
 const KO_FIXTURE_URL = new URL("../../../scripts/demo/fixtures/ko-corporate-action-2026-09.json", import.meta.url);
 const REPLAY_URL = new URL("../data/local-replay-2026-09-17.json", import.meta.url);
@@ -53,6 +58,7 @@ export interface LocalReplayExcerpt {
   readonly routeSourceSha256: string;
   readonly recordedAt: string;
   readonly routeObservedAt: string;
+  readonly localClock: { readonly slot: string; readonly unixTimestamp: string; readonly phase: number };
   readonly route: {
     readonly symbol: string;
     readonly adapterKind: number;
@@ -121,11 +127,27 @@ function stateView(observation: ChainObservation, summary?: string): EconomicSta
   };
 }
 
-function requestFrom(observation: ChainObservation): AssertSafeExecutionRequest {
+/**
+ * Zero window: isolates the activation (phase) check, as `koDivergenceFacts`
+ * does. Under the 15 min / 5 min demo window both adjacent observations fall
+ * inside the window and would be blocked as InsideTransitionWindow.
+ */
+const ZERO_WINDOW: GuardWindowView = {
+  beforeSecs: 0,
+  afterSecs: 0,
+  note: "No time window, so the check isolates the activation itself. With the 15 min / 5 min demo window, both moments would already be blocked as InsideTransitionWindow.",
+};
+const DEMO_WINDOW: GuardWindowView = {
+  beforeSecs: Number(KO_DEMO_POLICY.beforeSecs),
+  afterSecs: Number(KO_DEMO_POLICY.afterSecs),
+  note: "15 min before / 5 min after a scheduled activation. Uncalibrated demo policy, not issuer-derived.",
+};
+
+function requestFrom(observation: ChainObservation, window: GuardWindowView): AssertSafeExecutionRequest {
   return {
     expected: observation.protectedState,
     expectedPhase: observation.phase as ActivationPhase,
-    window: { beforeSecs: Number(KO_DEMO_POLICY.beforeSecs), afterSecs: Number(KO_DEMO_POLICY.afterSecs) },
+    window: { beforeSecs: window.beforeSecs, afterSecs: window.afterSecs },
   };
 }
 
@@ -156,43 +178,35 @@ export function deriveReferenceState(): ReferenceState {
   const facts = koDivergenceFacts();
   const kox = findRepresentationBySymbol("KOx");
   if (!kox) throw new Error("KOx not in registry");
-  const replayResult = (label: LocalReplayExcerpt["results"][number]["label"]) => {
-    const result = replay.results.find((r) => r.label === label);
-    if (!result) throw new Error(`replay excerpt has no ${label} result`);
-    return result;
-  };
-  const replaySafe = replayResult("SAFE");
-  const replayStale = replayResult("STALE_PRE_ACTIVATION");
-  const replayMutated = replayResult("MUTATED_SLIPPAGE");
 
-  // S: KOx as first observed with its dividend adjustment scheduled (pending).
-  const prepared = decoded(fixture, "koxPendingFirstObserved");
-  // S′: KOx after the Clock crossed T and outside the demo window.
-  const transitioned = decoded(fixture, "windowEndKOx");
-  // KOx 14 s before T: same bytes as S, inside the demo window.
-  const nearActivation = decoded(fixture, "koxLastPendingBeforeT");
-  if (prepared.decimals !== transitioned.decimals) throw new Error("KOx decimals changed between observations");
+  // Adjacent real observations around KOx's activation T = 00:30:00Z.
+  const before = decoded(fixture, "koxLastPendingBeforeT");
+  const after = decoded(fixture, "koxActivatedFirstObserved");
+  if (before.decimals !== after.decimals) throw new Error("KOx decimals changed between observations");
+  const T = after.protectedState.newMultiplierEffectiveTimestamp;
+  if (!((before.chainUnixTimestamp as bigint) < T && T <= (after.chainUnixTimestamp as bigint))) {
+    throw new Error("adjacent observations do not bracket the activation");
+  }
 
-  const preparedRequest = requestFrom(prepared);
-  const refreshedRequest = requestFrom(transitioned);
-  const safeResult = evaluate(preparedRequest, prepared);
-  const staleResult = evaluate(preparedRequest, transitioned);
-  const refreshedResult = evaluate(refreshedRequest, transitioned);
-  const nearResult = evaluate(preparedRequest, nearActivation);
+  const preparedRequest = requestFrom(before, ZERO_WINDOW);
+  const safeResult = evaluate(preparedRequest, before);
+  const staleResult = evaluate(preparedRequest, after);
+  const refreshedResult = evaluate(requestFrom(after, ZERO_WINDOW), after);
 
-  const S = stateView(prepared);
-  const S2 = stateView(transitioned);
-  const commitment = replaySafe.suffixCommitmentHex;
-  const noTokensMoved = (fee: string) => `No tokens moved. The trade never ran; only the ${BigInt(fee) * -1n} lamport network fee was charged.`;
+  const S = stateView(before, "Dividend adjustment scheduled, not yet active");
+  const S2 = stateView(after);
+  const secsTo = (o: ChainObservation) => Number(T - (o.chainUnixTimestamp as bigint));
+  const guardModel = (what: string, result: string | null) => `Guard model: ${what}: ${result ?? "passes"}.`;
 
-  // Consent prompt: KOx inside its scheduled window, KOon already settled.
+  // Consent prompt: KOx inside the demo window, KOon already settled.
   const koxNear = resolveCurated("koxLastPendingBeforeT");
   const koonNear = resolveCurated("koonAtKoxLastPending");
   if (koxNear.state !== RepresentationState.TRANSITION || koonNear.state !== RepresentationState.SAFE) {
     throw new Error(`consent scenario expects KOx TRANSITION and KOon SAFE, got ${koxNear.state} / ${koonNear.state}`);
   }
+  const consentGuard = evaluate(requestFrom(before, DEMO_WINDOW), before);
   const comparison = compareQuotes(
-    quoteFor(koxNear, BigInt(replay.route.outAmount), "JUPITER_ROUTE_SHAPE", replay.routeObservedAt),
+    quoteFor(koxNear, BigInt(replay.route.outAmount), "ILLUSTRATIVE", fixture.observations.koxLastPendingBeforeT.wallclock),
     quoteFor(koonNear, ILLUSTRATIVE_KOON_OUTPUT_RAW, "ILLUSTRATIVE", fixture.observations.koonAtKoxLastPending.wallclock),
   );
   const engine = decide({ preferred: koxNear, alternative: koonNear, reroutePolicy: KO_REPLAY_REROUTE_POLICY, inputRaw: 5_000_000n, comparison });
@@ -209,106 +223,104 @@ export function deriveReferenceState(): ReferenceState {
       }
     : null;
 
-  const scenario = (id: ScenarioId, fields: Omit<Scenario, "id" | "symbol" | "issuer"> & { decision: GuardDecision }): Scenario => ({
-    id,
-    symbol: kox.symbol,
-    issuer: kox.issuer,
-    ...fields,
-  });
+  const scenario = (id: ScenarioId, fields: Omit<Scenario, "id" | "symbol" | "issuer">): Scenario => ({ id, symbol: kox.symbol, issuer: kox.issuer, ...fields });
+  const stateMoment = `KOx mint state recorded on Solana mainnet`;
 
   const scenarios: Record<ScenarioId, Scenario> = {
     safe: scenario("safe", {
       label: "Prepared",
+      illustrative: false,
       headline: "Protected execution",
-      detail: "KOx's economic state matches what this trade was prepared against. The trade can proceed.",
+      detail: `KOx's economic state matches what this trade was prepared against, ${secsTo(before)} s before its scheduled dividend adjustment. The trade can proceed.`,
       decision: fromGuardResult(safeResult),
       authorized: S,
       current: S,
       evaluatedAt: S.chainTime,
-      commitment: { status: "BOUND", hex: commitment },
+      window: ZERO_WINDOW,
       settlement: "The guard and the swap settle together in one transaction, or not at all.",
       backing: [
-        { provenance: "MAINNET_OBSERVATION", text: `KOx mint state recorded on Solana mainnet at slot ${S.slot}.` },
-        { provenance: "GUARD_MODEL", text: "Decision computed by EquityGuard's offline guard model over those bytes." },
+        { provenance: "MAINNET_OBSERVATION", text: `${stateMoment} at slot ${S.slot}, ${secsTo(before)} s before activation.` },
+        { provenance: "GUARD_MODEL", text: guardModel("authorization under S, checked at that moment", safeResult) },
       ],
     }),
     stale: scenario("stale", {
       label: "Activation",
+      illustrative: false,
       headline: "Trade blocked",
-      detail: "KOx changed economic state after this trade was prepared. The previous authorization is stale, so EquityGuard blocked the transaction before execution.",
+      detail: "KOx changed economic state after this trade was prepared: its scheduled dividend adjustment became active. The previous authorization is stale, so EquityGuard blocks the transaction before execution.",
       decision: fromGuardResult(staleResult),
       authorized: S,
       current: S2,
       evaluatedAt: S2.chainTime,
-      commitment: { status: "BOUND", hex: commitment },
-      settlement: noTokensMoved(replayStale.lamportsDelta),
+      window: ZERO_WINDOW,
+      settlement: "No tokens move: the guard fails first, so the whole transaction reverts. Only the network fee would be charged.",
       backing: [
-        { provenance: "MAINNET_OBSERVATION", text: `KOx's scheduled adjustment activated at ${S.effectiveAt} (Clock-driven; stored bytes unchanged).` },
-        { provenance: "GUARD_MODEL", text: `Guard model result for the prepared payload against state at slot ${S2.slot}: ${staleResult ?? "passed"}.` },
         {
-          provenance: "LOCAL_REPLAY",
-          text: `The same stale-phase payload was sent with a real Jupiter route on a local validator: rejected at instruction ${replayStale.failedInstruction} with ${replayStale.guardErrorName}; Jupiter never ran.`,
+          provenance: "MAINNET_OBSERVATION",
+          text: `${stateMoment} at slot ${S2.slot}, ${-secsTo(after)} s after the Solana Clock passed the activation time. The account bytes did not change; only the phase did.`,
         },
+        { provenance: "GUARD_MODEL", text: guardModel("authorization under S, checked against S′", staleResult) },
       ],
     }),
     refreshed: scenario("refreshed", {
       label: "Refreshed",
+      illustrative: false,
       headline: "Protected execution",
       detail: "A new protected transaction was prepared against KOx's current state. The trade can proceed.",
       decision: fromGuardResult(refreshedResult),
       authorized: S2,
       current: S2,
       evaluatedAt: S2.chainTime,
-      commitment: { status: "BOUND", hex: commitment },
+      window: ZERO_WINDOW,
       settlement: "The new authorization is bound to the current state. The guard and the swap settle together, or not at all.",
       backing: [
-        { provenance: "GUARD_MODEL", text: `Guard model result for a payload re-read at slot ${S2.slot}: ${refreshedResult ?? "passed"}.` },
-        {
-          provenance: "LOCAL_REPLAY",
-          text: `With the activated state, the guarded route executed on a local validator: ${Number(replaySafe.usdcDelta) / -1e6} USDC in, ${replaySafe.stockDelta} raw KOx out.`,
-        },
-      ],
-    }),
-    tampered: scenario("tampered", {
-      label: "Route altered",
-      headline: "Trade blocked",
-      detail: "The swap in this transaction no longer matches the one the guard was bound to. EquityGuard blocked it before execution.",
-      decision: fromGuardResult(replayMutated.guardErrorName),
-      authorized: S2,
-      current: S2,
-      evaluatedAt: S2.chainTime,
-      commitment: { status: "ALTERED", hex: replayMutated.suffixCommitmentHex },
-      settlement: noTokensMoved(replayMutated.lamportsDelta),
-      backing: [
-        {
-          provenance: "LOCAL_REPLAY",
-          text: `Slippage in the real Jupiter instruction was changed after the guard was built: rejected at instruction ${replayMutated.failedInstruction} with ${replayMutated.guardErrorName}; Jupiter never ran.`,
-        },
+        { provenance: "MAINNET_OBSERVATION", text: `Same recorded KOx state as the blocked check (slot ${S2.slot}).` },
+        { provenance: "GUARD_MODEL", text: guardModel("authorization re-read under S′, checked against S′", refreshedResult) },
       ],
     }),
     consent: scenario("consent", {
       label: "Issuer switch",
-      headline: "Your approval is needed",
-      detail: "KOx is inside its scheduled dividend adjustment window, so the KOx trade cannot proceed as authorized. KOon (Ondo) already completed its update. Switching issuer is never automatic.",
-      decision: fromRepresentationDecision(engine.decision, nearResult, disclosure),
+      illustrative: true,
+      headline: "Illustrative: approval needed to switch issuer",
+      detail: `Under the 15-minute demo window, KOx cannot proceed ${secsTo(before)} s before its adjustment. KOon (Ondo) had already completed its update. This shows the approval step only: no KOon route existed, and switching issuer is never automatic.`,
+      decision: fromRepresentationDecision(engine.decision, consentGuard, disclosure),
       authorized: S,
-      current: stateView(nearActivation, `Activation in ${Number(prepared.protectedState.newMultiplierEffectiveTimestamp - (nearActivation.chainUnixTimestamp as bigint))} s: inside the protection window`),
-      evaluatedAt: iso(nearActivation.chainUnixTimestamp as bigint),
-      commitment: { status: "BOUND", hex: commitment },
-      settlement: "Nothing executes until you choose. This reference app never executes the alternative.",
+      current: stateView(before, `Activation in ${secsTo(before)} s: inside the demo protection window`),
+      evaluatedAt: S.chainTime,
+      window: DEMO_WINDOW,
+      settlement: "Illustrative only. Nothing executes, and this reference app never executes an alternative representation.",
       backing: [
-        { provenance: "MAINNET_OBSERVATION", text: "KOx and KOon states recorded at the same mainnet slot, 14 s before KOx's activation." },
-        { provenance: "GUARD_MODEL", text: `Decision engine: ${engine.decision} (${engine.reasonCode}); guard model for the KOx payload: ${nearResult ?? "passed"}.` },
-        { provenance: "ILLUSTRATIVE", text: "The KOon quote is illustrative. Jupiter returned no KOon route when checked, so no real cross-issuer price exists." },
+        { provenance: "ILLUSTRATIVE", text: "The KOon quote is made up. Jupiter returned no KOon route when checked, so no real cross-issuer price or reroute exists." },
+        { provenance: "MAINNET_OBSERVATION", text: "KOx and KOon states recorded at the same mainnet slot." },
+        { provenance: "GUARD_MODEL", text: `Decision engine: ${engine.decision} (${engine.reasonCode}); guard model with the demo window: ${consentGuard ?? "passes"}.` },
       ],
     }),
   };
 
+  const replayCase = (label: LocalReplayExcerpt["results"][number]["label"], title: string, description: string): ReplayCase => {
+    const r = replay.results.find((x) => x.label === label);
+    if (!r) throw new Error(`replay excerpt has no ${label} result`);
+    return {
+      label,
+      title,
+      description,
+      decision: fromGuardResult(r.guardErrorName),
+      succeeded: r.succeeded,
+      failedInstruction: r.failedInstruction === null ? null : Number(r.failedInstruction),
+      programsInvoked: new Set(r.invoked.map((i) => i.split("@")[0])).size,
+      jupiterRan: r.invoked.some((i) => i.startsWith("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4@")),
+      usdcDelta: r.usdcDelta,
+      stockDelta: r.stockDelta,
+      feeLamports: r.succeeded ? null : String(BigInt(r.lamportsDelta) * -1n),
+      expectedPhase: r.expectation.expectedPhase === ActivationPhase.Activated ? "ACTIVATED" : "PENDING",
+    };
+  };
+  const replaySafe = replay.results.find((r) => r.label === "SAFE");
+  if (!replaySafe) throw new Error("replay excerpt has no SAFE result");
+
   const apiPending = JSON.parse(fixture.api.koxApiPendingFirstObserved.rawLine) as { wallclock: string; response: { reason: string } };
   const koonPre = decoded(fixture, "koonPreEventLast");
   const koonPost = decoded(fixture, "koonPostEventFirst");
-  const outputRaw = BigInt(replay.route.outAmount);
-  const outputUi = (Number(outputRaw) / 10 ** transitioned.decimals) * Buffer.from(transitioned.protectedState.newMultiplier).readDoubleLE(0);
   const adapterKind = replay.route.adapterKind;
   if (!isJupiterAdapterKind(adapterKind)) throw new Error(`unexpected adapter kind ${adapterKind}`);
 
@@ -318,37 +330,36 @@ export function deriveReferenceState(): ReferenceState {
       { name: "apps/reference/data/local-replay-2026-09-17.json", sha256: sha256(readFileSync(REPLAY_URL)) },
       { name: `local replay record ${replay.sourceFile}`, sha256: replay.sourceSha256 },
     ],
-    asset: { name: "Coca-Cola", underlying: kox.underlying, symbol: kox.symbol, issuer: kox.issuer, mint: kox.mint, decimals: transitioned.decimals },
-    trade: {
+    asset: { name: "Coca-Cola", underlying: kox.underlying, symbol: kox.symbol, issuer: kox.issuer, mint: kox.mint, decimals: after.decimals },
+    order: { inputUsdc: (Number(replay.route.inAmount) / 1e6).toFixed(2), aggregator: "Jupiter" },
+    replay: {
+      recordedAt: replay.recordedAt,
+      routeObservedAt: replay.routeObservedAt,
+      localClock: iso(BigInt(replay.localClock.unixTimestamp)),
+      localClockPhase: replay.localClock.phase === ActivationPhase.Activated ? "ACTIVATED" : "PENDING",
       inputUsdc: (Number(replay.route.inAmount) / 1e6).toFixed(2),
       outputRaw: replay.route.outAmount,
-      outputUi: outputUi.toFixed(6),
       minOutputRaw: replay.route.otherAmountThreshold,
       slippageBps: replay.route.slippageBps,
       venue: replay.route.venues.map((v) => (v.label === "Whirlpool" ? "Orca Whirlpool" : v.label)).join(" + "),
-      aggregator: "Jupiter",
-      routeObservedAt: replay.routeObservedAt,
       adapterKind,
       adapterName: JUPITER_ADAPTER_KIND_NAMES[adapterKind],
       transactionBytes: replaySafe.serializedTransactionBytes,
-      guardWindow: { beforeSecs: Number(KO_DEMO_POLICY.beforeSecs), afterSecs: Number(KO_DEMO_POLICY.afterSecs), basis: KO_DEMO_POLICY.basis },
-    },
-    replay: {
-      recordedAt: replay.recordedAt,
+      commitmentHex: replaySafe.suffixCommitmentHex,
+      window: replay.route.window,
       guardProgram: replay.binaries.equityGuard.program,
       guardBinarySha256: replay.binaries.equityGuard.sha256,
       jupiterBinarySha256: replay.binaries.jupiterV6.sha256,
       whirlpoolBinarySha256: replay.binaries.whirlpool.sha256,
-      outcomes: replay.results.map((r) => ({
-        label: r.label,
-        succeeded: r.succeeded,
-        guardError: r.guardErrorName,
-        failedInstruction: r.failedInstruction === null ? null : Number(r.failedInstruction),
-        programsInvoked: new Set(r.invoked.map((i) => i.split("@")[0])).size,
-        usdcDelta: r.usdcDelta,
-        stockDelta: r.stockDelta,
-        feeLamports: r.succeeded ? "n/a" : String(BigInt(r.lamportsDelta) * -1n),
-      })),
+      cases: [
+        replayCase("SAFE", "Guarded trade executed", "Guard built from the cloned KOx mint (already activated). The guard passed and the Jupiter swap settled in the same transaction."),
+        replayCase(
+          "STALE_PRE_ACTIVATION",
+          "Outdated state expectation rejected",
+          "Guard deliberately built with the pre-activation phase for the same, already-activated mint. Rejected at the guard; Jupiter never ran.",
+        ),
+        replayCase("MUTATED_SLIPPAGE", "Altered swap rejected", "Slippage in the Jupiter instruction changed after the guard was built. Rejected at the guard; Jupiter never ran."),
+      ],
     },
     divergence: {
       seconds: Number(facts.effectiveTimestampDivergenceSecs),
@@ -358,10 +369,12 @@ export function deriveReferenceState(): ReferenceState {
         apiAnnouncedAt: facts.kox.apiPendingFirstObservedAt,
         apiReason: apiPending.response.reason,
         effectiveAt: iso(facts.kox.storedEffectiveTimestamp),
+        lastPendingBlockTime: S.chainTime,
+        firstActivatedBlockTime: S2.chainTime,
         activationFirstObservedAt: facts.kox.activationFirstObservedAt,
         bytesUnchangedAtActivation: facts.kox.bytesUnchangedAtActivation,
-        oldMultiplier: f64(transitioned.protectedState.multiplier),
-        newMultiplier: f64(transitioned.protectedState.newMultiplier),
+        oldMultiplier: f64(after.protectedState.multiplier),
+        newMultiplier: f64(after.protectedState.newMultiplier),
       },
       koon: {
         mechanism: "Immediate update: new multiplier written already active",

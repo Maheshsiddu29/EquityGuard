@@ -140,31 +140,38 @@ Implemented without any execution path:
 ## Reference app
 
 `apps/reference` shows how a wallet, trading app or agent platform could
-surface EquityGuard. It renders one KOx trade in three steps: prepared
-(**ALLOW**), the same payload after KOx's scheduled dividend adjustment
-activated (**BLOCK: ECONOMIC_STATE_CHANGED**), and a refreshed trade
-(**ALLOW**). Two extra cases show a swap altered after approval
-(**BLOCK: INTENT_MISMATCH**) and an issuer switch that needs approval
-(**REQUIRES_CONSENT: REPRESENTATION_CHANGE**).
+surface EquityGuard. Its main flow uses the two real KOx observations either
+side of the Sep 15 2026 dividend activation (00:29:46Z and 00:30:16Z block
+time): a trade prepared under the pending state (**ALLOW**), the same
+authorization checked after activation
+(**BLOCK: ECONOMIC_STATE_CHANGED**, `ActivationPhaseChanged`), and a refreshed
+trade (**ALLOW**). These checks use a zero protection window to isolate the
+activation; with the 15 min / 5 min demo window, both moments are already
+blocked as `InsideTransitionWindow`.
+
+The Sep 17 local-validator replay (guarded trade executed; outdated-phase and
+altered-swap transactions rejected before Jupiter ran) is shown as a separate
+test. It ran two days after the activation and did not cross it. A secondary
+issuer-switch case (**REQUIRES_CONSENT: REPRESENTATION_CHANGE**) is
+illustrative: its KOon quote is made up, because Jupiter returned no KOon
+route.
 
 ```sh
 npm run app:build          # derive state, compile, write apps/reference/dist
 npm run app:serve          # http://127.0.0.1:4173/  (?state=stale, ?demo, #advanced)
 ```
 
-Every decision is computed at build time by the existing code:
+Decisions are computed at build time by the existing code:
 `checkGuardOffline` over the curated mainnet KOx/KOon bytes, and the
-representation decision engine for the consent case. The stale and
-altered-route results match what the program returned in the M9D-C1 local
-replay (`apps/reference/data/local-replay-2026-09-17.json`, an excerpt with
-the SHA-256 of its source record). The browser only renders; it has no
+representation decision engine for the illustrative case. The replay results
+come from `apps/reference/data/local-replay-2026-09-17.json`, an excerpt that
+records the SHA-256 of its source record. The browser only renders. It has no
 network, wallet or signing code, and the tests pin that.
 
 Boundary: the page shows recorded evidence, not live state. It does not
 show mainnet EquityGuard execution, a real purchase, a guarded Jupiter trade
-on devnet, or a real cross-issuer reroute. The consent case's KOon quote is
-illustrative, because Jupiter returned no KOon route. The 15 min / 5 min
-window is an uncalibrated demo policy.
+on devnet, a trade that crossed the Sep 15 event, or a real cross-issuer
+reroute. The 15 min / 5 min window is an uncalibrated demo policy.
 
 ## Repository layout
 

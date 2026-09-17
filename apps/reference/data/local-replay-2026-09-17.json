@@ -9,6 +9,12 @@
   "recordedAt": "2026-09-17T01:35:27.237Z",
   "localGenesisHash": "dBgQzQh6j6Bc1JR4uxwdt9TtKxEBVQTt2YaEUFgdSue",
   "routeObservedAt": "2026-09-17T00:54:45.096Z",
+  "localClock": {
+    "slot": "447663739",
+    "unixTimestamp": "1789629869",
+    "phase": 1,
+    "note": "Local validator Clock when the guard read the cloned KOx mint: about two days after KOx's 2026-09-15T00:30:00Z activation, so the mint was already activated. No corporate action happened during the replay."
+  },
   "route": {
     "symbol": "KOx",
     "adapterKind": 2,

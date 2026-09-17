@@ -2,6 +2,12 @@
  * The reference app's data contract. `build/derive-state.ts` produces it at
  * build time from committed evidence using the real guard model and decision
  * engine; the browser only renders it. All values are JSON-safe strings.
+ *
+ * Two evidence sets are kept apart on purpose:
+ *   - `scenarios`: the Sep 15 2026 KOx state transition (recorded mainnet
+ *     state, evaluated by the guard model; nothing was sent);
+ *   - `replay`: the separate Sep 17 2026 local-validator execution of a
+ *     guarded Jupiter trade, which did not cross any corporate action.
  */
 
 import type { GuardDecision } from "./decision.ts";
@@ -17,7 +23,7 @@ export type Provenance =
   /** Made up for illustration; never observed. */
   | "ILLUSTRATIVE";
 
-export type ScenarioId = "safe" | "stale" | "refreshed" | "tampered" | "consent";
+export type ScenarioId = "safe" | "stale" | "refreshed" | "consent";
 
 export interface EconomicStateView {
   /** Short state name shown to users, e.g. "S" or "S′". */
@@ -37,29 +43,47 @@ export interface EconomicStateView {
   readonly fingerprint: string;
 }
 
+export interface GuardWindowView {
+  readonly beforeSecs: number;
+  readonly afterSecs: number;
+  readonly note: string;
+}
+
 export interface Scenario {
   readonly id: ScenarioId;
   readonly label: string;
+  readonly illustrative: boolean;
   readonly headline: string;
   readonly detail: string;
   readonly decision: GuardDecision;
   readonly symbol: string;
   readonly issuer: string;
+  /** State the transaction was authorized under, and the moment it was prepared. */
   readonly authorized: EconomicStateView;
+  /** State at the moment the guard is evaluated. */
   readonly current: EconomicStateView;
   /** Chain time at which the guard was evaluated, ISO. */
   readonly evaluatedAt: string;
-  readonly commitment: { readonly status: "BOUND" | "ALTERED"; readonly hex: string };
-  /** What happened to balances, in plain words. */
+  readonly window: GuardWindowView;
+  /** What happens to balances, in plain words. */
   readonly settlement: string;
   /** What backs this scenario's decision, most direct first. */
   readonly backing: readonly { readonly provenance: Provenance; readonly text: string }[];
 }
 
-export interface TimelineEvent {
-  readonly at: string;
+export interface ReplayCase {
   readonly label: string;
-  readonly kind: "announce" | "effective" | "observed" | "stale";
+  readonly title: string;
+  readonly description: string;
+  readonly decision: GuardDecision;
+  readonly succeeded: boolean;
+  readonly failedInstruction: number | null;
+  readonly programsInvoked: number;
+  readonly jupiterRan: boolean;
+  readonly usdcDelta: string;
+  readonly stockDelta: string;
+  readonly feeLamports: string | null;
+  readonly expectedPhase: "PENDING" | "ACTIVATED";
 }
 
 export interface ReferenceState {
@@ -72,36 +96,28 @@ export interface ReferenceState {
     readonly mint: string;
     readonly decimals: number;
   };
-  readonly trade: {
+  /** Example order shown in the trade card; no quote is attached to it. */
+  readonly order: { readonly inputUsdc: string; readonly aggregator: string };
+  readonly replay: {
+    readonly recordedAt: string;
+    readonly routeObservedAt: string;
+    readonly localClock: string;
+    readonly localClockPhase: "PENDING" | "ACTIVATED";
     readonly inputUsdc: string;
     readonly outputRaw: string;
-    readonly outputUi: string;
     readonly minOutputRaw: string;
     readonly slippageBps: number;
     readonly venue: string;
-    readonly aggregator: string;
-    readonly routeObservedAt: string;
     readonly adapterKind: number;
     readonly adapterName: string;
     readonly transactionBytes: number;
-    readonly guardWindow: { readonly beforeSecs: number; readonly afterSecs: number; readonly basis: string };
-  };
-  readonly replay: {
-    readonly recordedAt: string;
+    readonly commitmentHex: string;
+    readonly window: { readonly beforeSecs: number; readonly afterSecs: number };
     readonly guardProgram: string;
     readonly guardBinarySha256: string;
     readonly jupiterBinarySha256: string;
     readonly whirlpoolBinarySha256: string;
-    readonly outcomes: readonly {
-      readonly label: string;
-      readonly succeeded: boolean;
-      readonly guardError: string | null;
-      readonly failedInstruction: number | null;
-      readonly programsInvoked: number;
-      readonly usdcDelta: string;
-      readonly stockDelta: string;
-      readonly feeLamports: string;
-    }[];
+    readonly cases: readonly ReplayCase[];
   };
   readonly divergence: {
     readonly seconds: number;
@@ -111,6 +127,8 @@ export interface ReferenceState {
       readonly apiAnnouncedAt: string;
       readonly apiReason: string;
       readonly effectiveAt: string;
+      readonly lastPendingBlockTime: string;
+      readonly firstActivatedBlockTime: string;
       readonly activationFirstObservedAt: string;
       readonly bytesUnchangedAtActivation: boolean;
       readonly oldMultiplier: string;

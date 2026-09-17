@@ -64,6 +64,10 @@ test("the copy keeps the required disclosures", () => {
     "EquityGuard running on mainnet, or a real purchase. It is deployed on devnet only.",
     "A guarded Jupiter trade on devnet",
     "A real cross-issuer reroute",
+    "Not a real reroute",
+    "Not the Sep 15 event.",
+    "A trade that crossed the Sep 15 event. The local replay ran two days later.",
+    "Separate test",
     "uncalibrated demo value",
     "has not been externally audited",
     "Illustrative",
@@ -86,6 +90,8 @@ test("the copy makes none of the out-of-bounds claims", () => {
     /any DEX/i,
     /any corporate action/i,
     /calibrated threshold/i,
+    /cross-checked against a local/i,
+    /same stale-phase payload was sent/i,
   ]) {
     assert.ok(!pattern.test(copy), `forbidden claim ${pattern}`);
   }

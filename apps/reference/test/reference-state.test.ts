@@ -3,82 +3,111 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { koDivergenceFacts } from "../../../scripts/demo/mainnet-replay.ts";
 import { deriveReferenceState, loadReplayExcerpt } from "../build/derive-state.ts";
 
 const state = deriveReferenceState();
 const replay = loadReplayExcerpt();
-const replayResult = (label: string) => {
-  const result = replay.results.find((r) => r.label === label);
-  assert.ok(result, label);
-  return result;
-};
+const facts = koDivergenceFacts();
+const T = Date.parse(state.divergence.kox.effectiveAt);
 
 test("the three-step flow is SAFE → BLOCK: ECONOMIC_STATE_CHANGED → ALLOW", () => {
   const { safe, stale, refreshed } = state.scenarios;
   assert.deepEqual(safe.decision, { type: "ALLOW", guardResult: null });
   assert.deepEqual(stale.decision, { type: "BLOCK", reason: "ECONOMIC_STATE_CHANGED", guardResult: "ActivationPhaseChanged" });
   assert.deepEqual(refreshed.decision, { type: "ALLOW", guardResult: null });
-  // Stale: the authorization was taken under S and the chain is now at S′.
   assert.equal(stale.authorized.fingerprint, safe.authorized.fingerprint);
   assert.notEqual(stale.current.fingerprint, stale.authorized.fingerprint);
-  assert.equal(stale.authorized.phase, "PENDING");
-  assert.equal(stale.current.phase, "ACTIVATED");
-  // Refreshed: a new authorization under the current state.
   assert.equal(refreshed.authorized.fingerprint, stale.current.fingerprint);
   // The Clock crossed T without any byte change: only the phase differs.
   assert.equal(stale.authorized.multiplierHex, stale.current.multiplierHex);
   assert.equal(stale.authorized.newMultiplierHex, stale.current.newMultiplierHex);
-  assert.ok(Date.parse(stale.evaluatedAt) > Date.parse(stale.current.effectiveAt));
-  assert.ok(Date.parse(safe.evaluatedAt) < Date.parse(safe.current.effectiveAt));
+  assert.deepEqual([stale.authorized.phase, stale.current.phase], ["PENDING", "ACTIVATED"]);
 });
 
-test("the stale and refreshed decisions match what the program did in the local replay", () => {
-  const stale = replayResult("STALE_PRE_ACTIVATION");
-  const safe = replayResult("SAFE");
-  const { scenarios } = state;
-  // Same protected bytes as the recorded mainnet KOx state.
-  for (const r of [stale, safe]) {
-    assert.equal(r.expectation.multiplierHex, scenarios.stale.current.multiplierHex);
-    assert.equal(r.expectation.newMultiplierHex, scenarios.stale.current.newMultiplierHex);
-    assert.equal(new Date(Number(r.expectation.newMultiplierEffectiveTimestamp) * 1000).toISOString().replace(".000Z", "Z"), scenarios.stale.current.effectiveAt);
+test("the stale case uses the adjacent real observations immediately around activation", () => {
+  const { safe, stale } = state.scenarios;
+  // Last pending and first activated observation of the curated window.
+  assert.deepEqual([stale.authorized.slot, stale.current.slot], ["447113427", "447113520"]);
+  const prepared = Date.parse(stale.authorized.chainTime);
+  const checked = Date.parse(stale.evaluatedAt);
+  assert.ok(prepared < T && T <= checked);
+  assert.ok(T - prepared <= 30_000 && checked - T <= 30_000, "both observations within one polling interval of T");
+  assert.equal(checked - prepared, 30_000);
+  assert.equal(safe.evaluatedAt, stale.authorized.chainTime);
+});
+
+test("the transition cases use a zero window and match the existing clock-crossing facts", () => {
+  const { safe, stale, refreshed } = state.scenarios;
+  for (const s of [safe, stale, refreshed]) assert.deepEqual([s.window.beforeSecs, s.window.afterSecs], [0, 0]);
+  const crossing = facts.koxClockCrossing;
+  assert.equal(crossing.pendingSnapshotZeroWindow.guardResult, stale.decision.guardResult);
+  assert.equal(crossing.freshActivatedSnapshotZeroWindow.guardResult, refreshed.decision.guardResult);
+  // The window note's claim: the demo window would have blocked these moments.
+  assert.equal(crossing.pendingSnapshotDemoWindow.guardResult, "InsideTransitionWindow");
+  assert.match(stale.window.note, /InsideTransitionWindow/);
+});
+
+test("the Sep 15 transition cases never draw on the Sep 17 local replay", () => {
+  const replayValues = [replay.route.outAmount, replay.route.otherAmountThreshold, ...replay.results.map((r) => r.suffixCommitmentHex), replay.recordedAt.slice(0, 10)];
+  for (const s of Object.values(state.scenarios)) {
+    assert.ok(!s.backing.some((b) => b.provenance === "LOCAL_REPLAY"), s.id);
+    const text = JSON.stringify(s);
+    for (const value of replayValues) assert.ok(!text.includes(value), `${s.id} contains replay value ${value}`);
+    assert.ok(!/Sep 17|replay/i.test(text), `${s.id} mentions the replay`);
   }
-  // Pending-phase expectation after T: rejected by the program with the guard model's error.
-  assert.equal(stale.expectation.expectedPhase, 0);
-  assert.equal(stale.succeeded, false);
-  assert.equal(stale.failedInstruction, "0");
-  assert.equal(scenarios.stale.decision.guardResult, stale.guardErrorName);
-  assert.deepEqual([stale.usdcDelta, stale.stockDelta], ["0", "0"]);
-  // Activated-phase expectation: the guarded Jupiter trade executed.
-  assert.equal(safe.expectation.expectedPhase, 1);
-  assert.equal(safe.succeeded, true);
-  assert.equal(scenarios.refreshed.decision.type, "ALLOW");
+  assert.ok(!JSON.stringify(state.order).includes(replay.route.outAmount));
 });
 
-test("the altered-route case is the replay's commitment rejection, before Jupiter ran", () => {
-  const mutated = replayResult("MUTATED_SLIPPAGE");
-  const { tampered } = state.scenarios;
-  assert.deepEqual(tampered.decision, { type: "BLOCK", reason: "INTENT_MISMATCH", guardResult: "DownstreamCommitmentMismatch" });
-  assert.equal(tampered.commitment.status, "ALTERED");
-  assert.equal(mutated.failedInstruction, "0");
-  assert.deepEqual(mutated.invoked, ["EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT@1"]);
-  assert.deepEqual([mutated.usdcDelta, mutated.stockDelta], ["0", "0"]);
-  assert.deepEqual(tampered.backing.map((b) => b.provenance), ["LOCAL_REPLAY"]);
+test("the local replay is described as a separate test after the event", () => {
+  const r = state.replay;
+  assert.ok(Date.parse(r.localClock) - T > 24 * 3600 * 1000, "the replay clock is days after activation");
+  assert.ok(Date.parse(r.routeObservedAt) - T > 24 * 3600 * 1000);
+  assert.equal(r.localClockPhase, "ACTIVATED");
+  const [safe, stale, mutated] = r.cases;
+  assert.deepEqual(
+    r.cases.map((c) => [c.label, c.decision.type, c.decision.guardResult, c.expectedPhase, c.jupiterRan]),
+    [
+      ["SAFE", "ALLOW", null, "ACTIVATED", true],
+      ["STALE_PRE_ACTIVATION", "BLOCK", "ActivationPhaseChanged", "PENDING", false],
+      ["MUTATED_SLIPPAGE", "BLOCK", "DownstreamCommitmentMismatch", "ACTIVATED", false],
+    ],
+  );
+  assert.equal(mutated?.decision.type === "BLOCK" && mutated.decision.reason, "INTENT_MISMATCH");
+  assert.match(stale?.description ?? "", /deliberately/);
+  assert.deepEqual([safe?.usdcDelta, safe?.stockDelta], ["-5000000", "5504261"]);
+  for (const c of [stale, mutated]) {
+    assert.deepEqual([c?.succeeded, c?.failedInstruction, c?.usdcDelta, c?.stockDelta, c?.programsInvoked, c?.feeLamports], [false, 0, "0", "0", 1, "5441"]);
+  }
 });
 
-test("the consent case comes from the decision engine and is labelled illustrative", () => {
+test("the replay excerpt's expectations are the recorded KOx bytes", () => {
+  const { stale } = state.scenarios;
+  for (const r of replay.results) {
+    assert.equal(r.expectation.multiplierHex, stale.current.multiplierHex);
+    assert.equal(r.expectation.newMultiplierHex, stale.current.newMultiplierHex);
+    assert.equal(Number(r.expectation.newMultiplierEffectiveTimestamp) * 1000, T);
+  }
+});
+
+test("the consent case is secondary, from the decision engine, and illustrative", () => {
   const { consent } = state.scenarios;
+  assert.equal(Object.keys(state.scenarios).at(-1), "consent");
+  assert.deepEqual(
+    Object.values(state.scenarios).filter((s) => s.illustrative).map((s) => s.id),
+    ["consent"],
+  );
+  for (const s of Object.values(state.scenarios).filter((s) => s.id !== "consent")) {
+    assert.ok(!s.backing.some((b) => b.provenance === "ILLUSTRATIVE"), s.id);
+  }
   assert.equal(consent.decision.type, "REQUIRES_CONSENT");
   if (consent.decision.type !== "REQUIRES_CONSENT") return;
   assert.equal(consent.decision.reason, "REPRESENTATION_CHANGE");
   assert.equal(consent.decision.guardResult, "InsideTransitionWindow");
-  assert.equal(consent.decision.disclosure.toSymbol, "KOon");
-  assert.ok(BigInt(consent.decision.disclosure.additionalCostBps) <= BigInt(consent.decision.disclosure.policyMaxAdditionalCostBps));
-  assert.ok(consent.backing.some((b) => b.provenance === "ILLUSTRATIVE"));
+  assert.equal(consent.backing[0]?.provenance, "ILLUSTRATIVE");
+  assert.match(consent.headline, /^Illustrative/);
   assert.match(consent.settlement, /never executes/);
-  // No other scenario uses the illustrative quote.
-  for (const s of Object.values(state.scenarios).filter((s) => s.id !== "consent")) {
-    assert.ok(!s.backing.some((b) => b.provenance === "ILLUSTRATIVE"), s.id);
-  }
+  assert.deepEqual([consent.window.beforeSecs, consent.window.afterSecs], [900, 300]);
 });
 
 test("the timeline carries the observed 25m 56s divergence and mechanisms", () => {
@@ -89,15 +118,7 @@ test("the timeline carries the observed 25m 56s divergence and mechanisms", () =
   assert.equal(divergence.kox.bytesUnchangedAtActivation, true);
   assert.equal(divergence.koon.pendingPhaseObserved, false);
   assert.equal(divergence.kox.apiReason, "Dividend");
-});
-
-test("failed cases report no token movement, only a fee", () => {
-  for (const id of ["stale", "tampered"] as const) {
-    assert.match(state.scenarios[id].settlement, /^No tokens moved\. .* 5441 lamport network fee/);
-  }
-  for (const o of state.replay.outcomes.filter((o) => !o.succeeded)) {
-    assert.deepEqual([o.usdcDelta, o.stockDelta, o.programsInvoked], ["0", "0", 1]);
-  }
+  assert.deepEqual([divergence.kox.lastPendingBlockTime, divergence.kox.firstActivatedBlockTime], ["2026-09-15T00:29:46Z", "2026-09-15T00:30:16Z"]);
 });
 
 test("derivation is deterministic and traceable to its inputs", () => {
@@ -112,7 +133,11 @@ const RECORD = new URL(`../../../tmp/m9d-c1/${replay.sourceFile}`, import.meta.u
 test("the replay excerpt matches its local source record", { skip: !existsSync(RECORD) && "local replay record not present" }, () => {
   const bytes = readFileSync(RECORD);
   assert.equal(createHash("sha256").update(bytes).digest("hex"), replay.sourceSha256);
-  const record = JSON.parse(bytes.toString("utf8")) as { results: { label: string; suffixCommitmentHex: string; outcome: { signature: string; succeeded: boolean; guardErrorName: string | null } }[] };
+  const record = JSON.parse(bytes.toString("utf8")) as {
+    localSnapshot: { unixTimestamp: string; phase: number };
+    results: { label: string; suffixCommitmentHex: string; outcome: { succeeded: boolean; guardErrorName: string | null } }[];
+  };
+  assert.deepEqual([record.localSnapshot.unixTimestamp, record.localSnapshot.phase], [replay.localClock.unixTimestamp, replay.localClock.phase]);
   assert.deepEqual(
     record.results.map((r) => [r.label, r.suffixCommitmentHex, r.outcome.succeeded, r.outcome.guardErrorName]),
     replay.results.map((r) => [r.label, r.suffixCommitmentHex, r.succeeded, r.guardErrorName]),
