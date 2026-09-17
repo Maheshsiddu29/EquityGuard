@@ -1,0 +1,143 @@
+{
+  "kind": "equityguard-reference-local-replay-excerpt",
+  "environment": "LOCAL_REPLAY",
+  "description": "Excerpt of the M9D-C1 local replay record: EquityGuard (adapter kind 2) and a real mainnet Jupiter route_v2 executed together on a local solana-test-validator loaded with mainnet program binaries and route accounts. Not mainnet, not devnet, not a real purchase; the taker's USDC balance was fabricated locally.",
+  "sourceFile": "replay-2026-09-17T013527.237Z.json",
+  "sourceSha256": "aba941524e6c68ba1cb2d6498c79a38bfee4b479b218a496472f3c27dcb46445",
+  "routeSourceFile": "route-fixture.json",
+  "routeSourceSha256": "d5d76b2ccf222ea9f9a53e340a9cd76540a24e133966838168a726a428cc1914",
+  "recordedAt": "2026-09-17T01:35:27.237Z",
+  "localGenesisHash": "dBgQzQh6j6Bc1JR4uxwdt9TtKxEBVQTt2YaEUFgdSue",
+  "routeObservedAt": "2026-09-17T00:54:45.096Z",
+  "route": {
+    "symbol": "KOx",
+    "adapterKind": 2,
+    "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "outputMint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+    "inAmount": "5000000",
+    "outAmount": "5504261",
+    "otherAmountThreshold": "5476740",
+    "slippageBps": 50,
+    "swapMode": "ExactIn",
+    "venues": [
+      {
+        "label": "Whirlpool",
+        "ammKey": "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy",
+        "percent": 100
+      }
+    ],
+    "window": {
+      "beforeSecs": 900,
+      "afterSecs": 300
+    }
+  },
+  "binaries": {
+    "equityGuard": {
+      "program": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+      "sha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46"
+    },
+    "jupiterV6": {
+      "program": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+      "sha256": "2312a4871d892a3d41bb11280d13599db6d5167dba01e320e7dd4911b58ff4a3"
+    },
+    "whirlpool": {
+      "program": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+      "sha256": "4b5cb126a352f68d716be62393c70abf276094d767701366f08c40c11789cfb4"
+    }
+  },
+  "results": [
+    {
+      "label": "SAFE",
+      "expectation": {
+        "multiplierHex": "73833748164bf03f",
+        "newMultiplierHex": "df525701685cf03f",
+        "newMultiplierEffectiveTimestamp": "1789432200",
+        "expectedPhase": 1,
+        "window": {
+          "beforeSecs": 900,
+          "afterSecs": 300
+        }
+      },
+      "suffixCommitmentHex": "b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+      "serializedTransactionBytes": 675,
+      "signature": "3QnTFRWTVAAppAxxgNx19xbHHH3tBXGSNjPAu23A5ARqbA6UMU2ynsXArsFcK2zJa2QfCoYW5KQP5RWFz22MpVr5",
+      "slot": "447663741",
+      "succeeded": true,
+      "failedInstruction": null,
+      "customCode": null,
+      "guardErrorName": null,
+      "guardLog": "Program log: EquityGuard: safe",
+      "invoked": [
+        "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT@1",
+        "ComputeBudget111111111111111111111111111111@1",
+        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL@1",
+        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb@2",
+        "11111111111111111111111111111111@2",
+        "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4@1",
+        "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc@2",
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA@3",
+        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb@3",
+        "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4@2"
+      ],
+      "usdcDelta": "-5000000",
+      "stockDelta": "5504261",
+      "lamportsDelta": "-2142161"
+    },
+    {
+      "label": "STALE_PRE_ACTIVATION",
+      "expectation": {
+        "multiplierHex": "73833748164bf03f",
+        "newMultiplierHex": "df525701685cf03f",
+        "newMultiplierEffectiveTimestamp": "1789432200",
+        "expectedPhase": 0,
+        "window": {
+          "beforeSecs": 900,
+          "afterSecs": 300
+        }
+      },
+      "suffixCommitmentHex": "b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+      "serializedTransactionBytes": 675,
+      "signature": "2Z5Tu4NSXJ95hWpDRpRZbsmNToqqmMajw19f8bHehLf8wjdk2R9mDjARrrhBEV4q7eaWeg3sjhP5LACfBA2DHyqp",
+      "slot": "447663742",
+      "succeeded": false,
+      "failedInstruction": "0",
+      "customCode": 12,
+      "guardErrorName": "ActivationPhaseChanged",
+      "guardLog": "Program log: EquityGuard rejected: ActivationPhaseChanged",
+      "invoked": [
+        "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT@1"
+      ],
+      "usdcDelta": "0",
+      "stockDelta": "0",
+      "lamportsDelta": "-5441"
+    },
+    {
+      "label": "MUTATED_SLIPPAGE",
+      "expectation": {
+        "multiplierHex": "73833748164bf03f",
+        "newMultiplierHex": "df525701685cf03f",
+        "newMultiplierEffectiveTimestamp": "1789432200",
+        "expectedPhase": 1,
+        "window": {
+          "beforeSecs": 900,
+          "afterSecs": 300
+        }
+      },
+      "suffixCommitmentHex": "b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+      "serializedTransactionBytes": 675,
+      "signature": "5DZPGMje9eGWyACpkXn4A6LJf7LyeqrfrRhGbA2iqkGYvTxe2TC8jPdvHEyCujTvZ8UyYrdWuWcpv7J2RH9az3Ws",
+      "slot": "447663744",
+      "succeeded": false,
+      "failedInstruction": "0",
+      "customCode": 23,
+      "guardErrorName": "DownstreamCommitmentMismatch",
+      "guardLog": "Program log: EquityGuard rejected: DownstreamCommitmentMismatch",
+      "invoked": [
+        "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT@1"
+      ],
+      "usdcDelta": "0",
+      "stockDelta": "0",
+      "lamportsDelta": "-5441"
+    }
+  ]
+}
