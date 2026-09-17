@@ -15,6 +15,9 @@ wallet*.json
 # Node
 node_modules/
 
+# Reference app build output
+apps/reference/dist/
+
 # Python fixture generators
 __pycache__/
 
