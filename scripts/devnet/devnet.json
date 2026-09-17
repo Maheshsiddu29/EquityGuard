@@ -5,11 +5,11 @@
     "deploySignature": "4rc3JcJ7NHg3HmjNsfzmnTDcEXxR7k3gYvgFazJFfZ4chbwBaSU9nxp7P9yepJtxaEPtiGUXgQLHpoAezwtGBWRa",
     "upgradeAuthority": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
     "abiVersion": 2,
-    "sbfSha256": "337becb9b5b8f9332fca64bba27c24529fb44da79871c17618c92776feac2795",
+    "sbfSha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46",
     "programDataAddress": "4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3",
-    "upgradeSignature": "3J4GS9PymxP5v3NVeQZBdgR54wXhkRHaES9bbwKg4hdEbaqbGdEBC9w6pdnkKzQStWXkBZWgHrRDPKFecZjiDHRZ",
-    "deploymentSlot": 499010040,
-    "verifiedAt": "2026-09-15T23:36:11Z"
+    "upgradeSignature": "5Vb8aaU47wz2bK8iA5yvAyYFEGQbWPy5vzVTo46kZi6VJb22gman2KaRyEBLpcgkkiQSvJSYkg6nSHZZvvQ1jXmb",
+    "deploymentSlot": 499547040,
+    "verifiedAt": "2026-09-17T00:17:56Z"
   },
   "assets": [
     {
