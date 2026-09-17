@@ -35,7 +35,7 @@ test("only the transport signs or sends transactions", () => {
 test("the transport is imported only by the product executor and the devnet admin/proof tooling", () => {
   // Value imports of the transport module (type-only imports of its result types are fine).
   const importers = files.filter((f) => /^import (?!type )[^;]*from "\.{1,2}\/(?:devnet\/)?send\.ts"/m.test(f.text)).map((f) => f.path).sort();
-  assert.deepEqual(importers, ["scripts/demo/devnet-execution.ts", "scripts/devnet/cli.ts", "scripts/devnet/guard-v2-live-proof.ts", "scripts/devnet/scenarios.ts"]);
+  assert.deepEqual(importers, ["scripts/demo/devnet-execution.ts", "scripts/devnet/cli.ts", "scripts/devnet/guard-v2-live-proof.ts", "scripts/devnet/jupiter-adapter-live-proof.ts", "scripts/devnet/scenarios.ts"]);
 });
 
 /** Name of the top-level function enclosing `index`, and whether it is exported. */
