@@ -51,18 +51,28 @@ EquityGuard has been composed into a real Jupiter Swap V2 mainnet transaction
 build for a real xStock. The composition was build-only: a USDC → KOx `/build`
 route, with a guard instruction encoded from KOx's live mainnet ScaledUiAmount
 state, compiled into one v0 transaction using Jupiter's lookup table. The
-original (ABI v1) guarded transaction was 577 bytes; with the local ABI v2
-Jupiter adapter candidate (below) the recorded KOx and UNHx builds compile to
+original (ABI v1) guarded transaction was 577 bytes; with the ABI v2 Jupiter
+adapter (below), fresh KOx BUY and UNHx BUY/SELL builds (2026-09-17) compile to
 675 bytes against the 1232-byte limit. Nothing was signed or submitted, and
 EquityGuard is not deployed on mainnet, so the guard has not executed alongside
 a Jupiter swap.
 
-**Local candidate, not deployed:** ABI v2 adapter kinds 2 and 3 guard a whole
-Jupiter `route_v2` transaction (`guard, price, limit, [destination ATA],
-route_v2`). Adapter kinds 2 and 3 support only USDC ↔ protected-equity
-`route_v2` trades. The program checks the transaction grammar and the trade's
-semantics itself; the suffix commitment is not treated as semantic
-validation. The devnet program still runs the deployed kind-1-only binary.
+**Deployed on devnet (upgrade
+[`5Vb8aaU4…vQ1jXmb`](https://explorer.solana.com/tx/5Vb8aaU47wz2bK8iA5yvAyYFEGQbWPy5vzVTo46kZi6VJb22gman2KaRyEBLpcgkkiQSvJSYkg6nSHZZvvQ1jXmb?cluster=devnet),
+SBF SHA-256 `d7d59ccd…a41e4e46`, verified against the ProgramData bytes):**
+ABI v2 adapter kinds 2 and 3 guard a whole Jupiter `route_v2` transaction
+(`guard, price, limit, [destination ATA], route_v2`). Adapter kinds 2 and 3
+support only USDC ↔ protected-equity `route_v2` trades. The program checks
+the transaction grammar and the trade's semantics itself; the suffix
+commitment is not treated as semantic validation.
+
+Jupiter's program is not executable on devnet, so any transaction invoking it
+is rejected at load time, before the guard runs. Devnet therefore shows the
+kind 2/3 rejections that precede the trade-program check (e.g.
+`GuardNotFirst`
+[`3jLywJan…E471aKBL`](https://explorer.solana.com/tx/3jLywJan1CiSARDrHi6WKaRrBxDEi1Sadhnms9XTg57HFhbinKY2qfx8CTgG2qKAQ145C8uCBecF3xqdE471aKBL?cluster=devnet),
+which also rolls back a token transfer placed before the guard). It cannot
+show a guarded Jupiter trade.
 
 ### Claim boundary
 
@@ -76,15 +86,18 @@ Proven:
   from the KOx state, using Jupiter's address lookup table: 577 bytes guarded
   vs 507 bytes baseline (+70 bytes, +1 static account, +1 instruction); no
   `maxAccounts` reduction was needed;
-- guard execution and atomic rollback on **devnet** (table above).
+- guard execution and atomic rollback on **devnet** (table above), re-run
+  against the upgraded binary with adapter kind 1;
+- adapter kind 2/3 grammar rejections on **devnet** that precede the
+  trade-program check, matching the client model.
 
 Not proven:
 
 - EquityGuard execution on mainnet (the program is deployed on devnet only);
 - guard + Jupiter atomicity on mainnet;
-- the Jupiter adapter (kinds 2 and 3) on any cluster: it is verified locally
-  in LiteSVM, where a stand-in occupies the Jupiter address and no trade
-  executes;
+- a guarded Jupiter trade on any cluster, and the kind 2/3 checks after the
+  trade-program check on a live cluster: these are verified only in LiteSVM,
+  where a stand-in occupies the Jupiter address and no trade executes;
 - protection of live xStocks trades, or any real purchase;
 - automatic cross-issuer rerouting (the decision engine decides; nothing
   executes the alternative), a UI, or calibrated issuer transition policies.
@@ -112,7 +125,7 @@ Implemented without any execution path:
 
 | Component | Status |
 | --- | --- |
-| `programs/equity_guard` — `assert_safe_execution` | ABI v2 deployed on devnet with adapter kind 1 (committed Token-2022 `TransferChecked`); adapter kinds 2/3 (USDC ↔ protected-equity Jupiter `route_v2`) are a local candidate tested in LiteSVM, not deployed |
+| `programs/equity_guard` — `assert_safe_execution` | ABI v2 deployed on devnet with adapter kinds 1 (committed Token-2022 `TransferChecked`) and 2/3 (USDC ↔ protected-equity Jupiter `route_v2`; positive path LiteSVM-only, since devnet has no Jupiter) |
 | Token-2022 ScaledUiAmount decoding | implemented in Rust and TypeScript; cross-checked on golden vectors and real mainnet mint bytes |
 | `packages/guard-client` | TypeScript builders for ABI v2 guards: kind 1 `TransferChecked`, kinds 2/3 Jupiter `route_v2` (grammar mirror, suffix commitment) |
 | `scripts/devnet/` | devnet test mints EQ-A/EQ-B, scenario runner, evidence |
