@@ -73,10 +73,29 @@ export { COMPUTE_BUDGET_PROGRAM_ADDRESS };
  */
 export const UNSIMULATED_COMPUTE_UNIT_LIMIT = 1_400_000;
 
+/**
+ * Why composition failed, as a stable value. The public integration surface
+ * (`protect.ts`) maps these to its own codes rather than reading messages.
+ */
+export type CompositionErrorCode =
+  /** The guarded transaction exceeds {@link MAX_TRANSACTION_BYTES}. */
+  | "TRANSACTION_TOO_LARGE"
+  /** The compiled transaction does not resolve to the committed instructions. */
+  | "COMMITMENT_MISMATCH"
+  /** The requested compute unit limit is not a u32. */
+  | "INVALID_COMPUTE_UNIT_LIMIT"
+  /** A supported build always carries one; reaching this means the checks were bypassed. */
+  | "MISSING_COMPUTE_UNIT_PRICE"
+  /** Wire bytes that are not a v0 message, or whose accounts do not resolve. */
+  | "UNRESOLVABLE_TRANSACTION";
+
 export class CompositionError extends Error {
-  constructor(message: string) {
+  readonly code: CompositionErrorCode;
+
+  constructor(code: CompositionErrorCode, message: string) {
     super(message);
     this.name = "CompositionError";
+    this.code = code;
   }
 }
 
@@ -113,7 +132,7 @@ export function toKitInstruction(api: ApiInstruction): Instruction {
 
 /** `SetComputeUnitLimit(units)`: tag 2 followed by a u32. */
 export function getSetComputeUnitLimitInstruction(units: number): Instruction {
-  if (!Number.isInteger(units) || units < 0 || units > 0xffffffff) throw new CompositionError(`compute unit limit ${units} is not a u32`);
+  if (!Number.isInteger(units) || units < 0 || units > 0xffffffff) throw new CompositionError("INVALID_COMPUTE_UNIT_LIMIT", `compute unit limit ${units} is not a u32`);
   const data = new Uint8Array(SET_COMPUTE_UNIT_LIMIT.length);
   data[0] = SET_COMPUTE_UNIT_LIMIT.tag;
   new DataView(data.buffer).setUint32(1, units, true);
@@ -191,7 +210,7 @@ export function assertSupportedJupiterBuild(build: BuildResponse, request: Jupit
 export function normalizedJupiterSuffix(build: BuildResponse, computeUnitLimit: number): Instruction[] {
   const budget = build.computeBudgetInstructions.map(toKitInstruction);
   const price = budget.find((i) => isShape(i, SET_COMPUTE_UNIT_PRICE));
-  if (!price) throw new CompositionError("no SetComputeUnitPrice");
+  if (!price) throw new CompositionError("MISSING_COMPUTE_UNIT_PRICE", "no SetComputeUnitPrice");
   return [price, getSetComputeUnitLimitInstruction(computeUnitLimit), ...build.setupInstructions.map(toKitInstruction), toKitInstruction(build.swapInstruction)];
 }
 
@@ -265,7 +284,7 @@ export function compileAndMeasure(
 export function resolveWireTransaction(wireBytes: Uint8Array, lookupTables: Readonly<Record<string, readonly string[]>>): CommittedInstruction[] {
   const { messageBytes } = getTransactionDecoder().decode(wireBytes);
   const message = getCompiledTransactionMessageDecoder().decode(messageBytes);
-  if (message.version !== 0) throw new CompositionError(`expected a v0 message, got ${String(message.version)}`);
+  if (message.version !== 0) throw new CompositionError("UNRESOLVABLE_TRANSACTION", `expected a v0 message, got ${String(message.version)}`);
   const { numSignerAccounts, numReadonlySignerAccounts, numReadonlyNonSignerAccounts } = message.header;
   const statics = message.staticAccounts;
   const keys = statics.map((key, i) => ({
@@ -276,7 +295,7 @@ export function resolveWireTransaction(wireBytes: Uint8Array, lookupTables: Read
   const lookups = "addressTableLookups" in message ? (message.addressTableLookups ?? []) : [];
   const fromTable = (table: string, index: number) => {
     const key = lookupTables[table]?.[index];
-    if (!key) throw new CompositionError(`lookup ${table}#${index} does not resolve`);
+    if (!key) throw new CompositionError("UNRESOLVABLE_TRANSACTION", `lookup ${table}#${index} does not resolve`);
     return address(key);
   };
   for (const lookup of lookups) {
@@ -287,7 +306,7 @@ export function resolveWireTransaction(wireBytes: Uint8Array, lookupTables: Read
   }
   const key = (index: number) => {
     const found = keys[index];
-    if (!found) throw new CompositionError(`account index ${index} is out of range`);
+    if (!found) throw new CompositionError("UNRESOLVABLE_TRANSACTION", `account index ${index} is out of range`);
     return found;
   };
   return message.instructions.map((instruction) => ({
@@ -341,11 +360,11 @@ export async function composeGuardedJupiterTrade(input: JupiterTradeRequest & {
   });
   const { wireBytes, metrics } = compileAndMeasure(input.build, input.feePayer, trade.instructions);
   if (!metrics.fitsSizeLimit) {
-    throw new CompositionError(`guarded transaction is ${metrics.serializedTransactionBytes} bytes, over ${MAX_TRANSACTION_BYTES}`);
+    throw new CompositionError("TRANSACTION_TOO_LARGE", `guarded transaction is ${metrics.serializedTransactionBytes} bytes, over ${MAX_TRANSACTION_BYTES}`);
   }
   const resolved = resolveWireTransaction(wireBytes, input.build.addressesByLookupTableAddress);
   if (!sameInstructions(resolved, sysvarView(trade.instructions, input.feePayer)) || !sameInstructions(resolved.slice(1), trade.committedSuffix)) {
-    throw new CompositionError("the compiled transaction does not resolve to the committed instructions");
+    throw new CompositionError("COMMITMENT_MISMATCH", "the compiled transaction does not resolve to the committed instructions");
   }
   return { trade, binding: jupiterTradeBindingOf(trade), wireBytes, metrics };
 }

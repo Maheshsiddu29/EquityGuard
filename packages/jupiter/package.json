@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./protect": "./src/protect.ts"
   },
   "dependencies": {
     "@equityguard/guard-client": "0.1.0",
