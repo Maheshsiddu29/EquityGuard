@@ -137,6 +137,56 @@ Implemented without any execution path:
 | `apps/reference` | reference integration UI over recorded evidence (no signing, no network) |
 | Executed rerouting | later |
 
+## Integrating with Jupiter
+
+Applications that already build Jupiter Swap V2 swaps add EquityGuard with one
+import, one call, and a three-way decision on the result:
+
+```ts
+import { protectJupiterSwap } from "@equityguard/jupiter/protect";
+
+const guarded = await protectJupiterSwap({
+  build,                                                 // your Jupiter /build response
+  userPublicKey: wallet.publicKey,
+  rpc,                                                   // any Solana RPC, read-only
+  protectionWindow: { beforeSecs: 900, afterSecs: 300 }, // your policy, not ours
+});
+
+if (guarded.status === "PROTECTED") await wallet.signAndSendTransaction(guarded.transaction);
+```
+
+The SDK derives the protected mint, adapter kind, economic state, activation
+phase and downstream commitment itself: an integrator never encodes multiplier
+bytes, phases, timestamps or `route_v2` account grammar. It returns unsigned
+bytes and cannot sign, submit, hold a key or read configuration — a test scans
+every source file in the integration path to keep that true.
+
+The other three statuses are refusals, and `NOT_APPLICABLE` is the only one
+that means "carry on as before":
+
+| `status` | Meaning |
+| --- | --- |
+| `PROTECTED` | Supported protected route; sign and send `transaction` |
+| `NOT_APPLICABLE` | No protected asset involved; continue your existing path |
+| `UNSUPPORTED_PROTECTED_ROUTE` | Protected asset on a route EquityGuard cannot represent; fail closed |
+| `ERROR` | Malformed input, unreadable state, or state that moved; fail closed |
+
+**`unsupported` is never `unprotected`.** No refusal carries a transaction, and
+sending the plain Jupiter transaction instead would defeat the product.
+
+Supported today: Jupiter v6 `route_v2`, `ExactIn`, canonical USDC against one
+protected Token-2022 mint, BUY and SELL, guard at instruction 0, optional
+destination-ATA setup. Everything else is refused with a typed reason. Guarded
+KOx and UNHx builds compile to 675 bytes (+176 B over unguarded, 557 B of
+headroom); the guard costs 4,658 compute units to pass.
+
+EquityGuard is deployed on devnet only, and Jupiter exists only on mainnet, so
+a guarded mainnet swap is buildable but not submittable today.
+
+Guide: [`docs/m10-jupiter-integration.md`](docs/m10-jupiter-integration.md).
+Worked before/after example:
+[`apps/example-jupiter-protected/`](apps/example-jupiter-protected/).
+
 ## Reference app
 
 `apps/reference` shows how a wallet, trading app or agent platform could
@@ -184,6 +234,7 @@ scripts/observation/      read-only capture decoding and event detection
 scripts/devnet/           devnet test mints, scenarios, deployment record
 scripts/evidence/         raw mainnet evidence capture (output is local, gitignored)
 apps/reference/           reference integration UI over recorded evidence
+apps/example-jupiter-protected/  minimal before/after Jupiter integration example
 ```
 
 ## Development
