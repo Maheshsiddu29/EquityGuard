@@ -239,22 +239,18 @@ type Classification =
  * EquityGuard asset"; every other decode failure is a protected-looking
  * Token-2022 mint that cannot be read, and fails closed.
  */
-function inspectMint(mint: Address, owner: string, data: Uint8Array): { readonly protectedMint: true } | { readonly protectedMint: false; readonly reason: NotApplicableReason } | { readonly failure: EquityGuardErrorResult } {
+function inspectMint(mint: Address, owner: string, data: Uint8Array): { readonly protected: true } | { readonly protected: false; readonly reason: NotApplicableReason } | { readonly unreadable: { readonly code: EquityGuardFailureCode; readonly message: string } } {
   try {
     decodeProtectedState(owner, data);
-    return { protectedMint: true };
+    return { protected: true };
   } catch (error) {
     if (!(error instanceof GuardClientError)) throw error;
-    if (error.code === "InvalidMintOwner") return { protectedMint: false, reason: "NO_TOKEN_2022_MINT" };
-    if (error.code === "MissingScaledUiAmount") return { protectedMint: false, reason: "NO_PROTECTED_STATE" };
+    if (error.code === "InvalidMintOwner") return { protected: false, reason: "NO_TOKEN_2022_MINT" };
+    if (error.code === "MissingScaledUiAmount") return { protected: false, reason: "NO_PROTECTED_STATE" };
     return {
-      failure: {
-        status: "ERROR",
+      unreadable: {
         code: error.code === "InvalidExtensionCombination" ? EquityGuardFailureCode.UNSUPPORTED_TOKEN_STATE : EquityGuardFailureCode.MALFORMED_TOKEN_STATE,
         message: `${mint} is a Token-2022 mint whose state cannot be read (${error.message}); EquityGuard refuses rather than trading it unprotected`,
-        protectedMint: mint,
-        guardError: null,
-        details: [error.message],
       },
     };
   }
@@ -271,9 +267,6 @@ async function classify(build: BuildResponse, rpc: Rpc<GetMultipleAccountsApi>, 
   }
   // USDC is the pinned counter asset and is a legacy SPL token, never protected.
   const candidates = [inputMint, outputMint].filter((mint) => mint !== USDC_MINT_ADDRESS);
-  if (candidates.length === 0) {
-    return { kind: "NOT_APPLICABLE", reason: "NO_TOKEN_2022_MINT", message: "neither side of the swap is a Token-2022 mint" };
-  }
 
   const { value } = await rpc.getMultipleAccounts(candidates, { encoding: "base64", commitment }).send();
   const protectedMints: Address[] = [];
@@ -284,8 +277,8 @@ async function classify(build: BuildResponse, rpc: Rpc<GetMultipleAccountsApi>, 
       return { kind: "ERROR", code: EquityGuardFailureCode.MINT_STATE_UNAVAILABLE, message: `mint ${mint} was not returned by the RPC; EquityGuard cannot tell whether it is protected`, protectedMint: null };
     }
     const inspected = inspectMint(mint, account.owner, base64(account.data));
-    if ("failure" in inspected) return { kind: "ERROR", code: inspected.failure.code, message: inspected.failure.message, protectedMint: mint };
-    if (inspected.protectedMint) protectedMints.push(mint);
+    if ("unreadable" in inspected) return { kind: "ERROR", ...inspected.unreadable, protectedMint: mint };
+    if (inspected.protected) protectedMints.push(mint);
     else if (inspected.reason === "NO_PROTECTED_STATE") notApplicable = "NO_PROTECTED_STATE";
   }
 
