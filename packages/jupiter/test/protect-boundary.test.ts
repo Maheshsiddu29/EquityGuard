@@ -125,3 +125,31 @@ test("L: every failure code has a deterministic explanation and none suggests fa
   }
   assert.equal(seen.size, Object.keys(protect.EquityGuardFailureCode).length);
 });
+
+test("M11-A INV-Q: no product entry point can reach replay or devnet signing code, transitively", () => {
+  const ROOT = new URL("../../../", import.meta.url);
+  const entries = [
+    ...["packages/guard-client/src/", "packages/jupiter/src/", "packages/representation-state/src/", "apps/reference/src/", "apps/reference/build/"].flatMap((dir) =>
+      readdirSync(new URL(dir, ROOT))
+        .filter((name) => name.endsWith(".ts"))
+        .map((name) => new URL(dir + name, ROOT)),
+    ),
+  ];
+  const SIGNING_MODULES = ["scripts/replay/", "scripts/devnet/send.ts", "scripts/devnet/cli.ts", "scripts/devnet/config.ts", "scripts/demo/devnet-execution.ts"];
+  const PRIMITIVES = /\b(signTransaction|sendTransaction|sendAndConfirm\w*|createKeyPair\w*|requestAirdrop|signBytes)\b/;
+  const seen = new Set<string>();
+  const queue = [...entries];
+  while (queue.length > 0) {
+    const url = queue.pop() as URL;
+    if (seen.has(url.href)) continue;
+    seen.add(url.href);
+    const path = url.href.slice(ROOT.href.length);
+    assert.ok(!SIGNING_MODULES.some((m) => path.startsWith(m)), `a product path reaches ${path}`);
+    const text = readFileSync(url, "utf8");
+    assert.ok(!PRIMITIVES.test(text), `${path} references a signing or submission primitive`);
+    for (const [, specifier] of text.matchAll(/(?:from|import)\s*\(?\s*"(\.{1,2}\/[^"]+\.ts)"/g)) {
+      queue.push(new URL(specifier as string, url));
+    }
+  }
+  assert.ok(seen.size > entries.length, `walked ${seen.size} modules`);
+});
