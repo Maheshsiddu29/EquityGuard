@@ -1637,6 +1637,105 @@ fn compute_units_are_measured_per_phase() {
     println!("guard compute units (kinds 2/3):\n{}", report.join("\n"));
 }
 
+/// M11-B: the guard's cost for every economic-state and clock outcome of
+/// kinds 2/3, beside a pass. These checks run after the suffix is verified,
+/// so a stale-state rejection costs about as much as a pass; all stay under
+/// the ceiling.
+#[test]
+fn compute_units_per_state_and_clock_outcome() {
+    fn units(
+        env: &mut Env,
+        instructions: &[Instruction],
+        case: &Case,
+        expected: EquityGuardError,
+    ) -> u64 {
+        let outcome = run(env, instructions, case);
+        assert_eq!(outcome.verdict, name(expected));
+        outcome.guard_units.unwrap()
+    }
+    let mut env = Env::new();
+    let mut report = Vec::new();
+    for (symbol, direction) in [
+        ("KOx", Direction::Buy),
+        ("KOx", Direction::Sell),
+        ("UNHx", Direction::Buy),
+        ("UNHx", Direction::Sell),
+        ("CRMx", Direction::Sell),
+    ] {
+        let case = Case::honest(&build(symbol, direction));
+        let (instructions, digest) = build_with_matching_commitment(&env, &case);
+        let edited = |edit: fn(&mut AssertSafeExecutionV2)| {
+            let mut request = AssertSafeExecutionV2::unpack(&instructions[0].data).unwrap();
+            edit(&mut request);
+            let mut out = instructions.clone();
+            out[0].data = request.pack().to_vec();
+            out
+        };
+        let pass = run(&mut env, &instructions, &case).guard_units.unwrap();
+        let phase = units(
+            &mut env,
+            &edited(|r| r.execution.expected_phase = ActivationPhase::Pending),
+            &case,
+            EquityGuardError::ActivationPhaseChanged,
+        );
+        let window = units(
+            &mut env,
+            &edited(|r| r.execution.window.after_secs = u32::MAX),
+            &case,
+            EquityGuardError::InsideTransitionWindow,
+        );
+        let mut wrong = AssertSafeExecutionV2::unpack(&instructions[0].data).unwrap();
+        wrong.downstream_commitment = [!digest[0]; 32];
+        let mut mismatched = instructions.clone();
+        mismatched[0].data = wrong.pack().to_vec();
+        let commitment = units(
+            &mut env,
+            &mismatched,
+            &case,
+            EquityGuardError::DownstreamCommitmentMismatch,
+        );
+
+        let original = env.svm.get_account(&case.guard_mint).unwrap().data;
+        let mut data = original.clone();
+        {
+            use spl_token_2022_interface::{
+                extension::{
+                    scaled_ui_amount::ScaledUiAmountConfig, BaseStateWithExtensionsMut,
+                    StateWithExtensionsMut,
+                },
+                state::Mint,
+            };
+            let mut state = StateWithExtensionsMut::<Mint>::unpack(&mut data).unwrap();
+            let config = state.get_extension_mut::<ScaledUiAmountConfig>().unwrap();
+            config.multiplier = PodF64((f64::from(config.multiplier) * 2.0).to_le_bytes());
+        }
+        env.set_mint(case.guard_mint, TOKEN_2022, data);
+        let stale = units(
+            &mut env,
+            &instructions,
+            &case,
+            EquityGuardError::MultiplierChanged,
+        );
+        env.set_mint(case.guard_mint, TOKEN_2022, original);
+
+        for measured in [pass, phase, window, commitment, stale] {
+            assert!(
+                measured <= MAX_GUARD_COMPUTE_UNITS,
+                "{symbol} {direction:?}: {measured} CU"
+            );
+        }
+        report.push(format!(
+            "{symbol:>4} {:<4} | pass {pass:>6} | MultiplierChanged {stale:>6} | ActivationPhaseChanged {phase:>6} | \
+             InsideTransitionWindow {window:>6} | DownstreamCommitmentMismatch {commitment:>6}",
+            format!("{direction:?}")
+        ));
+    }
+    println!(
+        "guard compute units per outcome (kinds 2/3):\n{}",
+        report.join("\n")
+    );
+}
+
 // ---------------------------------------------- M11-A mutation campaign
 
 /// What one single-property mutation of a valid guarded trade must produce.
