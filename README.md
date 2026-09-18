@@ -53,9 +53,10 @@ route, with a guard instruction encoded from KOx's live mainnet ScaledUiAmount
 state, compiled into one v0 transaction using Jupiter's lookup table. The
 original (ABI v1) guarded transaction was 577 bytes; with the ABI v2 Jupiter
 adapter (below), fresh KOx BUY and UNHx BUY/SELL builds (2026-09-17) compile to
-675 bytes against the 1232-byte limit. Nothing was signed or submitted, and
-EquityGuard is not deployed on mainnet, so the guard has not executed alongside
-a Jupiter swap.
+675 bytes against the 1232-byte limit. Nothing was signed or submitted on
+mainnet, and EquityGuard is not deployed there, so the guard has not executed
+alongside a Jupiter swap on any public cluster; it has done so once on a local
+validator (see the claim boundary below).
 
 **Deployed on devnet (upgrade
 [`5Vb8aaU4…vQ1jXmb`](https://explorer.solana.com/tx/5Vb8aaU47wz2bK8iA5yvAyYFEGQbWPy5vzVTo46kZi6VJb22gman2KaRyEBLpcgkkiQSvJSYkg6nSHZZvvQ1jXmb?cluster=devnet),
@@ -89,14 +90,19 @@ Proven:
 - guard execution and atomic rollback on **devnet** (table above), re-run
   against the upgraded binary with adapter kind 1;
 - adapter kind 2/3 grammar rejections on **devnet** that precede the
-  trade-program check, matching the client model.
+  trade-program check, matching the client model;
+- one guarded KOx Jupiter trade executed on a **local** `solana-test-validator`
+  loaded with the real Jupiter and Orca Whirlpool program binaries and
+  mainnet-derived accounts (2026-09-17), with an outdated-phase and an
+  altered-swap transaction rejected at the guard before Jupiter ran.
 
 Not proven:
 
 - EquityGuard execution on mainnet (the program is deployed on devnet only);
 - guard + Jupiter atomicity on mainnet;
-- a guarded Jupiter trade on any cluster, and the kind 2/3 checks after the
-  trade-program check on a live cluster: these are verified only in LiteSVM,
+- a guarded Jupiter trade on a public cluster (devnet or mainnet), and the
+  kind 2/3 checks after the trade-program check on a public cluster: beyond
+  the single local-validator trade above, these are verified in LiteSVM,
   where a stand-in occupies the Jupiter address and no trade executes;
 - protection of live xStocks trades, or any real purchase;
 - automatic cross-issuer rerouting (the decision engine decides; nothing
@@ -207,18 +213,31 @@ whose result may be signed.
 
 Supported today: Jupiter v6 `route_v2`, `ExactIn`, canonical USDC against one
 protected Token-2022 mint, BUY and SELL, guard at instruction 0, optional
-destination-ATA setup. Everything else is refused with a typed reason. Guarded
-KOx and UNHx builds compile to 675 bytes (+176 B over unguarded, 557 B of
-headroom); the guard costs 4,658 compute units to pass.
+destination-ATA setup. Everything else is refused with a typed reason.
+
+Cost, measured on recorded mainnet builds: the EquityGuard instruction adds
+168 B — two static account keys (the guard program and the Instructions
+sysvar, 64 B) and the compiled instruction (104 B, including its 99 B
+payload). A protected transaction is 176 B larger than Jupiter's recorded
+unguarded build (499 → 675 B for KOx/UNHx) because the composer also adds an
+explicit `SetComputeUnitLimit` instruction (8 B), which that `/build` response
+did not include. Guarded builds measure 675–918 B against the 1,232 B limit.
+The guard costs 10,675–15,243 compute units to pass for adapter kinds 2/3
+(LiteSVM, recorded routes; 10,743 in the local real-Jupiter replay) and
+4,811–5,615 for kind 1 on real mainnet mint accounts. When the build carries
+no compute-unit limit the SDK requests 1,400,000; pass `computeUnitLimit` to
+choose your own, since the priority fee is charged on the requested limit.
 
 The package is build-only: it returns unsigned bytes and cannot sign, submit,
 hold a key or read configuration. Jupiter exists only on mainnet and the guard
 only on devnet, so a guarded mainnet swap is buildable but not submittable
 today.
 
-Guide: [`docs/m10-jupiter-integration.md`](docs/m10-jupiter-integration.md).
-Worked before/after example:
-[`apps/example-jupiter-protected/`](apps/example-jupiter-protected/).
+API reference: the typed results and every refusal reason are documented in
+[`packages/jupiter/src/protect.ts`](packages/jupiter/src/protect.ts). Worked
+before/after example:
+[`apps/example-jupiter-protected/`](apps/example-jupiter-protected/)
+(`src/swap.ts` holds both versions; its tests run offline in `npm test`).
 
 ## Reference app
 
@@ -256,6 +275,40 @@ show mainnet EquityGuard execution, a real purchase, a guarded Jupiter trade
 on devnet, a trade that crossed the Sep 15 event, or a real cross-issuer
 reroute. The 15 min / 5 min window is an uncalibrated demo policy.
 
+## Release-candidate evidence
+
+Recorded in [`release-candidate.json`](release-candidate.json), which a test
+checks against the code. Environment and scope matter for every number:
+
+- **Replay of real mainnet history.** 19,986 captured observations of the six
+  representations (3,331 polls, 2026-09-13 21:24 → 2026-09-15 01:09 UTC) decode
+  without failure; all 5 known state transitions are detected. Of 294,527
+  authorization→execution pairs, 7,029 were economically stale and all were
+  blocked; no fresh authorization outside a window was blocked. The raw
+  capture is local evidence and is not in the repository, so a clean checkout
+  replays only the curated observations.
+- **Implementations agree.** 1,000,000 seeded cases give identical verdicts in
+  the TypeScript client model and the Rust program model, and a 20,000-case
+  sample run against the compiled program in LiteSVM agrees with both.
+- **No shared write lock.** The guard's accounts are the protected mint and the
+  Instructions sysvar, both read-only; the program writes no account and makes
+  no CPI, and every measured protected transaction has the same writable
+  accounts with and without the guard. Guard calls do not serialize on any
+  EquityGuard-owned state.
+- **Client cost.** About 4–4.5 ms of CPU per protected build (Apple M3 Pro,
+  Node 22) plus 4 sequential RPC round trips returning about 94 KB of base64,
+  about 69 KB of it the reviewed-binary check re-reading the ProgramData
+  account. This is a laptop benchmark, not a throughput or latency guarantee.
+
+Known limitations: the reviewed devnet program keeps an upgrade authority, so
+an upgrade between build-time verification and landing is not prevented
+(tracked risk R-01, Medium); protection windows are policy inputs and are not
+calibrated; the model protects the ScaledUiAmount multiplier and cannot express
+mergers, spin-offs or other structural actions; only the Jupiter subset above
+is supported and other route shapes are refused; the SDK trusts its RPC for
+reads (the on-chain guard remains the final check); the packages are not
+published; there is no mainnet deployment and no external audit.
+
 ## Repository layout
 
 ```
@@ -281,7 +334,12 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo build-sbf --manifest-path programs/equity_guard/Cargo.toml -- --locked
 cargo test --workspace --locked        # unit, golden, deployment-ID, LiteSVM (needs the .so)
 npm ci && npm run typecheck && npm test   # offline; includes the recorded Jupiter fixture
+npm run app:build                         # reference app
 ```
+
+On a clean checkout two local-evidence tests are skipped by design: they
+replay raw captures that are never committed (`tmp/`). Everything else runs
+from committed fixtures.
 
 The Jupiter tests compose recorded mainnet `/build` responses offline; the
 2026-09-14 ABI v1 composition remains as historical sizing evidence. CI is
