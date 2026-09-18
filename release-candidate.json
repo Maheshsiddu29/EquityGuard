@@ -1,0 +1,58 @@
+{
+  "kind": "equityguard-release-candidate",
+  "name": "EquityGuard backend release candidate (Stocklana submission)",
+  "candidate": "the commit that last changed this file; validated from base 78d747456d01cc5ef0e901dfe0e45811ddafad36 on 2026-09-18",
+  "packages": {
+    "published": false,
+    "note": "workspace packages @equityguard/guard-client, @equityguard/jupiter, @equityguard/representation-state are private 0.1.0 and unpublished"
+  },
+  "abiVersion": 2,
+  "program": {
+    "cluster": "devnet",
+    "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+    "programData": "4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3",
+    "upgradeAuthority": "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT",
+    "reviewedElfSha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46",
+    "reviewedElfLength": 63840,
+    "deploymentSlot": 499547040,
+    "readback": {
+      "observedAt": "2026-09-18T17:42:43Z",
+      "slot": 500450219,
+      "result": "read-only: Program executable, upgradeable-loader owned, points at the recorded ProgramData; ProgramData holds exactly the reviewed ELF followed by zeros; deployment slot unchanged; upgrade authority still set"
+    },
+    "reproducibleBuild": "a clean clone built with cargo-build-sbf 4.1.0 (platform-tools v1.54, rustc 1.89.0; solana-cli 4.2.2) on macOS arm64 produced the reviewed SHA-256; other hosts not checked"
+  },
+  "mainnetDeployment": null,
+  "adapterKinds": {
+    "1": "Token-2022 TransferChecked of the protected mint, committed",
+    "2": "Jupiter v6 route_v2 BUY of the protected mint with canonical USDC (ExactIn), guard at instruction 0",
+    "3": "Jupiter v6 route_v2 SELL of the protected mint for canonical USDC (ExactIn), guard at instruction 0"
+  },
+  "supportedJupiterShape": "guard, SetComputeUnitPrice, SetComputeUnitLimit, optional destination-ATA CreateIdempotent, route_v2; everything else refused",
+  "protectedStateModel": "TOKEN_2022_SCALED_UI_AMOUNT",
+  "validation": {
+    "npmTest": { "tests": 530, "passedWithLocalEvidence": 530, "passedOnCleanCheckout": 528, "skippedOnCleanCheckout": 2, "failed": 0, "skipReason": "two local-evidence replays whose raw inputs (tmp/) are never committed" },
+    "cargoTest": { "binaries": 12, "passed": 115, "failed": 0, "requires": "cargo build-sbf first (LiteSVM suites load target/deploy/equity_guard.so)" },
+    "cargoAudit": "cargo-audit 0.22.2: 0 vulnerabilities, 365 crates (5 unmaintained-crate warnings via LiteSVM test tooling)",
+    "npmAudit": "0 vulnerabilities"
+  },
+  "security": {
+    "unresolvedCritical": 0,
+    "unresolvedHigh": 0,
+    "medium": [
+      {
+        "id": "R-01",
+        "summary": "the upgrade authority can replace the reviewed program after build-time identity verification and before the protected transaction lands"
+      }
+    ],
+    "externalAudit": false
+  },
+  "evidence": {
+    "historicalReplay": "19,986 real mainnet observations (6 representations, 3,331 polls, 2026-09-13T21:24Z to 2026-09-15T01:09Z), 0 decode failures, 5/5 transitions; 294,527 authorization/execution pairs, 7,029 economically stale, all blocked; 0 unexpected ALLOW, 0 unexpected BLOCK (raw capture is local-only)",
+    "differential": "1,000,000 seeded cases, TypeScript and Rust program models identical; 20,000-case compiled-program sample in LiteSVM identical; 0 unexpected accepts",
+    "transactionSize": "guard instruction 168 B; +176 B vs recorded unguarded build (adds SetComputeUnitLimit, 8 B); guarded 675-918 B on recorded builds (741 B on a fresh 2-leg build); minimum headroom 314 B; limit enforced at exactly 1,232 B",
+    "computeUnits": "guard pass 10,675-15,243 CU (kinds 2/3, LiteSVM), 4,811-5,615 CU (kind 1, real mint accounts); local real-Jupiter replay 81,783 CU total, guard 10,743",
+    "writeLocks": "guard accounts read-only (mint, Instructions sysvar); program writes no account and makes no CPI; writable set unchanged by the guard in every measured transaction",
+    "sdkCost": "about 4-4.5 ms CPU per protected build on an Apple M3 Pro with Node 22; 4 sequential RPC round trips, about 94 KB base64 per build"
+  }
+}
