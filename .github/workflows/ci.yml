@@ -29,6 +29,28 @@ jobs:
       - name: Unit, golden and deployment-ID tests
         run: cargo test --workspace --lib --test abi_golden --test deployment --locked
 
+  audit:
+    name: Rust dependency audit (RustSec)
+    runs-on: ubuntu-24.04
+    env:
+      # Pinned: bump deliberately, never "latest".
+      CARGO_AUDIT_VERSION: 0.22.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install cargo-audit
+        # A bare MAJOR.MINOR.PATCH installs exactly that version; --locked
+        # uses cargo-audit's own lockfile.
+        run: cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+      # Audits the committed lockfile against the current RustSec database.
+      # Any vulnerability fails the job; nothing is ignored. Unmaintained-crate
+      # advisories are reported as warnings and do not fail it: today there
+      # are five, all reached only through LiteSVM test tooling
+      # (docs/m11a-security-review.md, section 7).
+      - name: Audit Cargo.lock
+        run: cargo audit --file Cargo.lock
+
   sbf:
     name: SBF build and LiteSVM tests
     runs-on: ubuntu-24.04
