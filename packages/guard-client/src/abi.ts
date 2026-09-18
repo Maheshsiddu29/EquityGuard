@@ -107,6 +107,11 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }
 
+/** Whether `secs` is encodable as a protection-window bound: whole seconds in `[0, 2^32 − 1]`. */
+export function isValidWindowSecs(secs: unknown): secs is number {
+  return typeof secs === "number" && Number.isInteger(secs) && secs >= 0 && secs <= U32_MAX;
+}
+
 export function isDownstreamAdapterKind(value: unknown): value is DownstreamAdapterKind {
   return Object.values(DownstreamAdapterKind).some((kind) => kind === value);
 }
@@ -125,7 +130,7 @@ export function encodeAssertSafeExecutionV2(request: AssertSafeExecutionV2Reques
     throw new GuardClientError("InvalidExpectedState", `unknown activation phase ${String(expectedPhase)}`);
   }
   for (const [name, secs] of [["beforeSecs", window.beforeSecs], ["afterSecs", window.afterSecs]] as const) {
-    if (!Number.isInteger(secs) || secs < 0 || secs > U32_MAX) {
+    if (!isValidWindowSecs(secs)) {
       throw new GuardClientError("InvalidProtectionWindow", `${name} must be a u32`);
     }
   }

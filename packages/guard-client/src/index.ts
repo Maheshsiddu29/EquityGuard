@@ -8,6 +8,7 @@ export {
   hasScheduledChange,
   isDownstreamAdapterKind,
   isValidStoredMultiplier,
+  isValidWindowSecs,
   phaseAt,
   type AssertSafeExecutionRequest,
   type AssertSafeExecutionV2Request,

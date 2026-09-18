@@ -40,6 +40,7 @@ import {
   type Rpc,
 } from "@solana/kit";
 import {
+  ActivationPhase,
   DownstreamAdapterKind,
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
   GuardClientError,
@@ -53,7 +54,8 @@ import {
   expectationFromSnapshot,
   fetchGuardSnapshot,
   findKnownProtectedAsset,
-  phaseAt,
+  hasScheduledChange,
+  isValidWindowSecs,
   resolveProtectionAdapter,
   type AssertSafeExecutionRequest,
   type EquityGuardErrorName,
@@ -289,6 +291,14 @@ export interface ProtectJupiterSwapInput {
    * ECONOMIC_STATE_CHANGED instead of being rebound to the newer state.
    */
   readonly expectedState?: ProtectedState;
+  /**
+   * The activation phase `expectedState` was quoted under: the quoting
+   * snapshot's `phase`. Required when `expectedState` carries a scheduled
+   * change (its two multipliers differ), because the same bytes then mean a
+   * different effective multiplier on each side of the activation. A quote
+   * taken before the activation is refused after it, never rebound.
+   */
+  readonly expectedPhase?: ActivationPhase;
   /** Commitment for the state read. Defaults to `confirmed`. */
   readonly commitment?: Commitment;
 }
@@ -538,6 +548,11 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
   }
   const { protectedMint, direction, adapterKind, knownAsset } = classified;
 
+  const requestIssue = guardRequestIssue(input);
+  if (requestIssue) {
+    return { status: "ERROR", code: EquityGuardFailureCode.INVALID_GUARD_REQUEST, message: requestIssue, protectedMint, guardError: null, details: [] };
+  }
+
   // Protection is bound to a deployment that can run where the caller is.
   const deployment = await resolveDeployment(input.rpc, input.programAddress, commitment);
   if (!deployment.ok) {
@@ -560,9 +575,11 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
   }
 
   const expectation = expectationFromSnapshot(snapshot, input.protectionWindow);
-  // What the caller quoted against, if anything, must still be what is on chain.
+  // What the caller quoted against, if anything, must still be what is on
+  // chain — including which side of a scheduled activation it was quoted on.
+  // Without a scheduled change the phase is irrelevant to the guard.
   if (input.expectedState) {
-    const quoted = { expected: input.expectedState, expectedPhase: phaseAt(input.expectedState, snapshot.clock.unixTimestamp), window: input.protectionWindow };
+    const quoted = { expected: input.expectedState, expectedPhase: input.expectedPhase ?? snapshot.phase, window: input.protectionWindow };
     const moved = guardVerdict(quoted, snapshot);
     if (moved) return economicFailure(moved, protectedMint);
   }
@@ -655,7 +672,7 @@ const EXPLANATIONS: Readonly<Record<EquityGuardFailureCode, string>> = {
   MINT_STATE_UNAVAILABLE: "The token's mint account or the Clock could not be read from the RPC, so no current economic state could be bound.",
   ECONOMIC_STATE_CHANGED: "The token's economic state changed after the quote was taken — this is exactly the event EquityGuard exists to catch. Refresh the quote and rebuild.",
   INSIDE_TRANSITION_WINDOW: "A corporate action is activating right now, inside the configured protection window. Wait for the window to pass and rebuild.",
-  INVALID_GUARD_REQUEST: "The protection window or state expectation supplied to EquityGuard could not be encoded.",
+  INVALID_GUARD_REQUEST: "The protection window or state expectation supplied to EquityGuard could not be encoded, or a quoted state was given without the activation phase it was quoted under.",
   COMMITMENT_FAILURE: "The composed transaction did not match the commitment the guard was built over, so it was discarded.",
   GUARD_DEPLOYMENT_UNAVAILABLE: "No EquityGuard deployment is available on the cluster this RPC serves, so protection cannot be constructed here. EquityGuard is deployed on devnet only.",
   GUARD_PROGRAM_NOT_EXECUTABLE: "The EquityGuard program address given for this cluster is not an executable program, so a guard instruction built against it would never run.",
@@ -665,6 +682,27 @@ const EXPLANATIONS: Readonly<Record<EquityGuardFailureCode, string>> = {
 };
 
 // ----------------------------------------------------------------- internals
+
+/**
+ * Why the caller's guard parameters cannot be honoured, or `null`. Checked
+ * before any deployment or state read, so a malformed request is a typed
+ * refusal rather than an exception thrown mid-build.
+ */
+function guardRequestIssue(input: ProtectJupiterSwapInput): string | null {
+  const window: Partial<ProtectionWindow> = input.protectionWindow ?? {};
+  if (!isValidWindowSecs(window.beforeSecs) || !isValidWindowSecs(window.afterSecs)) {
+    return "protectionWindow bounds must be whole seconds in [0, 4294967295]";
+  }
+  const phase = input.expectedPhase;
+  if (phase !== undefined) {
+    if (!input.expectedState) return "expectedPhase was given without the expectedState it was observed with";
+    if (phase !== ActivationPhase.Pending && phase !== ActivationPhase.Activated) return `expectedPhase ${String(phase)} is not an activation phase`;
+  }
+  if (input.expectedState && phase === undefined && hasScheduledChange(input.expectedState)) {
+    return "expectedState carries a scheduled multiplier activation, so its economic meaning depends on the phase it was quoted under; pass expectedPhase (the quoting snapshot's phase)";
+  }
+  return null;
+}
 
 /** Jupiter's own limit when it set one; otherwise its unsimulated maximum. */
 function defaultComputeUnitLimit(build: BuildResponse): number {
@@ -753,4 +791,4 @@ export { USDC_MINT_ADDRESS };
 /** The tokenized equities this client holds decoded mainnet evidence for. */
 export { KNOWN_PROTECTED_ASSETS } from "@equityguard/guard-client";
 export type { KnownProtectedAsset, SolanaCluster };
-export type { BuildResponse, EquityGuardErrorName, GuardSnapshot, JupiterAdapterKind, JupiterTradeBinding, ProtectedState, ProtectionWindow, TransactionMetrics };
+export type { ActivationPhase, BuildResponse, EquityGuardErrorName, GuardSnapshot, JupiterAdapterKind, JupiterTradeBinding, ProtectedState, ProtectionWindow, TransactionMetrics };

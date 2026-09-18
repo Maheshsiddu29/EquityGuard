@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { address } from "@solana/kit";
-import { DownstreamAdapterKind, USDC_MINT_ADDRESS, decodeProtectedState, findKnownProtectedAsset } from "@equityguard/guard-client";
+import { ActivationPhase, DownstreamAdapterKind, USDC_MINT_ADDRESS, decodeProtectedState, findKnownProtectedAsset } from "@equityguard/guard-client";
 
 import { MAX_TRANSACTION_BYTES } from "../src/index.ts";
 import {
@@ -247,7 +247,7 @@ test("E: state that moved since the quote is refused, not silently rebound", asy
   const quoted = decodeProtectedState(TOKEN_2022_OWNER, mainnetMint("KOx"));
   const stale = { ...quoted, multiplier: Uint8Array.from(Buffer.from("9e0dd41d115ef03f", "hex")) };
 
-  const result = await protect(recordedKoxBuyBuild(), koxAccounts, { expectedState: stale });
+  const result = await protect(recordedKoxBuyBuild(), koxAccounts, { expectedState: stale, expectedPhase: ActivationPhase.Activated });
   assert.equal(result.status, "ERROR");
   assert.equal(result.status === "ERROR" && result.code, "ECONOMIC_STATE_CHANGED");
   assert.equal(result.status === "ERROR" && result.guardError, "MultiplierChanged");
@@ -255,7 +255,65 @@ test("E: state that moved since the quote is refused, not silently rebound", asy
   assert.match(explainEquityGuardError(result), /exactly the event EquityGuard exists to catch/);
 
   // The unchanged state still composes.
-  assert.equal((await protect(recordedKoxBuyBuild(), koxAccounts, { expectedState: quoted })).status, "PROTECTED");
+  assert.equal((await protect(recordedKoxBuyBuild(), koxAccounts, { expectedState: quoted, expectedPhase: ActivationPhase.Activated })).status, "PROTECTED");
+});
+
+test("E (M11-A H-01): a quote taken before a scheduled activation is refused after it, never rebound", async () => {
+  // Same mint bytes on both sides of T; only the Clock moves. The quote was
+  // priced under `multiplier`, the chain now applies `newMultiplier`.
+  const window = { beforeSecs: 900, afterSecs: 300 };
+  const quote = assertProtected(await protect(recordedKoxBuyBuild(), koxAccounts, { unixTimestamp: KOX_ACTIVATION_TIMESTAMP - 5_000n, protectionWindow: window }));
+  assert.equal(quote.snapshot.phase, ActivationPhase.Pending);
+  const quoted = { expectedState: quote.snapshot.state, expectedPhase: quote.snapshot.phase };
+
+  for (const [label, unixTimestamp, zeroWindow] of [
+    ["well after the window", KOX_ACTIVATION_TIMESTAMP + 5_000n, false],
+    ["one second after T, zero window", KOX_ACTIVATION_TIMESTAMP + 1n, true],
+  ] as const) {
+    const result = await protect(recordedKoxBuyBuild(), koxAccounts, { unixTimestamp, ...quoted, protectionWindow: zeroWindow ? { beforeSecs: 0, afterSecs: 0 } : window });
+    assert.equal(result.status, "ERROR", label);
+    assert.equal(result.status === "ERROR" && result.code, "ECONOMIC_STATE_CHANGED", label);
+    assert.equal(result.status === "ERROR" && result.guardError, "ActivationPhaseChanged", label);
+    assertNoTransaction(result);
+  }
+  // Before the crossing the same quote still composes.
+  assert.equal((await protect(recordedKoxBuyBuild(), koxAccounts, { unixTimestamp: KOX_ACTIVATION_TIMESTAMP - 4_000n, ...quoted })).status, "PROTECTED");
+  // A quote taken after T, used after T, composes.
+  assert.equal((await protect(recordedKoxBuyBuild(), koxAccounts, { expectedState: quote.snapshot.state, expectedPhase: ActivationPhase.Activated })).status, "PROTECTED");
+});
+
+test("E (M11-A H-01): a scheduled-change quote without its phase fails closed", async () => {
+  const state = decodeProtectedState(TOKEN_2022_OWNER, mainnetMint("KOx"));
+  const result = await protect(recordedKoxBuyBuild(), koxAccounts, { expectedState: state });
+  assert.equal(result.status, "ERROR");
+  assert.equal(result.status === "ERROR" && result.code, "INVALID_GUARD_REQUEST");
+  assert.match(result.status === "ERROR" ? result.message : "", /expectedPhase/);
+  assertNoTransaction(result);
+
+  // A state with no scheduled change means the same thing in either phase.
+  const unscheduled = { ...state, newMultiplier: state.multiplier };
+  const ondoLike = mutatedMint("KOx", (d) => void Buffer.from(state.multiplier).copy(d, 275 + 4 + 48));
+  assert.equal((await protect(recordedKoxBuyBuild(), { [KOX_MINT]: token2022Account(ondoLike) }, { expectedState: unscheduled })).status, "PROTECTED");
+});
+
+test("E (M11-A L-01): malformed guard parameters are a typed refusal, never an exception", async () => {
+  const state = decodeProtectedState(TOKEN_2022_OWNER, mainnetMint("KOx"));
+  const cases: [string, Partial<Parameters<typeof protectJupiterSwap>[0]>][] = [
+    ["NaN window", { protectionWindow: { beforeSecs: Number.NaN, afterSecs: 300 } }],
+    ["fractional window", { protectionWindow: { beforeSecs: 900, afterSecs: 0.5 } }],
+    ["negative window", { protectionWindow: { beforeSecs: -1, afterSecs: 300 } }],
+    ["window above u32", { protectionWindow: { beforeSecs: 2 ** 32, afterSecs: 300 } }],
+    ["window as a string", { protectionWindow: { beforeSecs: "900" as unknown as number, afterSecs: 300 } }],
+    ["missing window", { protectionWindow: undefined as unknown as { beforeSecs: number; afterSecs: number } }],
+    ["phase without state", { expectedPhase: ActivationPhase.Activated }],
+    ["unknown phase", { expectedState: state, expectedPhase: 2 as ActivationPhase }],
+  ];
+  for (const [label, overrides] of cases) {
+    const result = await protect(recordedKoxBuyBuild(), koxAccounts, overrides);
+    assert.equal(result.status, "ERROR", label);
+    assert.equal(result.status === "ERROR" && result.code, "INVALID_GUARD_REQUEST", label);
+    assertNoTransaction(result);
+  }
 });
 
 test("E: rebuilding after the mint changes binds the new state, never the old one", async () => {
