@@ -23,6 +23,7 @@ import {
   mainnetMint,
   recordedKoxBuyBuild,
   token2022Account,
+  withMints,
 } from "../../../packages/jupiter/test/protect-fixtures.ts";
 import { EQUITY_GUARD_DEVNET_DEPLOYMENT } from "../../../packages/jupiter/src/protect.ts";
 import { compileUnsignedTransaction, jupiterInstructions } from "../src/jupiter.ts";
@@ -96,7 +97,7 @@ test("the example refuses, and signs nothing, when a protected route is unsuppor
 
 test("the example keeps its existing path for an ordinary token pair", async () => {
   const other = distinctAddress(51);
-  const build = { ...recordedKoxBuyBuild(), outputMint: other };
+  const build = withMints(recordedKoxBuyBuild(), { outputMint: other });
   const wallet = new DryRunWallet(TAKER);
   const { rpc } = fakeRpc({ accounts: { [other]: legacyMint() }, unixTimestamp: SETTLED_TIMESTAMP });
 

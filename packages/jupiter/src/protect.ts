@@ -44,12 +44,15 @@ import {
   DownstreamAdapterKind,
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
   GuardClientError,
+  JUPITER_V6_PROGRAM_ADDRESS,
+  ROUTE_V2_ACCOUNT,
   SET_COMPUTE_UNIT_LIMIT,
   USDC_MINT_ADDRESS,
   checkGuardOffline,
   checkGuardProgramAccount,
   checkGuardedJupiterTransaction,
   clusterFromGenesisHash,
+  decodeRouteV2Prefix,
   deploymentForCluster,
   expectationFromSnapshot,
   fetchGuardSnapshot,
@@ -360,8 +363,26 @@ function verdictFor(mint: Address, owner: string, data: Uint8Array): MintVerdict
 
 const base64 = ([encoded]: Base64EncodedDataResponse): Uint8Array => Uint8Array.from(Buffer.from(encoded, "base64"));
 
+/**
+ * For a `route_v2` swap, why the mints the build reports are not the mints its
+ * instruction moves, or `null`. Classification is decided from the reported
+ * mints, and NOT_APPLICABLE sends the caller down its unguarded path, so a
+ * header that disagrees with the encoded trade must never reach it. Other
+ * entrypoints are not parsed here (see `docs/m11a-security-review.md`).
+ */
+function reportedMintMismatch(build: BuildResponse): string | null {
+  const swap = build.swapInstruction;
+  if (swap.programId !== JUPITER_V6_PROGRAM_ADDRESS || !decodeRouteV2Prefix(Buffer.from(swap.data, "base64"))) return null;
+  const source = swap.accounts[ROUTE_V2_ACCOUNT.sourceMint]?.pubkey;
+  const destination = swap.accounts[ROUTE_V2_ACCOUNT.destinationMint]?.pubkey;
+  if (source === build.inputMint && destination === build.outputMint) return null;
+  return `the build reports ${build.inputMint} -> ${build.outputMint}, but its route_v2 instruction trades ${String(source)} -> ${String(destination)}`;
+}
+
 /** Identifies the protected side of a build and the adapter kind that covers it. */
 async function classify(build: BuildResponse, rpc: Rpc<GetMultipleAccountsApi>, commitment: Commitment): Promise<Classification> {
+  const mismatch = reportedMintMismatch(build);
+  if (mismatch) return { kind: "ERROR", code: EquityGuardFailureCode.INVALID_JUPITER_BUILD, message: mismatch, protectedMint: null };
   const inputMint = address(build.inputMint);
   const outputMint = address(build.outputMint);
   if (inputMint === outputMint) {

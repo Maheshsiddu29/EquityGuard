@@ -28,6 +28,7 @@ import {
   nonExecutableAccount,
   recordedKoxBuyBuild,
   token2022Account,
+  withMints,
   type FakeAccount,
 } from "./protect-fixtures.ts";
 
@@ -140,7 +141,7 @@ test("an unprotected swap costs no genesis or deployment read", async () => {
   const other = distinctAddress(73);
   const { rpc, reads, genesisReads } = fakeRpc({ accounts: { [other]: legacyMint() }, unixTimestamp: SETTLED_TIMESTAMP });
   const result = await protectJupiterSwap({
-    build: { ...recordedKoxBuyBuild(), outputMint: other },
+    build: withMints(recordedKoxBuyBuild(), { outputMint: other }),
     userPublicKey: TAKER,
     rpc,
     protectionWindow: WINDOW,

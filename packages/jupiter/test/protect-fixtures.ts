@@ -238,6 +238,18 @@ export function recordedBuild(symbol: string, direction: "BUY" | "SELL"): BuildR
   });
 }
 
+/**
+ * The build re-pointed at other mints the way a consistent `/build` response
+ * would be: the reported mints and the `route_v2` source/destination mint
+ * accounts change together. Editing only the header models an inconsistent
+ * response, which classification refuses.
+ */
+export function withMints(build: BuildResponse, mints: { readonly inputMint?: string; readonly outputMint?: string }): BuildResponse {
+  const inputMint = mints.inputMint ?? build.inputMint;
+  const outputMint = mints.outputMint ?? build.outputMint;
+  return { ...withSwapAccount(withSwapAccount(build, 3, inputMint), 4, outputMint), inputMint, outputMint };
+}
+
 /** Replaces one account of the recorded swap instruction. */
 export function withSwapAccount(build: BuildResponse, index: number, pubkey: string): BuildResponse {
   const accounts = build.swapInstruction.accounts.map((meta, i) => (i === index ? { ...meta, pubkey } : meta));

@@ -40,6 +40,7 @@ import {
   recordedBuild,
   recordedKoxBuyBuild,
   token2022Account,
+  withMints,
   withSwapAccount,
   withSwapData,
   type FakeAccount,
@@ -146,7 +147,7 @@ test("B: UNHx BUY and SELL both compose against their own mainnet state", async 
 test("C: an ordinary token pair is NOT_APPLICABLE and reads no protected state", async () => {
   const a = distinctAddress(31);
   const b = distinctAddress(32);
-  const build = { ...recordedKoxBuyBuild(), inputMint: a, outputMint: b };
+  const build = withMints(recordedKoxBuyBuild(), { inputMint: a, outputMint: b });
   const result = await protect(build, { [a]: legacyMint(), [b]: legacyMint(9) });
 
   assert.equal(result.status, "NOT_APPLICABLE");
@@ -157,7 +158,7 @@ test("C: an ordinary token pair is NOT_APPLICABLE and reads no protected state",
 
 test("C: a Token-2022 mint with no ScaledUiAmount state is NOT_APPLICABLE", async () => {
   const other = distinctAddress(33);
-  const build = { ...recordedKoxBuyBuild(), outputMint: other };
+  const build = withMints(recordedKoxBuyBuild(), { outputMint: other });
   const result = await protect(build, { [other]: plainToken2022Mint() });
   assert.equal(result.status, "NOT_APPLICABLE");
   assert.equal(result.status === "NOT_APPLICABLE" && result.reason, "NO_PROTECTED_STATE_MODEL");
@@ -179,7 +180,7 @@ test("C: supportsJupiterSwap answers the same question without building", async 
 
   const plain = distinctAddress(34);
   const unprotected = await supportsJupiterSwap({
-    build: { ...recordedKoxBuyBuild(), outputMint: plain },
+    build: withMints(recordedKoxBuyBuild(), { outputMint: plain }),
     rpc: fakeRpc({ accounts: { [plain]: legacyMint() }, unixTimestamp: SETTLED_TIMESTAMP }).rpc,
   });
   assert.equal(unprotected.supported, false);
@@ -226,7 +227,7 @@ test("D: the recorded CRMx BUY, which Jupiter builds with a cleanup, is refused 
 
 test("D: a protected asset traded against a non-USDC counter asset fails closed", async () => {
   const usdt = address("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
-  const build = { ...recordedKoxBuyBuild(), inputMint: usdt };
+  const build = withMints(recordedKoxBuyBuild(), { inputMint: usdt });
   const result = await protect(build, { ...koxAccounts, [usdt]: legacyMint() });
   assert.equal(result.status, "UNSUPPORTED_PROTECTED_ROUTE");
   assert.equal(result.status === "UNSUPPORTED_PROTECTED_ROUTE" && result.code, "UNSUPPORTED_COUNTER_ASSET");
@@ -234,7 +235,7 @@ test("D: a protected asset traded against a non-USDC counter asset fails closed"
 });
 
 test("D: an equity-for-equity route fails closed rather than protecting one leg", async () => {
-  const build = { ...recordedKoxBuyBuild(), inputMint: UNHX_MINT };
+  const build = withMints(recordedKoxBuyBuild(), { inputMint: UNHX_MINT });
   const result = await protect(build, { ...koxAccounts, [UNHX_MINT]: token2022Account(mainnetMint("UNHx")) });
   assert.equal(result.status, "UNSUPPORTED_PROTECTED_ROUTE");
   assert.equal(result.status === "UNSUPPORTED_PROTECTED_ROUTE" && result.code, "UNSUPPORTED_COUNTER_ASSET");
@@ -435,10 +436,11 @@ test("I: a trade for another wallet, mint or destination is rejected", async () 
   assert.ok(otherWallet.status === "UNSUPPORTED_PROTECTED_ROUTE" && otherWallet.details.some((d) => /taker/.test(d)));
   assertNoTransaction(otherWallet);
 
-  // The quote claims UNHx, the encoded route buys KOx.
+  // The quote claims UNHx, the encoded route buys KOx: refused before any
+  // mint is classified (M11-A M-01).
   const wrongMint = await protect({ ...base, outputMint: UNHX_MINT }, accounts);
-  assert.equal(wrongMint.status, "UNSUPPORTED_PROTECTED_ROUTE");
-  assert.equal(wrongMint.status === "UNSUPPORTED_PROTECTED_ROUTE" && wrongMint.guardError, "InvalidJupiterDirection");
+  assert.equal(wrongMint.status, "ERROR");
+  assert.equal(wrongMint.status === "ERROR" && wrongMint.code, "INVALID_JUPITER_BUILD");
   assertNoTransaction(wrongMint);
 
   // A destination that is not the taker's canonical associated token account.
@@ -463,3 +465,39 @@ test("I: a route carrying a platform fee is refused with the program's own error
 });
 
 const TOKEN_2022_OWNER = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+// ------------------------------- M11-A M-01: reported vs encoded mints
+
+test("M11-A M-01: a build whose header hides the protected mint it trades is refused, not NOT_APPLICABLE", async () => {
+  // The recorded route_v2 buys KOx; the header claims an ordinary token. The
+  // caller's "existing path" for NOT_APPLICABLE would send that KOx buy with
+  // no guard at all.
+  const plain = distinctAddress(91);
+  const hidden = { ...recordedKoxBuyBuild(), outputMint: plain };
+  const accounts = { ...koxAccounts, [plain]: legacyMint() };
+  const { rpc, reads } = fakeRpc({ accounts, unixTimestamp: SETTLED_TIMESTAMP });
+
+  const result = await protectJupiterSwap({ build: hidden, userPublicKey: TAKER, rpc, protectionWindow: WINDOW });
+  assert.equal(result.status, "ERROR");
+  assert.equal(result.status === "ERROR" && result.code, "INVALID_JUPITER_BUILD");
+  assert.match(result.status === "ERROR" ? result.message : "", new RegExp(KOX_MINT));
+  assertNoTransaction(result);
+  assert.deepEqual(reads, [], "refused before any mint is read");
+
+  const support = await supportsJupiterSwap({ build: hidden, rpc });
+  assert.equal(support.supported === false && support.status, "ERROR");
+
+  // Either side, and a swap too short to carry the mint accounts.
+  for (const build of [
+    { ...recordedKoxBuyBuild(), inputMint: plain },
+    withSwapAccount(recordedKoxBuyBuild(), 3, plain),
+    { ...recordedKoxBuyBuild(), swapInstruction: { ...recordedKoxBuyBuild().swapInstruction, accounts: recordedKoxBuyBuild().swapInstruction.accounts.slice(0, 4) } },
+  ]) {
+    const refused = await protect(build, accounts);
+    assert.equal(refused.status === "ERROR" && refused.code, "INVALID_JUPITER_BUILD");
+    assertNoTransaction(refused);
+  }
+
+  // A consistent build of the same ordinary pair is still NOT_APPLICABLE.
+  assert.equal((await protect(withMints(recordedKoxBuyBuild(), { outputMint: plain }), accounts)).status, "NOT_APPLICABLE");
+});

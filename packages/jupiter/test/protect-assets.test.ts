@@ -31,6 +31,7 @@ import {
   plainToken2022Mint,
   recordedKoxBuyBuild,
   token2022Account,
+  withMints,
   type FakeAccount,
 } from "./protect-fixtures.ts";
 
@@ -39,7 +40,7 @@ const KOON_MINT = address("e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo");
 
 /** A BUY of `mint` with USDC, over the recorded mainnet route. */
 function buyOf(mint: string) {
-  return { ...recordedKoxBuyBuild(), outputMint: mint };
+  return withMints(recordedKoxBuyBuild(), { outputMint: mint });
 }
 
 function protect(build: Parameters<typeof protectJupiterSwap>[0]["build"], accounts: Readonly<Record<string, FakeAccount>>): Promise<ProtectJupiterSwapResult> {
@@ -154,12 +155,12 @@ test("Ondo representations are treated as supported assets, on the repository's 
   assert.equal(support.supported === true && support.knownAsset?.symbol, "KOon");
 
   // Classification passes; the refusal comes from the route, because the
-  // recorded route_v2 buys KOx. No Jupiter route to an Ondo mint exists
-  // (docs/m9d-a-jupiter-trade-binding.md), so a PROTECTED Ondo build cannot be
-  // exercised from recorded evidence.
+  // recorded route_v2's destination account and setup were built for KOx. No
+  // Jupiter route to an Ondo mint exists (docs/m9d-a-jupiter-trade-binding.md),
+  // so a PROTECTED Ondo build cannot be exercised from recorded evidence.
   const result = await protect(buyOf(KOON_MINT), { [KOON_MINT]: token2022Account(mainnetMint("KOon")) });
   assert.equal(result.status, "UNSUPPORTED_PROTECTED_ROUTE");
-  assert.equal(result.status === "UNSUPPORTED_PROTECTED_ROUTE" && result.guardError, "InvalidJupiterDirection");
+  assert.equal(result.status === "UNSUPPORTED_PROTECTED_ROUTE" && result.guardError, "InvalidAtaSetup");
   assertNoTransaction(result);
 });
 
