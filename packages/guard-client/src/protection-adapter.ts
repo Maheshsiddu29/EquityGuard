@@ -72,15 +72,21 @@ const ONDO_EVIDENCE =
  * Representations this repository holds decoded mainnet evidence for. It is
  * not a claim that these are the only protected assets: an unlisted mint that
  * presents a supported state model is still protected.
+ *
+ * Every entry is frozen, not just the array: results hand these objects to
+ * callers as `knownAsset`, and a caller writing to one must not change how the
+ * next request is classified.
  */
-export const KNOWN_PROTECTED_ASSETS: readonly KnownProtectedAsset[] = Object.freeze([
-  { mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ" as Address, symbol: "KOx", issuer: "xStocks", underlying: "KO", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: XSTOCKS_EVIDENCE },
-  { mint: "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe" as Address, symbol: "UNHx", issuer: "xStocks", underlying: "UNH", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: XSTOCKS_EVIDENCE },
-  { mint: "XsczbcQ3zfcgAEt9qHQES8pxKAVG5rujPSHQEXi4kaN" as Address, symbol: "CRMx", issuer: "xStocks", underlying: "CRM", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: XSTOCKS_EVIDENCE },
-  { mint: "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo" as Address, symbol: "KOon", issuer: "Ondo", underlying: "KO", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: ONDO_EVIDENCE },
-  { mint: "kPBGL8vAwKN3UGmr9cjkM2dU79SC3nzTC9yu7F8ondo" as Address, symbol: "UNHon", issuer: "Ondo", underlying: "UNH", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: ONDO_EVIDENCE },
-  { mint: "7D7ukbcnUNYt7Et5vtsDZhAy28MKu9pkHka1Hp9ondo" as Address, symbol: "CRMon", issuer: "Ondo", underlying: "CRM", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: ONDO_EVIDENCE },
-]);
+export const KNOWN_PROTECTED_ASSETS: readonly KnownProtectedAsset[] = Object.freeze(
+  ([
+    { mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ" as Address, symbol: "KOx", issuer: "xStocks", underlying: "KO", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: XSTOCKS_EVIDENCE },
+    { mint: "XszvaiXGPwvk2nwb3o9C1CX4K6zH8sez11E6uyup6fe" as Address, symbol: "UNHx", issuer: "xStocks", underlying: "UNH", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: XSTOCKS_EVIDENCE },
+    { mint: "XsczbcQ3zfcgAEt9qHQES8pxKAVG5rujPSHQEXi4kaN" as Address, symbol: "CRMx", issuer: "xStocks", underlying: "CRM", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: XSTOCKS_EVIDENCE },
+    { mint: "e6G4pfFcrdKxJuZ4YXixRFfMbpMvgXG2Mjcus71ondo" as Address, symbol: "KOon", issuer: "Ondo", underlying: "KO", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: ONDO_EVIDENCE },
+    { mint: "kPBGL8vAwKN3UGmr9cjkM2dU79SC3nzTC9yu7F8ondo" as Address, symbol: "UNHon", issuer: "Ondo", underlying: "UNH", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: ONDO_EVIDENCE },
+    { mint: "7D7ukbcnUNYt7Et5vtsDZhAy28MKu9pkHka1Hp9ondo" as Address, symbol: "CRMon", issuer: "Ondo", underlying: "CRM", stateModel: PROTECTED_STATE_MODEL.TOKEN_2022_SCALED_UI_AMOUNT, evidence: ONDO_EVIDENCE },
+  ] satisfies KnownProtectedAsset[]).map((asset) => Object.freeze(asset)),
+);
 
 /** Why a known protected asset cannot be protected right now. */
 export type UnsupportedAssetReason =

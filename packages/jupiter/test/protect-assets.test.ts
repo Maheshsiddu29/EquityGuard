@@ -181,3 +181,27 @@ test("a supported protected asset still composes normally", async () => {
   assert.equal(result.status === "PROTECTED" && result.knownAsset?.symbol, "KOx");
   assert.equal(result.status === "PROTECTED" && result.knownAsset?.issuer, "xStocks");
 });
+
+test("a caller writing to its result's knownAsset cannot reclassify the next request", async () => {
+  // `knownAsset` is the registry entry itself. Before the entries were frozen,
+  // setting `result.knownAsset.mint` on one PROTECTED result removed KOx from
+  // the registry for every later request, so a KOx mint that stopped
+  // presenting ScaledUiAmount came back NOT_APPLICABLE instead of failing closed.
+  const protectedResult = await protect(recordedKoxBuyBuild(), { [KOX_MINT]: token2022Account(mainnetMint("KOx")) });
+  assert.equal(protectedResult.status, "PROTECTED");
+  const knownAsset = protectedResult.status === "PROTECTED" ? protectedResult.knownAsset : null;
+  assert.ok(knownAsset);
+  assert.ok(Object.isFrozen(knownAsset));
+  assert.throws(() => {
+    (knownAsset as { mint: string }).mint = distinctAddress(90);
+  }, TypeError);
+  assert.throws(() => {
+    (knownAsset as { stateModel: string }).stateModel = "SOMETHING_ELSE";
+  }, TypeError);
+
+  for (const asset of KNOWN_PROTECTED_ASSETS) assert.ok(Object.isFrozen(asset), asset.symbol);
+  assert.equal(findKnownProtectedAsset(KOX_MINT)?.symbol, "KOx");
+  const next = await protect(buyOf(KOX_MINT), { [KOX_MINT]: plainToken2022Mint() });
+  assert.equal(next.status, "UNSUPPORTED_PROTECTED_ASSET");
+  assert.equal(next.status === "UNSUPPORTED_PROTECTED_ASSET" && next.code, "NO_SUPPORTED_STATE_ADAPTER");
+});
