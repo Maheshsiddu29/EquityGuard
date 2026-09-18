@@ -1636,3 +1636,1094 @@ fn compute_units_are_measured_per_phase() {
     }
     println!("guard compute units (kinds 2/3):\n{}", report.join("\n"));
 }
+
+// ---------------------------------------------- M11-A mutation campaign
+
+/// What one single-property mutation of a valid guarded trade must produce.
+#[derive(Clone, Copy, Debug)]
+enum Expect {
+    /// A semantic violation: this error whether or not the builder
+    /// recomputes the commitment over the mutated bytes.
+    Semantic(EquityGuardError),
+    /// A value the ABI leaves to the signer (amounts, route bytes, venue
+    /// accounts, fees paid): with the honest commitment it is
+    /// `DownstreamCommitmentMismatch`; recomputed, it is a different,
+    /// honestly built trade that the guard accepts.
+    Pinned,
+}
+
+type SuffixMutation = Box<dyn Fn(&Env, &mut Case)>;
+/// Edits the guard instruction and returns the verdict it must produce;
+/// `None` means the program accepts it (a signed policy choice).
+type GuardMutation = Box<dyn Fn(&Env, &mut Instruction, &mut Case) -> Option<EquityGuardError>>;
+
+/// Legacy Token `Transfer(source -> destination, authority)`.
+fn token_transfer(source: &Address, destination: &Address, authority: &Address) -> Instruction {
+    let mut data = vec![3];
+    data.extend(1_000_000_u64.to_le_bytes());
+    Instruction {
+        program_id: LEGACY_TOKEN_PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(*source, false),
+            AccountMeta::new(*destination, false),
+            AccountMeta::new_readonly(*authority, true),
+        ],
+        data,
+    }
+}
+
+/// The equity the campaign substitutes for the traded one.
+fn other_equity(env: &Env, direction: Direction) -> Address {
+    env.mint(if direction == Direction::Buy {
+        "UNHx"
+    } else {
+        "KOx"
+    })
+}
+
+/// Every single-property suffix mutation, with its expectation per direction
+/// (`[BUY, SELL]`). The BUY fixture is KOx, the SELL fixture UNHx.
+fn suffix_mutations() -> Vec<(&'static str, [Expect; 2], SuffixMutation)> {
+    use EquityGuardError as E;
+    use Expect::{Pinned, Semantic};
+    let both = |e| [Semantic(e), Semantic(e)];
+    let taker = builds()[0].taker;
+    let other_user = Address::new_from_array([0x44; 32]);
+    let byte_at = |c: &mut Case, offset: usize, f: fn(u8) -> u8| {
+        let data = &mut c.route().data;
+        data[offset] = f(data[offset]);
+    };
+    vec![
+        // Compute budget
+        (
+            "CU price value",
+            [Pinned; 2],
+            Box::new(|_, c| c.suffix[PRICE] = ComputeBudgetInstruction::set_compute_unit_price(7)),
+        ),
+        (
+            "CU limit value",
+            [Pinned; 2],
+            Box::new(|_, c| {
+                c.suffix[LIMIT] = ComputeBudgetInstruction::set_compute_unit_limit(1_400_000)
+            }),
+        ),
+        (
+            "CU price replaced by RequestHeapFrame",
+            both(E::InvalidComputeBudgetInstruction),
+            Box::new(|_, c| {
+                c.suffix[PRICE] = ComputeBudgetInstruction::request_heap_frame(64 * 1024)
+            }),
+        ),
+        (
+            "CU limit replaced by SetLoadedAccountsDataSizeLimit",
+            both(E::InvalidComputeBudgetInstruction),
+            Box::new(|_, c| {
+                c.suffix[LIMIT] =
+                    ComputeBudgetInstruction::set_loaded_accounts_data_size_limit(1 << 20)
+            }),
+        ),
+        (
+            "CU price and limit reordered",
+            both(E::InvalidComputeBudgetInstruction),
+            Box::new(|_, c| c.suffix.swap(PRICE, LIMIT)),
+        ),
+        // ATA setup
+        (
+            "ATA program id",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(|_, c| c.suffix[SETUP].program_id = MEMO_PROGRAM),
+        ),
+        (
+            "ATA payer is another signer",
+            [Pinned; 2],
+            Box::new(|_, c| c.suffix[SETUP].accounts[0] = AccountMeta::new(RELAYER, true)),
+        ),
+        (
+            "ATA payer does not sign",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.suffix[SETUP].accounts[0] = AccountMeta::new(ATTACKER, false)),
+        ),
+        (
+            "ATA created account",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.suffix[SETUP].accounts[1].pubkey = ATTACKER),
+        ),
+        (
+            "ATA owner",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.suffix[SETUP].accounts[2].pubkey = ATTACKER),
+        ),
+        (
+            "ATA mint",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.suffix[SETUP].accounts[3].pubkey = ATTACKER),
+        ),
+        (
+            "ATA system program",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.suffix[SETUP].accounts[4].pubkey = ATTACKER),
+        ),
+        (
+            "ATA token program",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| {
+                let program = &mut c.suffix[SETUP].accounts[5].pubkey;
+                *program = if *program == TOKEN_2022 {
+                    LEGACY_TOKEN_PROGRAM_ID
+                } else {
+                    TOKEN_2022
+                };
+            }),
+        ),
+        (
+            "ATA CreateIdempotent became Create",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.suffix[SETUP].data = vec![0]),
+        ),
+        // Token accounts
+        (
+            "source token account",
+            both(E::NonCanonicalSourceAccount),
+            Box::new(|_, c| c.route().accounts[1].pubkey = ATTACKER),
+        ),
+        (
+            "destination token account, setup kept consistent",
+            both(E::NonCanonicalDestinationAccount),
+            Box::new(|_, c| {
+                c.route().accounts[2].pubkey = ATTACKER;
+                c.suffix[SETUP].accounts[1].pubkey = ATTACKER;
+            }),
+        ),
+        (
+            "destination token account alone",
+            both(E::InvalidAtaSetup),
+            Box::new(|_, c| c.route().accounts[2].pubkey = ATTACKER),
+        ),
+        (
+            "destination is the attacker's canonical account",
+            both(E::NonCanonicalDestinationAccount),
+            Box::new(|_, c| {
+                let (mint, program) = (c.route().accounts[4].pubkey, c.route().accounts[6].pubkey);
+                let foreign = ata(&ATTACKER, &mint, &program);
+                c.route().accounts[2].pubkey = foreign;
+                c.suffix[SETUP].accounts[1].pubkey = foreign;
+            }),
+        ),
+        // Mints and token programs, re-pointed canonically so only the role is wrong
+        (
+            "source mint",
+            [
+                Semantic(E::InvalidCounterMint),
+                Semantic(E::InvalidJupiterDirection),
+            ],
+            Box::new(|env, c| {
+                let buy = c.adapter == DownstreamAdapter::JupiterRouteV2BuyUsdc;
+                if buy {
+                    retarget_source_mint(c, NOT_USDC, LEGACY_TOKEN_PROGRAM_ID)
+                } else {
+                    retarget_source_mint(c, other_equity(env, Direction::Sell), TOKEN_2022)
+                }
+            }),
+        ),
+        (
+            "destination mint",
+            [
+                Semantic(E::InvalidJupiterDirection),
+                Semantic(E::InvalidCounterMint),
+            ],
+            Box::new(|env, c| {
+                let buy = c.adapter == DownstreamAdapter::JupiterRouteV2BuyUsdc;
+                if buy {
+                    retarget_destination_mint(c, other_equity(env, Direction::Buy), TOKEN_2022)
+                } else {
+                    retarget_destination_mint(c, NOT_USDC, LEGACY_TOKEN_PROGRAM_ID)
+                }
+            }),
+        ),
+        (
+            "source token program",
+            both(E::InvalidTokenProgram),
+            Box::new(|_, c| {
+                let (mint, program) = (c.route().accounts[3].pubkey, c.route().accounts[5].pubkey);
+                retarget_source_mint(
+                    c,
+                    mint,
+                    if program == TOKEN_2022 {
+                        LEGACY_TOKEN_PROGRAM_ID
+                    } else {
+                        TOKEN_2022
+                    },
+                );
+            }),
+        ),
+        (
+            "destination token program",
+            both(E::InvalidTokenProgram),
+            Box::new(|_, c| {
+                let (mint, program) = (c.route().accounts[4].pubkey, c.route().accounts[6].pubkey);
+                retarget_destination_mint(
+                    c,
+                    mint,
+                    if program == TOKEN_2022 {
+                        LEGACY_TOKEN_PROGRAM_ID
+                    } else {
+                        TOKEN_2022
+                    },
+                );
+            }),
+        ),
+        // The Jupiter instruction
+        (
+            "Jupiter program id",
+            both(E::InvalidJupiterProgram),
+            Box::new(|_, c| c.route().program_id = MEMO_PROGRAM),
+        ),
+        (
+            "Jupiter program account",
+            both(E::InvalidJupiterProgram),
+            Box::new(|_, c| c.route().accounts[9].pubkey = ATTACKER),
+        ),
+        (
+            "event authority",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| c.route().accounts[8].pubkey = ATTACKER),
+        ),
+        (
+            "destination override",
+            both(E::DestinationOverrideUnsupported),
+            Box::new(|_, c| c.route().accounts[7] = AccountMeta::new(ATTACKER, false)),
+        ),
+        (
+            "Jupiter discriminator",
+            both(E::InvalidJupiterInstruction),
+            Box::new(move |_, c| byte_at(c, 7, |b| b ^ 1)),
+        ),
+        (
+            "input amount",
+            [Pinned; 2],
+            Box::new(move |_, c| byte_at(c, 8, |b| b.wrapping_add(1))),
+        ),
+        (
+            "input amount zero",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| set_u64(&mut c.route().data, 8, 0)),
+        ),
+        (
+            "quoted output",
+            [Pinned; 2],
+            Box::new(move |_, c| byte_at(c, 16, |b| b ^ 0x10)),
+        ),
+        (
+            "quoted output zero",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| set_u64(&mut c.route().data, 16, 0)),
+        ),
+        (
+            "slippage",
+            [Pinned; 2],
+            Box::new(|_, c| set_u16(&mut c.route().data, 24, 10_000)),
+        ),
+        (
+            "slippage above 100%",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| set_u16(&mut c.route().data, 24, u16::MAX)),
+        ),
+        (
+            "platform fee",
+            both(E::UnsupportedJupiterFee),
+            Box::new(|_, c| set_u16(&mut c.route().data, 26, 1)),
+        ),
+        (
+            "positive-slippage fee",
+            both(E::UnsupportedJupiterFee),
+            Box::new(|_, c| set_u16(&mut c.route().data, 28, 10_000)),
+        ),
+        (
+            "route leg count",
+            [Pinned; 2],
+            Box::new(|_, c| set_u32(&mut c.route().data, 30, u32::MAX)),
+        ),
+        (
+            "route leg count zero",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| set_u32(&mut c.route().data, 30, 0)),
+        ),
+        (
+            "opaque route plan tail byte",
+            [Pinned; 2],
+            Box::new(|_, c| {
+                let last = c.route().data.len() - 1;
+                c.route().data[last] ^= 0x80;
+            }),
+        ),
+        (
+            "opaque route plan truncated",
+            [Pinned; 2],
+            Box::new(|_, c| {
+                c.route().data.pop();
+            }),
+        ),
+        (
+            "opaque route plan extended",
+            [Pinned; 2],
+            Box::new(|_, c| c.route().data.push(0)),
+        ),
+        (
+            "route prefix truncated",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| c.route().data.truncate(33)),
+        ),
+        (
+            "venue account",
+            [Pinned; 2],
+            Box::new(|_, c| c.route().accounts[12].pubkey = ATTACKER),
+        ),
+        (
+            "venue account removed",
+            [Pinned; 2],
+            Box::new(|_, c| {
+                c.route().accounts.pop();
+            }),
+        ),
+        (
+            "venue account added",
+            [Pinned; 2],
+            Box::new(|_, c| {
+                c.route()
+                    .accounts
+                    .push(AccountMeta::new_readonly(ATTACKER, false))
+            }),
+        ),
+        (
+            "venue signer bit",
+            [Pinned; 2],
+            Box::new(|_, c| c.route().accounts[12].is_signer = true),
+        ),
+        (
+            "venue writable bit",
+            [Pinned; 2],
+            Box::new(|_, c| {
+                let meta = &mut c.route().accounts[12];
+                meta.is_writable = !meta.is_writable;
+            }),
+        ),
+        (
+            "fixed accounts truncated to nine",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| {
+                c.suffix.remove(SETUP);
+                c.route().accounts.truncate(9);
+            }),
+        ),
+        (
+            "authority signer bit",
+            both(E::InvalidJupiterInstruction),
+            Box::new(|_, c| {
+                c.payer = RELAYER;
+                c.suffix[SETUP].accounts[0].pubkey = RELAYER;
+                c.route().accounts[0].is_signer = false;
+            }),
+        ),
+        (
+            "authority with its source, destination and setup",
+            [Pinned; 2],
+            Box::new(move |_, c| {
+                let route = c.route();
+                let (sm, sp, dm, dp) = (
+                    route.accounts[3].pubkey,
+                    route.accounts[5].pubkey,
+                    route.accounts[4].pubkey,
+                    route.accounts[6].pubkey,
+                );
+                for meta in &mut route.accounts {
+                    if meta.pubkey == taker {
+                        meta.pubkey = other_user;
+                    }
+                }
+                route.accounts[1].pubkey = ata(&other_user, &sm, &sp);
+                route.accounts[2].pubkey = ata(&other_user, &dm, &dp);
+                let destination = route.accounts[2].pubkey;
+                c.suffix[SETUP].accounts[1].pubkey = destination;
+                c.suffix[SETUP].accounts[2].pubkey = other_user;
+            }),
+        ),
+        // Instruction set and order
+        (
+            "guard moved to index 1",
+            both(E::GuardNotFirst),
+            Box::new(|_, c| c.guard_index = 1),
+        ),
+        // Last would put the trade first; atomicity still reverts it, but the
+        // stand-in's own refusal would then be what the harness observes.
+        (
+            "guard moved immediately before the trade",
+            both(E::GuardNotFirst),
+            Box::new(|_, c| c.guard_index = c.suffix.len() - 1),
+        ),
+        (
+            "unknown instruction inserted before the price",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| c.suffix.insert(0, memo(&taker))),
+        ),
+        (
+            "price deleted",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(|_, c| drop(c.suffix.remove(PRICE))),
+        ),
+        (
+            "setup deleted",
+            [Pinned; 2],
+            Box::new(|_, c| drop(c.suffix.remove(SETUP))),
+        ),
+        (
+            "trade deleted",
+            both(E::InvalidJupiterProgram),
+            Box::new(|_, c| drop(c.suffix.remove(ROUTE))),
+        ),
+        (
+            "setup moved after the trade",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(|_, c| c.suffix.swap(SETUP, ROUTE)),
+        ),
+        (
+            "second Jupiter instruction",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(|_, c| c.suffix.push(c.suffix[ROUTE].clone())),
+        ),
+        (
+            "second Jupiter instruction in place of the setup",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(|_, c| c.suffix[SETUP] = c.suffix[ROUTE].clone()),
+        ),
+        (
+            "second guard appended",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(|env, c| {
+                let g =
+                    guard_instruction(&c.guard_mint, env.state(&c.guard_mint), c.adapter, [0; 32]);
+                c.suffix.push(g);
+            }),
+        ),
+        (
+            "cleanup appended",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| {
+                let d = c.route().accounts[2].pubkey;
+                c.suffix.push(close_account(&d, &ATTACKER, &taker));
+            }),
+        ),
+        (
+            "system transfer appended",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| c.suffix.push(system_transfer(&taker, &ATTACKER))),
+        ),
+        (
+            "system transfer in place of the setup",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| c.suffix[SETUP] = system_transfer(&taker, &ATTACKER)),
+        ),
+        (
+            "token transfer appended",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| {
+                let s = c.route().accounts[1].pubkey;
+                c.suffix.push(token_transfer(&s, &ATTACKER, &taker));
+            }),
+        ),
+        (
+            "tip appended",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| c.suffix.push(system_transfer(&taker, &RELAYER))),
+        ),
+        (
+            "unknown instruction in place of the setup",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| c.suffix[SETUP] = memo(&taker)),
+        ),
+        (
+            "unknown instruction appended",
+            both(E::UnsupportedTransactionGrammar),
+            Box::new(move |_, c| c.suffix.push(memo(&taker))),
+        ),
+    ]
+}
+
+/// Every single-property mutation of the guard instruction's own payload and
+/// accounts. The suffix commitment does not cover them.
+fn guard_mutations() -> Vec<(&'static str, GuardMutation)> {
+    use EquityGuardError as E;
+    let payload = |f: fn(&mut AssertSafeExecutionV2)| -> GuardMutation {
+        Box::new(move |_, guard, _| {
+            let mut request = AssertSafeExecutionV2::unpack(&guard.data).unwrap();
+            f(&mut request);
+            guard.data = request.pack().to_vec();
+            None
+        })
+    };
+    let with = |expected: EquityGuardError, edit: GuardMutation| -> GuardMutation {
+        Box::new(move |env, guard, case| {
+            edit(env, guard, case);
+            Some(expected)
+        })
+    };
+    let bytes = |range: std::ops::Range<usize>, f: fn(&mut [u8])| -> GuardMutation {
+        Box::new(move |_, guard, _| {
+            f(&mut guard.data[range.clone()]);
+            None
+        })
+    };
+    let next_up = |b: &mut [u8]| {
+        let v = u64::from_le_bytes(b.try_into().unwrap()) + 1;
+        b.copy_from_slice(&v.to_le_bytes());
+    };
+    vec![
+        (
+            "ABI version 1",
+            with(E::UnsupportedVersion, bytes(0..1, |b| b[0] = 1)),
+        ),
+        (
+            "ABI version 3",
+            with(E::UnsupportedVersion, bytes(0..1, |b| b[0] = 3)),
+        ),
+        (
+            "payload truncated",
+            with(
+                E::InvalidInstructionLength,
+                Box::new(|_, g, _| {
+                    g.data.pop();
+                    None
+                }),
+            ),
+        ),
+        (
+            "payload with a trailing byte",
+            with(
+                E::InvalidInstructionLength,
+                Box::new(|_, g, _| {
+                    g.data.push(0);
+                    None
+                }),
+            ),
+        ),
+        (
+            "payload names another equity",
+            Box::new(|env, g, case| {
+                let other = if case.guard_mint == env.mint("KOx") {
+                    env.mint("UNHx")
+                } else {
+                    env.mint("KOx")
+                };
+                g.data[1..33].copy_from_slice(other.as_ref());
+                Some(E::MintKeyMismatch)
+            }),
+        ),
+        (
+            "account 0 is another equity",
+            Box::new(|env, g, case| {
+                let other = if case.guard_mint == env.mint("KOx") {
+                    env.mint("UNHx")
+                } else {
+                    env.mint("KOx")
+                };
+                g.accounts[0].pubkey = other;
+                case.guard_mint = other;
+                Some(E::MintKeyMismatch)
+            }),
+        ),
+        (
+            "payload and account 0 both another equity",
+            Box::new(|env, g, case| {
+                let other = if case.guard_mint == env.mint("KOx") {
+                    env.mint("UNHx")
+                } else {
+                    env.mint("KOx")
+                };
+                g.data[1..33].copy_from_slice(other.as_ref());
+                g.accounts[0].pubkey = other;
+                case.guard_mint = other;
+                Some(E::InvalidJupiterDirection)
+            }),
+        ),
+        (
+            "expected multiplier, next representable",
+            with(E::MultiplierChanged, bytes(33..41, next_up)),
+        ),
+        (
+            "expected multiplier NaN",
+            with(
+                E::InvalidExpectedState,
+                bytes(33..41, |b| b.copy_from_slice(&f64::NAN.to_le_bytes())),
+            ),
+        ),
+        (
+            "expected multiplier -0",
+            with(
+                E::InvalidExpectedState,
+                bytes(33..41, |b| b.copy_from_slice(&(-0.0_f64).to_le_bytes())),
+            ),
+        ),
+        (
+            "expected multiplier subnormal",
+            with(
+                E::InvalidExpectedState,
+                bytes(33..41, |b| b.copy_from_slice(&1_u64.to_le_bytes())),
+            ),
+        ),
+        (
+            "expected multiplier byte-swapped",
+            Box::new(|_, g, _| {
+                g.data[33..41].reverse();
+                let swapped: [u8; 8] = g.data[33..41].try_into().unwrap();
+                Some(
+                    if equity_guard::state::StoredMultiplier::new(swapped).is_some() {
+                        E::MultiplierChanged
+                    } else {
+                        E::InvalidExpectedState
+                    },
+                )
+            }),
+        ),
+        (
+            "expected new multiplier, next representable",
+            with(E::NewMultiplierChanged, bytes(41..49, next_up)),
+        ),
+        (
+            "expected new multiplier +inf",
+            with(
+                E::InvalidExpectedState,
+                bytes(41..49, |b| b.copy_from_slice(&f64::INFINITY.to_le_bytes())),
+            ),
+        ),
+        (
+            "T + 1",
+            with(E::EffectiveTimestampChanged, bytes(49..57, next_up)),
+        ),
+        (
+            "T - 1",
+            with(
+                E::EffectiveTimestampChanged,
+                payload(|r| r.execution.expected.new_multiplier_effective_timestamp -= 1),
+            ),
+        ),
+        (
+            "T byte-swapped",
+            with(E::EffectiveTimestampChanged, bytes(49..57, <[u8]>::reverse)),
+        ),
+        (
+            "phase flipped to pending",
+            with(
+                E::ActivationPhaseChanged,
+                payload(|r| r.execution.expected_phase = ActivationPhase::Pending),
+            ),
+        ),
+        (
+            "phase byte 2",
+            with(E::InvalidExpectedState, bytes(57..58, |b| b[0] = 2)),
+        ),
+        (
+            "window after = u32::MAX",
+            with(
+                E::InsideTransitionWindow,
+                payload(|r| r.execution.window.after_secs = u32::MAX),
+            ),
+        ),
+        // Policy the signer chose; only the SDK and the signature bind it.
+        (
+            "window narrowed to zero",
+            payload(|r| {
+                r.execution.window = ProtectionWindow {
+                    before_secs: 0,
+                    after_secs: 0,
+                }
+            }),
+        ),
+        (
+            "window before = u32::MAX",
+            payload(|r| r.execution.window.before_secs = u32::MAX),
+        ),
+        (
+            "adapter kind flipped between BUY and SELL",
+            with(E::InvalidJupiterDirection, bytes(66..67, |b| b[0] ^= 1)),
+        ),
+        (
+            "adapter kind 1",
+            with(E::UnsupportedDownstreamProgram, bytes(66..67, |b| b[0] = 1)),
+        ),
+        (
+            "adapter kind 0",
+            with(E::UnsupportedAdapter, bytes(66..67, |b| b[0] = 0)),
+        ),
+        (
+            "adapter kind 4",
+            with(E::UnsupportedAdapter, bytes(66..67, |b| b[0] = 4)),
+        ),
+        (
+            "adapter kind 255",
+            with(E::UnsupportedAdapter, bytes(66..67, |b| b[0] = u8::MAX)),
+        ),
+        (
+            "commitment first bit",
+            with(
+                E::DownstreamCommitmentMismatch,
+                bytes(67..68, |b| b[0] ^= 1),
+            ),
+        ),
+        (
+            "commitment last bit",
+            with(
+                E::DownstreamCommitmentMismatch,
+                bytes(98..99, |b| b[0] ^= 0x80),
+            ),
+        ),
+    ]
+}
+
+/// M11-A step 4. Starts from a valid guarded trade and changes one semantic
+/// property at a time. Suffix mutations run twice: after the honest
+/// commitment was fixed, and with a commitment a malicious builder
+/// recomputed over the mutated bytes. The second run is what shows the
+/// commitment is not the safety mechanism: every semantic violation is
+/// rejected by the grammar, and only values the ABI leaves to the signer
+/// are accepted.
+#[test]
+fn mutation_campaign_from_a_valid_guarded_trade() {
+    let mut env = Env::new();
+    let (mut generated, mut rejected, mut accepted) = (0_usize, 0_usize, 0_usize);
+    let mut unexpected_accepts = Vec::new();
+    let mut wrong_errors = Vec::new();
+    let mut check = |label: String, verdict: &str, expected: Option<EquityGuardError>| {
+        generated += 1;
+        if verdict == "ok" {
+            accepted += 1;
+        } else {
+            rejected += 1;
+        }
+        match expected {
+            None if verdict != "ok" => {
+                wrong_errors.push(format!("{label}: expected acceptance, got {verdict}"))
+            }
+            Some(error) if verdict == "ok" => {
+                unexpected_accepts.push(format!("{label}: accepted, expected {error:?}"))
+            }
+            Some(error) if verdict != name(error) => {
+                wrong_errors.push(format!("{label}: expected {error:?}, got {verdict}"))
+            }
+            _ => {}
+        }
+    };
+
+    for (index, (symbol, direction)) in [("KOx", Direction::Buy), ("UNHx", Direction::Sell)]
+        .into_iter()
+        .enumerate()
+    {
+        let honest = Case::honest(&build(symbol, direction));
+        let (honest_instructions, _) = build_with_matching_commitment(&env, &honest);
+        let outcome = run(&mut env, &honest_instructions, &honest);
+        assert_guard_passed_and_trade_reached(&outcome, &honest_instructions);
+        let honest_guard = honest_instructions[0].clone();
+
+        for (label, expectations, mutate) in suffix_mutations() {
+            let expect = expectations[index];
+            let mut mutated = honest.clone();
+            mutate(&env, &mut mutated);
+
+            // 1. The client fixed the commitment, then the bytes changed.
+            let stale = with_guard(&mutated, honest_guard.clone());
+            let verdict = run(&mut env, &stale, &mutated).verdict;
+            let expected = match expect {
+                Expect::Semantic(error) => error,
+                Expect::Pinned => EquityGuardError::DownstreamCommitmentMismatch,
+            };
+            check(
+                format!("{symbol} {direction:?} {label} [honest commitment]"),
+                &verdict,
+                Some(expected),
+            );
+
+            // 2. A malicious builder recomputed the commitment.
+            let (recomputed, _) = build_with_matching_commitment(&env, &mutated);
+            let verdict = run(&mut env, &recomputed, &mutated).verdict;
+            let expected = match expect {
+                Expect::Semantic(error) => Some(error),
+                Expect::Pinned => None,
+            };
+            check(
+                format!("{symbol} {direction:?} {label} [recomputed commitment]"),
+                &verdict,
+                expected,
+            );
+        }
+
+        for (label, mutate) in guard_mutations() {
+            let mut case = honest.clone();
+            let mut guard = honest_guard.clone();
+            let expected = mutate(&env, &mut guard, &mut case);
+            let mut instructions = honest_instructions.clone();
+            instructions[0] = guard;
+            let verdict = run(&mut env, &instructions, &case).verdict;
+            check(
+                format!("{symbol} {direction:?} {label} [guard payload]"),
+                &verdict,
+                expected,
+            );
+        }
+    }
+
+    println!("mutation campaign: {generated} generated, {rejected} rejected, {accepted} accepted as specified, {} unexpected accepts", unexpected_accepts.len());
+    assert!(
+        unexpected_accepts.is_empty(),
+        "UNEXPECTED ACCEPTS:\n{}",
+        unexpected_accepts.join("\n")
+    );
+    assert!(wrong_errors.is_empty(), "\n{}", wrong_errors.join("\n"));
+    assert!(generated >= 200, "{generated}");
+}
+
+// ------------------------------------ M11-A address lookup tables (v0)
+
+const LOOKUP_TABLE_PROGRAM: Address =
+    Address::from_str_const("AddressLookupTab1e1111111111111111111111111");
+const TABLE: Address = Address::new_from_array([0xa1; 32]);
+
+impl Env {
+    /// An active lookup table holding exactly `addresses`, usable this slot.
+    fn set_lookup_table(&mut self, addresses: &[Address]) {
+        use solana_address_lookup_table_interface::state::{AddressLookupTable, LookupTableMeta};
+        let table = AddressLookupTable {
+            meta: LookupTableMeta {
+                deactivation_slot: u64::MAX,
+                last_extended_slot: 0,
+                last_extended_slot_start_index: u8::try_from(addresses.len()).unwrap(),
+                authority: None,
+                _padding: 0,
+            },
+            addresses: std::borrow::Cow::Borrowed(addresses),
+        };
+        let data = table.serialize_for_tests().unwrap();
+        let lamports = self.svm.minimum_balance_for_rent_exemption(data.len());
+        self.svm
+            .set_account(
+                TABLE,
+                Account {
+                    lamports,
+                    data,
+                    owner: LOOKUP_TABLE_PROGRAM,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    fn compile_v0(
+        &mut self,
+        payer: &Address,
+        instructions: &[Instruction],
+        table: &[Address],
+    ) -> solana_message::v0::Message {
+        self.svm.expire_blockhash();
+        let lookup = solana_message::AddressLookupTableAccount {
+            key: TABLE,
+            addresses: table.to_vec(),
+        };
+        solana_message::v0::Message::try_compile(
+            payer,
+            instructions,
+            &[lookup],
+            self.svm.latest_blockhash(),
+        )
+        .unwrap()
+    }
+
+    /// Sends a v0 message (signature verification is off) and returns the
+    /// guard's verdict at instruction 0, as `run` reports it.
+    fn send_v0(
+        &mut self,
+        message: solana_message::v0::Message,
+    ) -> (
+        String,
+        Result<TransactionMetadata, FailedTransactionMetadata>,
+    ) {
+        let signatures = vec![
+            solana_signature::Signature::default();
+            usize::from(message.header.num_required_signatures)
+        ];
+        let transaction = solana_transaction::versioned::VersionedTransaction {
+            signatures,
+            message: solana_message::VersionedMessage::V0(message),
+        };
+        let result = self.svm.send_transaction(transaction);
+        let verdict = match &result {
+            Ok(_) => "ok".to_owned(),
+            Err(failed) => match failed.err {
+                TransactionError::InstructionError(0, InstructionError::Custom(code)) => {
+                    error_name(code)
+                }
+                TransactionError::InstructionError(index, _) if index > 0 => "ok".to_owned(),
+                ref other => format!("runtime:{other:?}"),
+            },
+        };
+        let logs = match &result {
+            Ok(meta) => &meta.logs,
+            Err(failed) => &failed.meta.logs,
+        };
+        let passed = logs.iter().any(|l| l == "Program log: EquityGuard: safe");
+        assert_eq!(verdict == "ok", passed, "logs disagree: {logs:#?}");
+        (verdict, result)
+    }
+}
+
+/// Every account a v0 message may take from a lookup table: not a signer, not
+/// an invoked program. The guard's mint and the Instructions sysvar included.
+fn lookup_candidates(instructions: &[Instruction]) -> Vec<Address> {
+    let programs: Vec<Address> = instructions.iter().map(|i| i.program_id).collect();
+    let mut out: Vec<Address> = Vec::new();
+    for meta in instructions.iter().flat_map(|i| &i.accounts) {
+        let signer = instructions
+            .iter()
+            .flat_map(|i| &i.accounts)
+            .any(|m| m.pubkey == meta.pubkey && m.is_signer);
+        if !signer && !programs.contains(&meta.pubkey) && !out.contains(&meta.pubkey) {
+            out.push(meta.pubkey);
+        }
+    }
+    out
+}
+
+/// M11-A step 7. The commitment is computed over the instructions as the
+/// runtime resolves them — static or looked-up, with transaction-level flags —
+/// so how a key reaches the message does not matter, and what it resolves to
+/// always does.
+#[test]
+fn the_commitment_binds_runtime_resolved_accounts_through_lookup_tables() {
+    use EquityGuardError as E;
+    let mut env = Env::new();
+    for (symbol, direction) in [("KOx", Direction::Buy), ("UNHx", Direction::Sell)] {
+        let case = Case::honest(&build(symbol, direction));
+        let (instructions, _) = build_with_matching_commitment(&env, &case);
+        let table = lookup_candidates(&instructions);
+        let slot_of = |key: &Address| table.iter().position(|k| k == key).unwrap();
+        env.set_lookup_table(&table);
+
+        // The legacy transaction and a v0 one resolving most accounts from
+        // the table satisfy the same guard: the encoding is not committed.
+        let honest = env.compile_v0(&case.payer, &instructions, &table);
+        let looked_up: usize = honest
+            .address_table_lookups
+            .iter()
+            .map(|l| l.writable_indexes.len() + l.readonly_indexes.len())
+            .sum();
+        assert!(
+            looked_up >= 10,
+            "{symbol}: only {looked_up} accounts looked up"
+        );
+        let (verdict, result) = env.send_v0(honest.clone());
+        assert_eq!(verdict, "ok", "{symbol} {direction:?}");
+        let last = u8::try_from(instructions.len() - 1).unwrap();
+        assert!(
+            matches!(result, Err(ref f) if matches!(f.err, TransactionError::InstructionError(i, _) if i == last))
+        );
+
+        // Table substitution: identical message bytes, different table content.
+        // Venue accounts: past the fixed ten, and not also a fixed account.
+        let route = instructions.last().unwrap();
+        let venues: Vec<(usize, Address)> = route
+            .accounts
+            .iter()
+            .enumerate()
+            .skip(10)
+            .filter(|(_, m)| {
+                table.contains(&m.pubkey)
+                    && !route.accounts[..10].iter().any(|f| f.pubkey == m.pubkey)
+            })
+            .map(|(i, m)| (i, m.pubkey))
+            .collect();
+        assert!(venues.len() >= 2, "{symbol}: {venues:?}");
+        let venue = venues[0].1;
+        for (label, target, expected) in [
+            ("venue account", venue, E::DownstreamCommitmentMismatch),
+            (
+                "source token account",
+                route.accounts[1].pubkey,
+                E::NonCanonicalSourceAccount,
+            ),
+            ("protected mint", case.guard_mint, E::MintKeyMismatch),
+            (
+                "Instructions sysvar",
+                INSTRUCTIONS_SYSVAR,
+                E::InvalidInstructionsSysvar,
+            ),
+        ] {
+            let mut substituted = table.clone();
+            substituted[slot_of(&target)] = ATTACKER;
+            env.set_lookup_table(&substituted);
+            assert_eq!(
+                env.send_v0(honest.clone()).0,
+                name(expected),
+                "{symbol} table substitution: {label}"
+            );
+        }
+
+        // The same table content in another order.
+        let mut reordered = table.clone();
+        let (a, b) = (slot_of(&venue), slot_of(&venues[1].1));
+        reordered.swap(a, b);
+        env.set_lookup_table(&reordered);
+        assert_eq!(
+            env.send_v0(honest.clone()).0,
+            name(E::DownstreamCommitmentMismatch),
+            "{symbol} reordered table"
+        );
+        env.set_lookup_table(&table);
+
+        // Writable escalation through a writable lookup of a read-only venue account.
+        let readonly_venue = venues
+            .iter()
+            .find(|(i, _)| !route.accounts[*i].is_writable)
+            .unwrap()
+            .1;
+        let mut escalated = instructions.clone();
+        for meta in &mut escalated.last_mut().unwrap().accounts {
+            if meta.pubkey == readonly_venue {
+                meta.is_writable = true;
+            }
+        }
+        let message = env.compile_v0(&case.payer, &escalated, &table);
+        assert!(message.address_table_lookups[0]
+            .writable_indexes
+            .contains(&u8::try_from(slot_of(&readonly_venue)).unwrap()));
+        assert_eq!(
+            env.send_v0(message).0,
+            name(E::DownstreamCommitmentMismatch),
+            "{symbol} writable escalation via lookup"
+        );
+
+        // Account-key index mutation inside the compiled trade instruction.
+        let mut remapped = honest.clone();
+        remapped.recent_blockhash = env.svm.latest_blockhash();
+        let trade = remapped.instructions.last_mut().unwrap();
+        trade.accounts[venues[0].0] = trade.accounts[venues[1].0];
+        assert_eq!(
+            env.send_v0(remapped).0,
+            name(E::DownstreamCommitmentMismatch),
+            "{symbol} index mutation"
+        );
+
+        // The same pubkey both static and looked up is refused by the runtime
+        // before any instruction runs.
+        let mut duplicated_table = table.clone();
+        duplicated_table.push(case.payer);
+        env.set_lookup_table(&duplicated_table);
+        let mut duplicated = honest.clone();
+        duplicated.recent_blockhash = env.svm.latest_blockhash();
+        duplicated.address_table_lookups[0]
+            .readonly_indexes
+            .push(u8::try_from(table.len()).unwrap());
+        let (verdict, _) = env.send_v0(duplicated);
+        assert_eq!(
+            verdict, "runtime:AccountLoadedTwice",
+            "{symbol} static + looked-up duplicate"
+        );
+        env.set_lookup_table(&table);
+    }
+}
