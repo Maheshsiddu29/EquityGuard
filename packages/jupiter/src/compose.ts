@@ -316,7 +316,8 @@ export function resolveWireTransaction(wireBytes: Uint8Array, lookupTables: Read
   }));
 }
 
-const sameInstructions = (a: readonly CommittedInstruction[], b: readonly CommittedInstruction[]) =>
+/** Same program, data, accounts and transaction-level flags, in order. */
+export const sameInstructions = (a: readonly CommittedInstruction[], b: readonly CommittedInstruction[]) =>
   a.length === b.length &&
   a.every(
     (x, i) =>

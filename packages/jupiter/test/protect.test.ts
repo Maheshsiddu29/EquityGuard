@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { address } from "@solana/kit";
+import { address, getCompiledTransactionMessageDecoder, getCompiledTransactionMessageEncoder, getTransactionDecoder } from "@solana/kit";
 import { ActivationPhase, DownstreamAdapterKind, USDC_MINT_ADDRESS, decodeProtectedState, findKnownProtectedAsset } from "@equityguard/guard-client";
 
 import { MAX_TRANSACTION_BYTES } from "../src/index.ts";
@@ -500,4 +500,25 @@ test("M11-A M-01: a build whose header hides the protected mint it trades is ref
 
   // A consistent build of the same ordinary pair is still NOT_APPLICABLE.
   assert.equal((await protect(withMints(recordedKoxBuyBuild(), { outputMint: plain }), accounts)).status, "NOT_APPLICABLE");
+});
+
+test("M11-A M-02: verifyProtectedSwap refuses a transaction whose guard instruction was changed", async () => {
+  const result = assertProtected(await protect(recordedKoxBuyBuild(), koxAccounts));
+  const { messageBytes } = getTransactionDecoder().decode(result.transaction);
+  const message = getCompiledTransactionMessageDecoder().decode(messageBytes);
+  assert.ok(message.version === 0);
+  const rewire = (instructions: typeof message.instructions) => {
+    const bytes = getCompiledTransactionMessageEncoder().encode({ ...message, instructions });
+    return Uint8Array.from([1, ...new Uint8Array(64), ...bytes]);
+  };
+  const [guard, ...suffix] = message.instructions;
+  assert.ok(guard);
+  const computeBudget = message.staticAccounts.indexOf(address("ComputeBudget111111111111111111111111111111"));
+  const narrowed = Uint8Array.from(guard.data ?? []);
+  narrowed.fill(0, 58, 66); // protection window [0, 0]
+
+  // The suffix and its commitment are untouched in both: before the fix these verified.
+  assert.equal(await verifyProtectedSwap(result, rewire([{ ...guard, programAddressIndex: computeBudget }, ...suffix])), "GUARD_INSTRUCTION_CHANGED");
+  assert.equal(await verifyProtectedSwap(result, rewire([{ ...guard, data: narrowed }, ...suffix])), "GUARD_INSTRUCTION_CHANGED");
+  assert.equal(await verifyProtectedSwap(result, rewire(message.instructions)), null);
 });

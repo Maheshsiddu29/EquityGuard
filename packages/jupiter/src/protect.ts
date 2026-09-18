@@ -81,6 +81,7 @@ import {
   UnsupportedJupiterBuildError,
   composeGuardedJupiterTrade,
   resolveWireTransaction,
+  sameInstructions,
   type TransactionMetrics,
 } from "./compose.ts";
 
@@ -675,21 +676,30 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
 }
 
 /**
- * Re-checks a protected transaction against the commitment its guard carries,
- * returning the error the program would raise, or `null`. Any downstream edit
- * — a different route, amount, slippage, destination or account flag — changes
- * the suffix and is detected here exactly as it is on chain.
+ * Re-checks a protected transaction, returning why it is no longer the one
+ * `result` built, or `null`.
+ *
+ * The guard instruction itself — program, payload (expected state, phase,
+ * window, adapter kind, commitment) and accounts — must be exactly the one
+ * `result` built: its commitment covers only what follows it, and a guard
+ * addressed to another program never runs at all
+ * (`GUARD_INSTRUCTION_CHANGED`). Any downstream edit — a different route,
+ * amount, slippage, destination or account flag — changes the suffix and is
+ * detected exactly as it is on chain.
  */
-export type VerificationVerdict = EquityGuardErrorName | "UNRESOLVABLE_TRANSACTION" | null;
+export type VerificationVerdict = EquityGuardErrorName | "UNRESOLVABLE_TRANSACTION" | "GUARD_INSTRUCTION_CHANGED" | null;
 
 export async function verifyProtectedSwap(result: ProtectedSwap, wireBytes: Uint8Array = result.transaction): Promise<VerificationVerdict> {
   let instructions;
+  let built;
   try {
     instructions = resolveWireTransaction(wireBytes, result.lookupTables);
+    built = resolveWireTransaction(result.transaction, result.lookupTables);
   } catch (error) {
     if (error instanceof CompositionError) return "UNRESOLVABLE_TRANSACTION";
     throw error;
   }
+  if (!sameInstructions(instructions.slice(0, 1), built.slice(0, 1))) return "GUARD_INSTRUCTION_CHANGED";
   return checkGuardedJupiterTransaction({
     instructions,
     guardIndex: 0,
