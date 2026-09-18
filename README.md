@@ -185,12 +185,18 @@ an ordinary token. Unknown protection semantics never become permission.
 **`PROTECTED` is bound to a real deployment.** EquityGuard resolves the cluster
 from the RPC's genesis hash and reads the program account back: the guard
 program must exist and be executable there. There is one deployment, on devnet
-(`EbzHfaoS…VeEtNnhT`). **No mainnet deployment is claimed or implied**: a
-mainnet or unknown-cluster build with no explicit `programAddress` fails closed
-with `GUARD_DEPLOYMENT_UNAVAILABLE` or `UNSUPPORTED_CLUSTER` rather than
-silently reusing the devnet address. Supplying `programAddress` yourself is
-honoured on any cluster — trusting that deployment is your decision — but it is
-still read back and must be an executable program.
+(`EbzHfaoS…VeEtNnhT`), and it must also be the reviewed binary: the SDK reads
+the Program and ProgramData accounts in one call and requires the
+upgradeable-loader pairing, the recorded ProgramData address, the reviewed
+63,840-byte ELF (SHA-256 `d7d59ccd…a41e4e46`) and only zeros after it,
+otherwise `GUARD_BINARY_UNVERIFIED`. **No mainnet deployment is claimed or
+implied**: a mainnet or unknown-cluster build with no explicit `programAddress`
+fails closed with `GUARD_DEPLOYMENT_UNAVAILABLE` or `UNSUPPORTED_CLUSTER`
+rather than silently reusing the devnet address. Supplying `programAddress`
+yourself is honoured on any cluster — trusting that deployment is your
+decision, reported as `deploymentIdentity: "CALLER_TRUSTED"` — but it is still
+read back and must be an executable program. The check proves what the cluster
+held at build time; an upgrade between build and landing is outside it.
 
 `supportsJupiterSwap({ build, rpc })` answers the cheaper question: which side
 is protected and which adapter would cover it. It proves structure only. It

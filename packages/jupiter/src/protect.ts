@@ -57,15 +57,18 @@ import {
   expectationFromSnapshot,
   fetchGuardSnapshot,
   findKnownProtectedAsset,
+  findReviewedGuardDeployment,
   hasScheduledChange,
   isValidWindowSecs,
   resolveProtectionAdapter,
+  verifyReviewedGuardDeployment,
   type AssertSafeExecutionRequest,
   type EquityGuardErrorName,
   type GuardSnapshot,
   type JupiterAdapterKind,
   type JupiterTradeBinding,
   type KnownProtectedAsset,
+  type LoaderAccountView,
   type ProtectedState,
   type ProtectionWindow,
   type SolanaCluster,
@@ -108,7 +111,8 @@ export const SUPPORTED_JUPITER_ROUTES = Object.freeze({
 /**
  * The only EquityGuard deployment that exists. It is on devnet, and it is used
  * only when the caller's RPC is actually a devnet node: there is no mainnet
- * deployment, and this address is never applied to another cluster.
+ * deployment, and this address is never applied to another cluster. Its
+ * deployed binary is checked against the reviewed ELF on every build.
  */
 export const EQUITY_GUARD_DEVNET_DEPLOYMENT = EQUITY_GUARD_DEVNET_PROGRAM_ID;
 
@@ -146,6 +150,8 @@ export const EquityGuardFailureCode = {
   GUARD_DEPLOYMENT_UNAVAILABLE: "GUARD_DEPLOYMENT_UNAVAILABLE",
   /** The guard program address exists on this cluster but cannot execute. */
   GUARD_PROGRAM_NOT_EXECUTABLE: "GUARD_PROGRAM_NOT_EXECUTABLE",
+  /** A reviewed EquityGuard address does not hold the reviewed binary under the expected loader and ProgramData. */
+  GUARD_BINARY_UNVERIFIED: "GUARD_BINARY_UNVERIFIED",
   /** The RPC serves a cluster this client has no deployment knowledge for. */
   UNSUPPORTED_CLUSTER: "UNSUPPORTED_CLUSTER",
   /** A known tokenized equity that presents no supported economic-state model. */
@@ -169,6 +175,18 @@ export type NotApplicableReason =
 
 export type SwapDirection = "BUY" | "SELL";
 
+/**
+ * What `PROTECTED` knows about the guard program it was built against.
+ *
+ * - `REVIEWED_BINARY`: a reviewed deployment, whose ProgramData held exactly
+ *   the reviewed ELF (SHA-256 of its recorded length, zeros after) under the
+ *   upgradeable loader when the build read it.
+ * - `CALLER_TRUSTED`: a `programAddress` the caller supplied that is not a
+ *   reviewed deployment. The SDK proved only that it exists and is
+ *   executable; trusting its code is the caller's decision.
+ */
+export type GuardDeploymentIdentity = "REVIEWED_BINARY" | "CALLER_TRUSTED";
+
 export interface ProtectedSwap {
   readonly status: "PROTECTED";
   readonly protectedMint: Address;
@@ -176,6 +194,8 @@ export interface ProtectedSwap {
   readonly adapterKind: JupiterAdapterKind;
   /** The guard program, proven to exist and be executable on `cluster`. */
   readonly programAddress: Address;
+  /** Whether that program's binary was verified or is trusted on the caller's word. */
+  readonly deploymentIdentity: GuardDeploymentIdentity;
   /** The cluster the RPC serves, from its genesis hash. */
   readonly cluster: SolanaCluster;
   /** The registry entry for the protected mint, when this client knows it. */
@@ -441,7 +461,7 @@ async function classify(build: BuildResponse, rpc: Rpc<GetMultipleAccountsApi>, 
 // ------------------------------------------------------- deployment binding
 
 type DeploymentResolution =
-  | { readonly ok: true; readonly programAddress: Address; readonly cluster: SolanaCluster }
+  | { readonly ok: true; readonly programAddress: Address; readonly cluster: SolanaCluster; readonly identity: GuardDeploymentIdentity }
   | { readonly ok: false; readonly code: EquityGuardFailureCode; readonly message: string };
 
 /**
@@ -450,10 +470,16 @@ type DeploymentResolution =
  *
  * Omitted `programAddress` resolves from the genesis hash, which today means
  * devnet or nothing: a mainnet or unknown cluster fails closed rather than
- * silently reusing the devnet program. A supplied `programAddress` is honoured
- * on any cluster — trusting a deployment is the caller's decision — but it is
- * still read back and must exist and be executable, so PROTECTED never means
- * "guard bytes were serialized against nothing".
+ * silently reusing the devnet program.
+ *
+ * A reviewed deployment — resolved, or supplied explicitly — must hold the
+ * reviewed binary: loader, ProgramData pointer and ELF hash are verified from
+ * one read. Naming a reviewed address explicitly cannot skip that.
+ *
+ * Any other supplied `programAddress` is honoured on any cluster — trusting it
+ * is the caller's decision, reported as `CALLER_TRUSTED` — but it is still
+ * read back and must exist and be executable, so PROTECTED never means "guard
+ * bytes were serialized against nothing".
  */
 async function resolveDeployment(
   rpc: Rpc<GetMultipleAccountsApi & GetGenesisHashApi>,
@@ -476,17 +502,24 @@ async function resolveDeployment(
         };
   }
 
-  const { value } = await rpc.getMultipleAccounts([programAddress], { encoding: "base64", commitment }).send();
-  const account = value[0] ?? null;
-  const check = checkGuardProgramAccount(programAddress, account);
+  const reviewed = findReviewedGuardDeployment(programAddress);
+  const addresses = reviewed ? [programAddress, reviewed.programDataAddress] : [programAddress];
+  const { value } = await rpc.getMultipleAccounts(addresses, { encoding: "base64", commitment }).send();
+  const view = (index: number): LoaderAccountView | null => {
+    const account = value[index];
+    return account ? { executable: account.executable, owner: account.owner, data: base64(account.data) } : null;
+  };
+  const check = reviewed ? verifyReviewedGuardDeployment(reviewed, view(0), view(1)) : checkGuardProgramAccount(programAddress, view(0));
   if (!check.ok) {
-    return {
-      ok: false,
-      code: check.reason === "MISSING" ? EquityGuardFailureCode.GUARD_DEPLOYMENT_UNAVAILABLE : EquityGuardFailureCode.GUARD_PROGRAM_NOT_EXECUTABLE,
-      message: `${check.message} (${cluster})`,
-    };
+    const code =
+      check.reason === "MISSING"
+        ? EquityGuardFailureCode.GUARD_DEPLOYMENT_UNAVAILABLE
+        : check.reason === "NOT_EXECUTABLE"
+          ? EquityGuardFailureCode.GUARD_PROGRAM_NOT_EXECUTABLE
+          : EquityGuardFailureCode.GUARD_BINARY_UNVERIFIED;
+    return { ok: false, code, message: `${check.message} (${cluster})` };
   }
-  return { ok: true, programAddress, cluster };
+  return { ok: true, programAddress, cluster, identity: reviewed ? "REVIEWED_BINARY" : "CALLER_TRUSTED" };
 }
 
 // -------------------------------------------------------------- entry points
@@ -625,6 +658,7 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
       direction,
       adapterKind,
       programAddress: deployment.programAddress,
+      deploymentIdentity: deployment.identity,
       cluster: deployment.cluster,
       knownAsset,
       transaction: composed.wireBytes,
@@ -697,6 +731,7 @@ const EXPLANATIONS: Readonly<Record<EquityGuardFailureCode, string>> = {
   COMMITMENT_FAILURE: "The composed transaction did not match the commitment the guard was built over, so it was discarded.",
   GUARD_DEPLOYMENT_UNAVAILABLE: "No EquityGuard deployment is available on the cluster this RPC serves, so protection cannot be constructed here. EquityGuard is deployed on devnet only.",
   GUARD_PROGRAM_NOT_EXECUTABLE: "The EquityGuard program address given for this cluster is not an executable program, so a guard instruction built against it would never run.",
+  GUARD_BINARY_UNVERIFIED: "The program at the EquityGuard deployment address is not the reviewed EquityGuard binary, so a guard built against it proves nothing.",
   UNSUPPORTED_CLUSTER: "This RPC serves a cluster EquityGuard has no deployment knowledge for. Pass an explicit programAddress to build against a deployment you trust.",
   NO_SUPPORTED_STATE_ADAPTER: "This is a known tokenized equity, but its mint no longer presents an economic-state model EquityGuard can assert, so its protection semantics cannot be established.",
   UNSUPPORTED_STATE_MODEL: "This is a known tokenized equity whose economic-state model this EquityGuard client does not implement.",

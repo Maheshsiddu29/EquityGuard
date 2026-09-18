@@ -24,12 +24,19 @@ export {
 } from "./errors.ts";
 export { checkGuardOffline } from "./offline-check.ts";
 export {
+  BPF_LOADER_UPGRADEABLE_ADDRESS,
+  REVIEWED_GUARD_DEPLOYMENTS,
   SOLANA_GENESIS_HASH,
   checkGuardProgramAccount,
   clusterFromGenesisHash,
   deploymentForCluster,
+  findReviewedGuardDeployment,
+  verifyReviewedGuardDeployment,
+  type GuardIdentityCheck,
   type GuardProgramCheck,
+  type LoaderAccountView,
   type ProgramAccountView,
+  type ReviewedGuardDeployment,
   type SolanaCluster,
 } from "./deployment.ts";
 export {

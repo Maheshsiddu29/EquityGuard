@@ -10,9 +10,10 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 
-import { getBase58Decoder, type Address, type GetGenesisHashApi, type GetMultipleAccountsApi, type Rpc } from "@solana/kit";
-import { EQUITY_GUARD_DEVNET_PROGRAM_ID, SOLANA_GENESIS_HASH, TOKEN_2022_PROGRAM_ADDRESS } from "@equityguard/guard-client";
+import { getAddressEncoder, getBase58Decoder, type Address, type GetGenesisHashApi, type GetMultipleAccountsApi, type Rpc } from "@solana/kit";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID, REVIEWED_GUARD_DEPLOYMENTS, SOLANA_GENESIS_HASH, TOKEN_2022_PROGRAM_ADDRESS } from "@equityguard/guard-client";
 
 import { parseBuildResponse, type ApiInstruction, type BuildResponse } from "../src/index.ts";
 
@@ -41,9 +42,42 @@ export interface FakeAccount {
   readonly executable?: boolean;
 }
 
-/** A deployed, executable program account, as a cluster running EquityGuard serves it. */
+/**
+ * An executable program account that is NOT a reviewed deployment: an
+ * upgradeable Program pointing at an all-zero ProgramData address. Stands in
+ * for a caller-supplied deployment.
+ */
 export function executableProgramAccount(): FakeAccount {
   return { owner: BPF_UPGRADEABLE_LOADER, data: new Uint8Array(36), executable: true };
+}
+
+/** The reviewed devnet deployment record. */
+export const REVIEWED_DEVNET = REVIEWED_GUARD_DEPLOYMENTS[0]!;
+/** The reviewed ELF: `cargo build-sbf` output, SHA-256 `d7d59ccd…` (asserted in guard-client). */
+export const REVIEWED_ELF = gunzipSync(readFileSync(new URL("../../guard-client/test/fixtures/equity_guard-devnet-d7d59ccd.so.gz", import.meta.url)));
+/** Size of the devnet ProgramData ELF region: the reviewed ELF, then zeros. */
+const DEVNET_ELF_REGION = 69_128;
+const DEVNET_DEPLOYMENT_SLOT = 499_547_040n;
+const DEVNET_UPGRADE_AUTHORITY = "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT" as Address;
+
+/** The devnet Program account: upgradeable-loader tag 2 and its ProgramData address. */
+export function reviewedProgramAccount(programData: Address = REVIEWED_DEVNET.programDataAddress): FakeAccount {
+  const data = new Uint8Array(36);
+  new DataView(data.buffer).setUint32(0, 2, true);
+  data.set(getAddressEncoder().encode(programData), 4);
+  return { owner: BPF_UPGRADEABLE_LOADER, data, executable: true };
+}
+
+/** The devnet ProgramData account as deployed, optionally edited after the fact. */
+export function reviewedProgramDataAccount(edit?: (data: Uint8Array) => Uint8Array | void): FakeAccount {
+  const data = new Uint8Array(45 + DEVNET_ELF_REGION);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 3, true);
+  view.setBigUint64(4, DEVNET_DEPLOYMENT_SLOT, true);
+  data[12] = 1;
+  data.set(getAddressEncoder().encode(DEVNET_UPGRADE_AUTHORITY), 13);
+  data.set(REVIEWED_ELF, 45);
+  return { owner: BPF_UPGRADEABLE_LOADER, data: edit?.(data) ?? data };
 }
 
 /** An account that exists at a program address but cannot execute. */
@@ -108,10 +142,12 @@ export interface FakeRpcOptions {
   /** Genesis hash this node reports. Defaults to devnet. */
   readonly genesisHash?: string;
   /**
-   * The account served at the devnet guard deployment: an executable program
-   * by default, `null` for a cluster where nothing is deployed there.
+   * The account served at the devnet guard deployment: the reviewed Program
+   * account by default, `null` for a cluster where nothing is deployed there.
    */
   readonly guardProgram?: FakeAccount | null;
+  /** The account served at the reviewed ProgramData address: the reviewed bytes by default. */
+  readonly guardProgramData?: FakeAccount | null;
 }
 
 export interface FakeRpc {
@@ -130,9 +166,11 @@ export function fakeRpc(options: FakeRpcOptions): FakeRpc {
   const slot = options.slot ?? 100n;
   const reads: string[][] = [];
   let genesisCalls = 0;
-  const guardProgram = options.guardProgram === undefined ? executableProgramAccount() : options.guardProgram;
+  const guardProgram = options.guardProgram === undefined ? reviewedProgramAccount() : options.guardProgram;
+  const guardProgramData = options.guardProgramData === undefined ? reviewedProgramDataAccount() : options.guardProgramData;
   const accounts: Record<string, FakeAccount> = {
     ...(guardProgram === null ? {} : { [GUARD_PROGRAM]: guardProgram }),
+    ...(guardProgramData === null ? {} : { [REVIEWED_DEVNET.programDataAddress]: guardProgramData }),
     ...options.accounts,
   };
   const rpc = {

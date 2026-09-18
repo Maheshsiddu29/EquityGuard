@@ -28,6 +28,10 @@ import {
   nonExecutableAccount,
   recordedKoxBuyBuild,
   token2022Account,
+  REVIEWED_DEVNET,
+  REVIEWED_ELF,
+  reviewedProgramAccount,
+  reviewedProgramDataAccount,
   withMints,
   type FakeAccount,
 } from "./protect-fixtures.ts";
@@ -38,6 +42,7 @@ const koxAccounts = { [KOX_MINT]: token2022Account(mainnetMint("KOx")) };
 function protect(options: {
   readonly genesisHash?: string;
   readonly guardProgram?: FakeAccount | null;
+  readonly guardProgramData?: FakeAccount | null;
   readonly programAddress?: Parameters<typeof protectJupiterSwap>[0]["programAddress"];
   readonly accounts?: Readonly<Record<string, FakeAccount>>;
 }): Promise<ProtectJupiterSwapResult> {
@@ -46,6 +51,7 @@ function protect(options: {
     unixTimestamp: SETTLED_TIMESTAMP,
     ...(options.genesisHash === undefined ? {} : { genesisHash: options.genesisHash }),
     ...(options.guardProgram === undefined ? {} : { guardProgram: options.guardProgram }),
+    ...(options.guardProgramData === undefined ? {} : { guardProgramData: options.guardProgramData }),
   });
   return protectJupiterSwap({
     build: recordedKoxBuyBuild(),
@@ -159,4 +165,54 @@ test("the cluster is resolved once, before any state is read or anything is buil
   // The mint was classified; the Clock was never read, because the refusal
   // happens before any guard state is bound.
   assert.deepEqual(reads, [[KOX_MINT]]);
+});
+
+// ------------------------------------------ M11-A: deployment identity
+
+test("the devnet deployment is PROTECTED only as the reviewed binary, read in one call", async () => {
+  const { rpc, reads } = fakeRpc({ accounts: koxAccounts, unixTimestamp: SETTLED_TIMESTAMP });
+  const result = await protectJupiterSwap({ build: recordedKoxBuyBuild(), userPublicKey: TAKER, rpc, protectionWindow: WINDOW });
+  assert.equal(result.status, "PROTECTED");
+  assert.equal(result.status === "PROTECTED" && result.deploymentIdentity, "REVIEWED_BINARY");
+  // Program and ProgramData come from one getMultipleAccounts: one slot.
+  assert.ok(reads.some((r) => r.length === 2 && r[0] === GUARD_PROGRAM && r[1] === REVIEWED_DEVNET.programDataAddress), JSON.stringify(reads));
+});
+
+test("a devnet program that is not the reviewed binary cannot return PROTECTED", async () => {
+  const flip = (offset: number) => reviewedProgramDataAccount((d) => void (d[offset] = (d[offset] ?? 0) ^ 0xff));
+  const cases: [string, { guardProgram?: FakeAccount | null; guardProgramData?: FakeAccount | null }, string][] = [
+    ["an upgrade changed one code byte", { guardProgramData: flip(45 + (REVIEWED_ELF.length >> 1)) }, "GUARD_BINARY_UNVERIFIED"],
+    ["an upgrade appended code after the reviewed ELF", { guardProgramData: flip(45 + REVIEWED_ELF.length) }, "GUARD_BINARY_UNVERIFIED"],
+    ["ProgramData truncated", { guardProgramData: reviewedProgramDataAccount((d) => d.slice(0, 45 + REVIEWED_ELF.length - 1)) }, "GUARD_BINARY_UNVERIFIED"],
+    ["ProgramData missing", { guardProgramData: null }, "GUARD_BINARY_UNVERIFIED"],
+    ["ProgramData owned by another program", { guardProgramData: { ...reviewedProgramDataAccount(), owner: "11111111111111111111111111111111" } }, "GUARD_BINARY_UNVERIFIED"],
+    ["program points at another ProgramData", { guardProgram: reviewedProgramAccount(distinctAddress(74)) }, "GUARD_BINARY_UNVERIFIED"],
+    ["an executable account under another loader", { guardProgram: { ...reviewedProgramAccount(), owner: "BPFLoader2111111111111111111111111111111111" } }, "GUARD_BINARY_UNVERIFIED"],
+    ["an executable program with no loader state", { guardProgram: executableProgramAccount() }, "GUARD_BINARY_UNVERIFIED"],
+    ["the program account is gone", { guardProgram: null }, "GUARD_DEPLOYMENT_UNAVAILABLE"],
+    ["the program account is not executable", { guardProgram: { ...reviewedProgramAccount(), executable: false } }, "GUARD_PROGRAM_NOT_EXECUTABLE"],
+  ];
+  for (const [label, accounts, code] of cases) {
+    const result = await protect({ genesisHash: GENESIS.devnet, ...accounts });
+    assertRefused(result, code, label);
+  }
+});
+
+test("naming the reviewed address explicitly cannot skip its attestation, on any cluster", async () => {
+  const tampered = reviewedProgramDataAccount((d) => void (d[100] = (d[100] ?? 0) ^ 1));
+  for (const genesisHash of [GENESIS.devnet, GENESIS["mainnet-beta"], "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"]) {
+    const refused = await protect({ genesisHash, programAddress: GUARD_PROGRAM, guardProgramData: tampered });
+    assertRefused(refused, "GUARD_BINARY_UNVERIFIED", genesisHash);
+  }
+  // Explicit and honest: attested, and reported as such.
+  const honest = await protect({ genesisHash: GENESIS.devnet, programAddress: GUARD_PROGRAM });
+  assert.equal(honest.status === "PROTECTED" && honest.deploymentIdentity, "REVIEWED_BINARY");
+});
+
+test("a caller-supplied deployment is reported as CALLER_TRUSTED, never as reviewed", async () => {
+  const custom = distinctAddress(75);
+  const result = await protect({ programAddress: custom, accounts: { ...koxAccounts, [custom]: executableProgramAccount() } });
+  assert.equal(result.status, "PROTECTED");
+  assert.equal(result.status === "PROTECTED" && result.deploymentIdentity, "CALLER_TRUSTED");
+  assert.match(explainEquityGuardError({ status: "ERROR", code: "GUARD_BINARY_UNVERIFIED", message: "m", protectedMint: KOX_MINT, guardError: null, details: [] }), /not the reviewed EquityGuard binary/);
 });
