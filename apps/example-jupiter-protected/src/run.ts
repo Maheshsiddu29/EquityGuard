@@ -7,12 +7,14 @@
  * and submits nothing, on any cluster.
  *
  *   JUPITER_API_KEY=... SOLANA_RPC_URL=... \
- *     node apps/example-jupiter-protected/src/run.ts [--amount 5000000] [--sell]
+ *     node apps/example-jupiter-protected/src/run.ts [--amount 5000000] [--sell] [--program <address>]
  *
- * EquityGuard is deployed on devnet only, and Jupiter exists only on mainnet,
- * so the transaction this prints is not submittable anywhere today. What it
- * proves is that the integration produces a valid, correctly bound, unsigned
- * protected transaction from live inputs.
+ * EquityGuard is deployed on devnet only, and Jupiter exists only on mainnet.
+ * A mainnet RPC therefore refuses with GUARD_DEPLOYMENT_UNAVAILABLE unless
+ * `--program` names a deployment the caller trusts — that refusal is itself
+ * the behaviour worth seeing. What the script proves is that the integration
+ * produces a valid, correctly bound, unsigned protected transaction from live
+ * inputs, and never silently reuses the devnet program elsewhere.
  */
 
 import { address, createSolanaRpc, type Address } from "@solana/kit";
@@ -58,7 +60,14 @@ async function main(): Promise<void> {
   const build = await buildJupiterSwap(request, apiKey);
   console.log(`Jupiter: ${build.inAmount} ${build.inputMint} -> ${build.outAmount} ${build.outputMint} (min ${build.otherAmountThreshold})`);
 
-  const result = await protectJupiterSwap({ build, userPublicKey: wallet.publicKey, rpc, protectionWindow: PROTECTION_WINDOW });
+  const program = arg("--program") as Address | null;
+  const result = await protectJupiterSwap({
+    build,
+    userPublicKey: wallet.publicKey,
+    rpc,
+    protectionWindow: PROTECTION_WINDOW,
+    ...(program ? { programAddress: program } : {}),
+  });
   console.log(`EquityGuard: ${result.status}`);
   console.log(explainEquityGuardError(result));
 
@@ -68,8 +77,8 @@ async function main(): Promise<void> {
   }
   console.log(
     [
-      `  protected mint      ${result.protectedMint} (${result.direction})`,
-      `  guard program       ${result.programAddress}`,
+      `  protected mint      ${result.protectedMint} (${result.direction})${result.knownAsset ? ` — ${result.knownAsset.symbol}, ${result.knownAsset.issuer}` : ""}`,
+      `  guard program       ${result.programAddress} on ${result.cluster}`,
       `  state read at slot  ${result.snapshot.contextSlot}, chain time ${result.snapshot.clock.unixTimestamp}`,
       `  scheduled change    ${result.snapshot.hasScheduledChange ? `yes, at ${result.snapshot.state.newMultiplierEffectiveTimestamp}` : "no"}`,
       `  suffix commitment   ${result.binding.suffixCommitmentHex}`,

@@ -11,8 +11,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { getBase58Decoder, type Address, type GetMultipleAccountsApi, type Rpc } from "@solana/kit";
-import { TOKEN_2022_PROGRAM_ADDRESS } from "@equityguard/guard-client";
+import { getBase58Decoder, type Address, type GetGenesisHashApi, type GetMultipleAccountsApi, type Rpc } from "@solana/kit";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID, SOLANA_GENESIS_HASH, TOKEN_2022_PROGRAM_ADDRESS } from "@equityguard/guard-client";
 
 import { parseBuildResponse, type ApiInstruction, type BuildResponse } from "../src/index.ts";
 
@@ -31,9 +31,24 @@ const MAINNET_FIXTURES = new URL("../../../programs/equity_guard/tests/fixtures/
 const CLOCK_LEN = 40;
 const CLOCK_UNIX_TIMESTAMP_OFFSET = 32;
 
+export const GUARD_PROGRAM = EQUITY_GUARD_DEVNET_PROGRAM_ID;
+export const GENESIS = SOLANA_GENESIS_HASH;
+const BPF_UPGRADEABLE_LOADER = "BPFLoaderUpgradeab1e11111111111111111111111";
+
 export interface FakeAccount {
   readonly owner: string;
   readonly data: Uint8Array;
+  readonly executable?: boolean;
+}
+
+/** A deployed, executable program account, as a cluster running EquityGuard serves it. */
+export function executableProgramAccount(): FakeAccount {
+  return { owner: BPF_UPGRADEABLE_LOADER, data: new Uint8Array(36), executable: true };
+}
+
+/** An account that exists at a program address but cannot execute. */
+export function nonExecutableAccount(): FakeAccount {
+  return { owner: "11111111111111111111111111111111", data: new Uint8Array(8), executable: false };
 }
 
 /** A real mainnet Token-2022 mint account. */
@@ -90,12 +105,21 @@ export interface FakeRpcOptions {
   readonly slot?: bigint;
   /** Omit the Clock account, to exercise the unreadable-state path. */
   readonly withoutClock?: boolean;
+  /** Genesis hash this node reports. Defaults to devnet. */
+  readonly genesisHash?: string;
+  /**
+   * The account served at the devnet guard deployment: an executable program
+   * by default, `null` for a cluster where nothing is deployed there.
+   */
+  readonly guardProgram?: FakeAccount | null;
 }
 
 export interface FakeRpc {
-  readonly rpc: Rpc<GetMultipleAccountsApi>;
+  readonly rpc: Rpc<GetMultipleAccountsApi & GetGenesisHashApi>;
   /** Address lists passed to `getMultipleAccounts`, in call order. */
   readonly reads: string[][];
+  /** How many times the genesis hash was requested. */
+  readonly genesisReads: () => number;
 }
 
 /**
@@ -105,19 +129,32 @@ export interface FakeRpc {
 export function fakeRpc(options: FakeRpcOptions): FakeRpc {
   const slot = options.slot ?? 100n;
   const reads: string[][] = [];
+  let genesisCalls = 0;
+  const guardProgram = options.guardProgram === undefined ? executableProgramAccount() : options.guardProgram;
+  const accounts: Record<string, FakeAccount> = {
+    ...(guardProgram === null ? {} : { [GUARD_PROGRAM]: guardProgram }),
+    ...options.accounts,
+  };
   const rpc = {
+    getGenesisHash() {
+      return {
+        send: async () => {
+          genesisCalls += 1;
+          return options.genesisHash ?? GENESIS.devnet;
+        },
+      };
+    },
     getMultipleAccounts(addresses: readonly string[]) {
       reads.push([...addresses]);
       return {
         send: async () => ({
           context: { slot },
           value: addresses.map((key) => {
-            const account =
-              key === SYSVAR_CLOCK_ADDRESS && !options.withoutClock ? clockAccount(slot, options.unixTimestamp) : options.accounts[key];
+            const account = key === SYSVAR_CLOCK_ADDRESS && !options.withoutClock ? clockAccount(slot, options.unixTimestamp) : accounts[key];
             if (!account) return null;
             return {
               data: [Buffer.from(account.data).toString("base64"), "base64"],
-              executable: false,
+              executable: account.executable ?? false,
               lamports: 1n,
               owner: account.owner,
               rentEpoch: 0n,
@@ -128,7 +165,7 @@ export function fakeRpc(options: FakeRpcOptions): FakeRpc {
       };
     },
   };
-  return { rpc: rpc as unknown as Rpc<GetMultipleAccountsApi>, reads };
+  return { rpc: rpc as unknown as Rpc<GetMultipleAccountsApi & GetGenesisHashApi>, reads, genesisReads: () => genesisCalls };
 }
 
 // --------------------------------------------------------- recorded builds

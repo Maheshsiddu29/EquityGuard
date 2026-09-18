@@ -77,8 +77,9 @@ test("J: a protected transaction comes back unsigned", async () => {
 
 test("K: the entry point exposes exactly the intended API", () => {
   assert.deepEqual(Object.keys(protect).sort(), [
-    "DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS",
+    "EQUITY_GUARD_DEVNET_DEPLOYMENT",
     "EquityGuardFailureCode",
+    "KNOWN_PROTECTED_ASSETS",
     "SUPPORTED_JUPITER_ROUTES",
     "USDC_MINT_ADDRESS",
     "explainEquityGuardError",

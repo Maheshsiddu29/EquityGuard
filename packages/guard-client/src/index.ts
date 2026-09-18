@@ -23,6 +23,26 @@ export {
 } from "./errors.ts";
 export { checkGuardOffline } from "./offline-check.ts";
 export {
+  SOLANA_GENESIS_HASH,
+  checkGuardProgramAccount,
+  clusterFromGenesisHash,
+  deploymentForCluster,
+  type GuardProgramCheck,
+  type ProgramAccountView,
+  type SolanaCluster,
+} from "./deployment.ts";
+export {
+  KNOWN_PROTECTED_ASSETS,
+  PROTECTED_STATE_MODEL,
+  findKnownProtectedAsset,
+  resolveProtectionAdapter,
+  type KnownProtectedAsset,
+  type NotProtectedReason,
+  type ProtectedStateModel,
+  type ProtectionResolution,
+  type UnsupportedAssetReason,
+} from "./protection-adapter.ts";
+export {
   DOWNSTREAM_COMMITMENT_DOMAIN,
   SYSVAR_INSTRUCTIONS_ADDRESS,
   asCommittedInstruction,

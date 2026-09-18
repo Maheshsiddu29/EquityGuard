@@ -7,7 +7,7 @@
  * transaction to the application's existing wallet.
  */
 
-import type { GetMultipleAccountsApi, Rpc } from "@solana/kit";
+import type { GetGenesisHashApi, GetMultipleAccountsApi, Rpc } from "@solana/kit";
 import { protectJupiterSwap, type ProtectionWindow } from "@equityguard/jupiter/protect";
 
 import { buildJupiterSwap, compileUnsignedTransaction, jupiterInstructions, type SwapRequest } from "./jupiter.ts";
@@ -34,7 +34,7 @@ export async function ordinarySwap(request: SwapRequest, wallet: Wallet, apiKey:
 
 export interface ProtectedSwapConfig {
   readonly apiKey: string;
-  readonly rpc: Rpc<GetMultipleAccountsApi>;
+  readonly rpc: Rpc<GetMultipleAccountsApi & GetGenesisHashApi>;
   /** How close to a scheduled corporate action this application refuses to trade. */
   readonly protectionWindow: ProtectionWindow;
 }

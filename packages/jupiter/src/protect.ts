@@ -34,6 +34,7 @@ import {
   type Address,
   type Base64EncodedDataResponse,
   type Commitment,
+  type GetGenesisHashApi,
   type GetMultipleAccountsApi,
   type Instruction,
   type Rpc,
@@ -45,18 +46,24 @@ import {
   SET_COMPUTE_UNIT_LIMIT,
   USDC_MINT_ADDRESS,
   checkGuardOffline,
+  checkGuardProgramAccount,
   checkGuardedJupiterTransaction,
-  decodeProtectedState,
+  clusterFromGenesisHash,
+  deploymentForCluster,
   expectationFromSnapshot,
   fetchGuardSnapshot,
+  findKnownProtectedAsset,
   phaseAt,
+  resolveProtectionAdapter,
   type AssertSafeExecutionRequest,
   type EquityGuardErrorName,
   type GuardSnapshot,
   type JupiterAdapterKind,
   type JupiterTradeBinding,
+  type KnownProtectedAsset,
   type ProtectedState,
   type ProtectionWindow,
+  type SolanaCluster,
 } from "@equityguard/guard-client";
 
 import { parseBuildResponse, JupiterApiError, type BuildResponse } from "./build-client.ts";
@@ -93,8 +100,12 @@ export const SUPPORTED_JUPITER_ROUTES = Object.freeze({
   ],
 } as const);
 
-/** The single EquityGuard deployment. The program is NOT deployed on mainnet. */
-export const DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS = EQUITY_GUARD_DEVNET_PROGRAM_ID;
+/**
+ * The only EquityGuard deployment that exists. It is on devnet, and it is used
+ * only when the caller's RPC is actually a devnet node: there is no mainnet
+ * deployment, and this address is never applied to another cluster.
+ */
+export const EQUITY_GUARD_DEVNET_DEPLOYMENT = EQUITY_GUARD_DEVNET_PROGRAM_ID;
 
 /** Raw, unparsed `/build` JSON, as `await response.json()` returns it. */
 export type RawJupiterBuild = { readonly [field: string]: unknown };
@@ -126,15 +137,30 @@ export const EquityGuardFailureCode = {
   INVALID_GUARD_REQUEST: "INVALID_GUARD_REQUEST",
   /** The composed transaction does not resolve to what the guard committed to. */
   COMMITMENT_FAILURE: "COMMITMENT_FAILURE",
+  /** No EquityGuard deployment exists on the cluster this RPC serves. */
+  GUARD_DEPLOYMENT_UNAVAILABLE: "GUARD_DEPLOYMENT_UNAVAILABLE",
+  /** The guard program address exists on this cluster but cannot execute. */
+  GUARD_PROGRAM_NOT_EXECUTABLE: "GUARD_PROGRAM_NOT_EXECUTABLE",
+  /** The RPC serves a cluster this client has no deployment knowledge for. */
+  UNSUPPORTED_CLUSTER: "UNSUPPORTED_CLUSTER",
+  /** A known tokenized equity that presents no supported economic-state model. */
+  NO_SUPPORTED_STATE_ADAPTER: "NO_SUPPORTED_STATE_ADAPTER",
+  /** A known tokenized equity whose declared state model this client does not implement. */
+  UNSUPPORTED_STATE_MODEL: "UNSUPPORTED_STATE_MODEL",
 } as const;
 export type EquityGuardFailureCode = (typeof EquityGuardFailureCode)[keyof typeof EquityGuardFailureCode];
 
-/** Why no protected mint is involved. Only these two mean "carry on unguarded". */
+/**
+ * Why no protected asset is involved. Both are POSITIVE classifications: the
+ * asset was read and placed outside EquityGuard's protected universe. Neither
+ * is ever used for an asset whose protection semantics could not be
+ * established — that fails closed instead.
+ */
 export type NotApplicableReason =
   /** Neither side of the swap is a Token-2022 mint. */
   | "NO_TOKEN_2022_MINT"
-  /** A Token-2022 mint is involved, but it carries no ScaledUiAmount state to protect. */
-  | "NO_PROTECTED_STATE";
+  /** A Token-2022 mint that is not a known tokenized equity and carries no supported state model. */
+  | "NO_PROTECTED_STATE_MODEL";
 
 export type SwapDirection = "BUY" | "SELL";
 
@@ -143,7 +169,12 @@ export interface ProtectedSwap {
   readonly protectedMint: Address;
   readonly direction: SwapDirection;
   readonly adapterKind: JupiterAdapterKind;
+  /** The guard program, proven to exist and be executable on `cluster`. */
   readonly programAddress: Address;
+  /** The cluster the RPC serves, from its genesis hash. */
+  readonly cluster: SolanaCluster;
+  /** The registry entry for the protected mint, when this client knows it. */
+  readonly knownAsset: KnownProtectedAsset | null;
   /** Unsigned v0 transaction: one zeroed signature slot per required signer. */
   readonly transaction: Uint8Array;
   /** The same bytes, base64-encoded, for wallet APIs that take a string. */
@@ -163,6 +194,18 @@ export interface NotApplicableSwap {
   readonly status: "NOT_APPLICABLE";
   readonly reason: NotApplicableReason;
   readonly message: string;
+}
+
+/**
+ * A known tokenized equity whose protection semantics cannot be established.
+ * Fail closed: it is neither protectable nor an ordinary asset.
+ */
+export interface UnsupportedProtectedAsset {
+  readonly status: "UNSUPPORTED_PROTECTED_ASSET";
+  readonly code: EquityGuardFailureCode;
+  readonly message: string;
+  readonly protectedMint: Address;
+  readonly knownAsset: KnownProtectedAsset;
 }
 
 /** A protected asset whose route EquityGuard cannot safely represent. Fail closed. */
@@ -188,12 +231,34 @@ export interface EquityGuardErrorResult {
   readonly details: readonly string[];
 }
 
-export type ProtectJupiterSwapResult = ProtectedSwap | NotApplicableSwap | UnsupportedProtectedRoute | EquityGuardErrorResult;
+export type ProtectJupiterSwapResult =
+  | ProtectedSwap
+  | NotApplicableSwap
+  | UnsupportedProtectedAsset
+  | UnsupportedProtectedRoute
+  | EquityGuardErrorResult;
 
-/** What `supportsJupiterSwap` answers, without building anything. */
+/**
+ * What `supportsJupiterSwap` answers. `STRUCTURALLY_SUPPORTED` is deliberately
+ * weaker than PROTECTED: see the function's own documentation for exactly what
+ * it does and does not prove.
+ */
 export type JupiterSwapSupport =
-  | { readonly supported: true; readonly protectedMint: Address; readonly direction: SwapDirection; readonly adapterKind: JupiterAdapterKind }
-  | { readonly supported: false; readonly protectedMint: Address | null; readonly status: "NOT_APPLICABLE" | "UNSUPPORTED_PROTECTED_ROUTE" | "ERROR"; readonly code: EquityGuardFailureCode | NotApplicableReason; readonly message: string };
+  | {
+      readonly supported: true;
+      readonly level: "STRUCTURALLY_SUPPORTED";
+      readonly protectedMint: Address;
+      readonly direction: SwapDirection;
+      readonly adapterKind: JupiterAdapterKind;
+      readonly knownAsset: KnownProtectedAsset | null;
+    }
+  | {
+      readonly supported: false;
+      readonly protectedMint: Address | null;
+      readonly status: "NOT_APPLICABLE" | "UNSUPPORTED_PROTECTED_ASSET" | "UNSUPPORTED_PROTECTED_ROUTE" | "ERROR";
+      readonly code: EquityGuardFailureCode | NotApplicableReason;
+      readonly message: string;
+    };
 
 export interface ProtectJupiterSwapInput {
   /** A Jupiter Swap V2 `/build` response, parsed or raw. */
@@ -201,7 +266,7 @@ export interface ProtectJupiterSwapInput {
   /** The wallet taking the swap: the swap authority and the fee payer. */
   readonly userPublicKey: Address;
   /** Any Solana RPC. It is read from, never written to. */
-  readonly rpc: Rpc<GetMultipleAccountsApi>;
+  readonly rpc: Rpc<GetMultipleAccountsApi & GetGenesisHashApi>;
   /**
    * The inclusive refusal interval around a scheduled activation T,
    * `[T - beforeSecs, T + afterSecs]`. Required: it is a policy decision about
@@ -209,7 +274,12 @@ export interface ProtectJupiterSwapInput {
    * and there is no safe default.
    */
   readonly protectionWindow: ProtectionWindow;
-  /** Defaults to the single EquityGuard deployment (devnet). */
+  /**
+   * The guard program to build against. Omitted, it is resolved from the
+   * cluster the RPC serves, which today means devnet or nothing. Supplied, it
+   * is used as given — the caller owns the decision to trust that deployment —
+   * but it must still exist and be executable on that cluster.
+   */
   readonly programAddress?: Address;
   /** Defaults to Jupiter's own limit when the build carries one. */
   readonly computeUnitLimit?: number;
@@ -223,36 +293,58 @@ export interface ProtectJupiterSwapInput {
   readonly commitment?: Commitment;
 }
 
-export type SupportsJupiterSwapInput = Pick<ProtectJupiterSwapInput, "build" | "rpc" | "commitment">;
+export interface SupportsJupiterSwapInput {
+  readonly build: BuildResponse | RawJupiterBuild;
+  /** Only `getMultipleAccounts` is used: no genesis hash, no deployment check. */
+  readonly rpc: Rpc<GetMultipleAccountsApi>;
+  readonly commitment?: Commitment;
+}
 
 // ------------------------------------------------------------ classification
 
 type Classification =
-  | { readonly kind: "PROTECTED"; readonly protectedMint: Address; readonly direction: SwapDirection; readonly adapterKind: JupiterAdapterKind }
+  | { readonly kind: "PROTECTED"; readonly protectedMint: Address; readonly direction: SwapDirection; readonly adapterKind: JupiterAdapterKind; readonly knownAsset: KnownProtectedAsset | null }
   | { readonly kind: "NOT_APPLICABLE"; readonly reason: NotApplicableReason; readonly message: string }
+  | { readonly kind: "UNSUPPORTED_ASSET"; readonly code: EquityGuardFailureCode; readonly message: string; readonly protectedMint: Address; readonly knownAsset: KnownProtectedAsset }
   | { readonly kind: "UNSUPPORTED"; readonly code: EquityGuardFailureCode; readonly message: string; readonly protectedMint: Address }
   | { readonly kind: "ERROR"; readonly code: EquityGuardFailureCode; readonly message: string; readonly protectedMint: Address | null };
 
+/** One mint's classification, mapped from the resolver onto the public model. */
+type MintVerdict =
+  | { readonly protected: true; readonly knownAsset: KnownProtectedAsset | null }
+  | { readonly protected: false; readonly reason: NotApplicableReason }
+  | { readonly refusal: Classification };
+
 /**
- * Whether a candidate mint carries protected state, using the reviewed
- * decoder. `InvalidMintOwner` and `MissingScaledUiAmount` mean "not an
- * EquityGuard asset"; every other decode failure is a protected-looking
- * Token-2022 mint that cannot be read, and fails closed.
+ * Classifies one mint account through the single owned resolver
+ * (`resolveProtectionAdapter`). No mint semantics are decided here.
  */
-function inspectMint(mint: Address, owner: string, data: Uint8Array): { readonly protected: true } | { readonly protected: false; readonly reason: NotApplicableReason } | { readonly unreadable: { readonly code: EquityGuardFailureCode; readonly message: string } } {
-  try {
-    decodeProtectedState(owner, data);
-    return { protected: true };
-  } catch (error) {
-    if (!(error instanceof GuardClientError)) throw error;
-    if (error.code === "InvalidMintOwner") return { protected: false, reason: "NO_TOKEN_2022_MINT" };
-    if (error.code === "MissingScaledUiAmount") return { protected: false, reason: "NO_PROTECTED_STATE" };
-    return {
-      unreadable: {
-        code: error.code === "InvalidExtensionCombination" ? EquityGuardFailureCode.UNSUPPORTED_TOKEN_STATE : EquityGuardFailureCode.MALFORMED_TOKEN_STATE,
-        message: `${mint} is a Token-2022 mint whose state cannot be read (${error.message}); EquityGuard refuses rather than trading it unprotected`,
-      },
-    };
+function verdictFor(mint: Address, owner: string, data: Uint8Array): MintVerdict {
+  const resolution = resolveProtectionAdapter({ mint, owner, data });
+  switch (resolution.kind) {
+    case "SUPPORTED":
+      return { protected: true, knownAsset: resolution.knownAsset };
+    case "NOT_PROTECTED":
+      return { protected: false, reason: resolution.reason === "NOT_TOKEN_2022" ? "NO_TOKEN_2022_MINT" : "NO_PROTECTED_STATE_MODEL" };
+    case "KNOWN_PROTECTED_UNSUPPORTED":
+      return {
+        refusal: {
+          kind: "UNSUPPORTED_ASSET",
+          code: resolution.reason === "UNSUPPORTED_STATE_MODEL" ? EquityGuardFailureCode.UNSUPPORTED_STATE_MODEL : EquityGuardFailureCode.NO_SUPPORTED_STATE_ADAPTER,
+          message: `${resolution.message}; EquityGuard refuses rather than trading a known tokenized equity unprotected`,
+          protectedMint: mint,
+          knownAsset: resolution.knownAsset,
+        },
+      };
+    default:
+      return {
+        refusal: {
+          kind: "ERROR",
+          code: resolution.errorCode === "InvalidExtensionCombination" ? EquityGuardFailureCode.UNSUPPORTED_TOKEN_STATE : EquityGuardFailureCode.MALFORMED_TOKEN_STATE,
+          message: `${mint} is a Token-2022 mint whose state cannot be read (${resolution.message}); EquityGuard refuses rather than trading it unprotected`,
+          protectedMint: mint,
+        },
+      };
   }
 }
 
@@ -269,46 +361,121 @@ async function classify(build: BuildResponse, rpc: Rpc<GetMultipleAccountsApi>, 
   const candidates = [inputMint, outputMint].filter((mint) => mint !== USDC_MINT_ADDRESS);
 
   const { value } = await rpc.getMultipleAccounts(candidates, { encoding: "base64", commitment }).send();
-  const protectedMints: Address[] = [];
+  const protectedMints: { readonly mint: Address; readonly knownAsset: KnownProtectedAsset | null }[] = [];
   let notApplicable: NotApplicableReason = "NO_TOKEN_2022_MINT";
   for (const [index, mint] of candidates.entries()) {
     const account = value[index];
     if (!account) {
-      return { kind: "ERROR", code: EquityGuardFailureCode.MINT_STATE_UNAVAILABLE, message: `mint ${mint} was not returned by the RPC; EquityGuard cannot tell whether it is protected`, protectedMint: null };
+      // A known tokenized equity whose account cannot be read is never ordinary.
+      const known = findKnownProtectedAsset(mint);
+      return {
+        kind: "ERROR",
+        code: EquityGuardFailureCode.MINT_STATE_UNAVAILABLE,
+        message: known
+          ? `${known.symbol} (${mint}) is a known tokenized equity, but the RPC returned no account for it; EquityGuard cannot establish its economic state`
+          : `mint ${mint} was not returned by the RPC; EquityGuard cannot tell whether it is protected`,
+        protectedMint: known ? mint : null,
+      };
     }
-    const inspected = inspectMint(mint, account.owner, base64(account.data));
-    if ("unreadable" in inspected) return { kind: "ERROR", ...inspected.unreadable, protectedMint: mint };
-    if (inspected.protected) protectedMints.push(mint);
-    else if (inspected.reason === "NO_PROTECTED_STATE") notApplicable = "NO_PROTECTED_STATE";
+    const verdict = verdictFor(mint, account.owner, base64(account.data));
+    if ("refusal" in verdict) return verdict.refusal;
+    if (verdict.protected) protectedMints.push({ mint, knownAsset: verdict.knownAsset });
+    else if (verdict.reason === "NO_PROTECTED_STATE_MODEL") notApplicable = "NO_PROTECTED_STATE_MODEL";
   }
 
-  const [protectedMint, second] = protectedMints;
-  if (!protectedMint) {
+  const [first, second] = protectedMints;
+  if (!first) {
     return {
       kind: "NOT_APPLICABLE",
       reason: notApplicable,
-      message: notApplicable === "NO_PROTECTED_STATE" ? "the Token-2022 mint in this swap carries no ScaledUiAmount state to protect" : "neither side of the swap is a protected Token-2022 mint",
+      message:
+        notApplicable === "NO_PROTECTED_STATE_MODEL"
+          ? "the Token-2022 mint in this swap is not a known tokenized equity and carries no economic-state model EquityGuard protects"
+          : "neither side of the swap is a protected Token-2022 mint",
     };
   }
+  const { mint: protectedMint, knownAsset } = first;
   if (second) {
-    return { kind: "UNSUPPORTED", code: EquityGuardFailureCode.UNSUPPORTED_COUNTER_ASSET, message: `both ${protectedMint} and ${second} are protected; adapter kinds 2 and 3 trade one protected mint against canonical USDC`, protectedMint };
+    return { kind: "UNSUPPORTED", code: EquityGuardFailureCode.UNSUPPORTED_COUNTER_ASSET, message: `both ${protectedMint} and ${second.mint} are protected; adapter kinds 2 and 3 trade one protected mint against canonical USDC`, protectedMint };
   }
   const counterMint = protectedMint === outputMint ? inputMint : outputMint;
   if (counterMint !== USDC_MINT_ADDRESS) {
     return { kind: "UNSUPPORTED", code: EquityGuardFailureCode.UNSUPPORTED_COUNTER_ASSET, message: `${protectedMint} is protected but is traded against ${counterMint}; only canonical USDC is supported`, protectedMint };
   }
   return protectedMint === outputMint
-    ? { kind: "PROTECTED", protectedMint, direction: "BUY", adapterKind: DownstreamAdapterKind.JUPITER_ROUTE_V2_BUY_USDC }
-    : { kind: "PROTECTED", protectedMint, direction: "SELL", adapterKind: DownstreamAdapterKind.JUPITER_ROUTE_V2_SELL_USDC };
+    ? { kind: "PROTECTED", protectedMint, knownAsset, direction: "BUY", adapterKind: DownstreamAdapterKind.JUPITER_ROUTE_V2_BUY_USDC }
+    : { kind: "PROTECTED", protectedMint, knownAsset, direction: "SELL", adapterKind: DownstreamAdapterKind.JUPITER_ROUTE_V2_SELL_USDC };
+}
+
+// ------------------------------------------------------- deployment binding
+
+type DeploymentResolution =
+  | { readonly ok: true; readonly programAddress: Address; readonly cluster: SolanaCluster }
+  | { readonly ok: false; readonly code: EquityGuardFailureCode; readonly message: string };
+
+/**
+ * Binds protection to a deployment that can actually run on the cluster the
+ * caller's RPC serves.
+ *
+ * Omitted `programAddress` resolves from the genesis hash, which today means
+ * devnet or nothing: a mainnet or unknown cluster fails closed rather than
+ * silently reusing the devnet program. A supplied `programAddress` is honoured
+ * on any cluster — trusting a deployment is the caller's decision — but it is
+ * still read back and must exist and be executable, so PROTECTED never means
+ * "guard bytes were serialized against nothing".
+ */
+async function resolveDeployment(
+  rpc: Rpc<GetMultipleAccountsApi & GetGenesisHashApi>,
+  requested: Address | undefined,
+  commitment: Commitment,
+): Promise<DeploymentResolution> {
+  const cluster = clusterFromGenesisHash(await rpc.getGenesisHash().send());
+  const programAddress = requested ?? deploymentForCluster(cluster);
+  if (!programAddress) {
+    return cluster === "unknown"
+      ? {
+          ok: false,
+          code: EquityGuardFailureCode.UNSUPPORTED_CLUSTER,
+          message: "this RPC serves a cluster EquityGuard has no deployment knowledge for; pass programAddress explicitly to build against a deployment you trust",
+        }
+      : {
+          ok: false,
+          code: EquityGuardFailureCode.GUARD_DEPLOYMENT_UNAVAILABLE,
+          message: `EquityGuard is not deployed on ${cluster}; the devnet deployment is never applied to another cluster`,
+        };
+  }
+
+  const { value } = await rpc.getMultipleAccounts([programAddress], { encoding: "base64", commitment }).send();
+  const account = value[0] ?? null;
+  const check = checkGuardProgramAccount(programAddress, account);
+  if (!check.ok) {
+    return {
+      ok: false,
+      code: check.reason === "MISSING" ? EquityGuardFailureCode.GUARD_DEPLOYMENT_UNAVAILABLE : EquityGuardFailureCode.GUARD_PROGRAM_NOT_EXECUTABLE,
+      message: `${check.message} (${cluster})`,
+    };
+  }
+  return { ok: true, programAddress, cluster };
 }
 
 // -------------------------------------------------------------- entry points
 
 /**
- * Whether this swap can be protected, without reading the trade's economic
- * state or building anything. Wallets use it to decide what to show before a
- * user commits; it is not a substitute for `protectJupiterSwap`, which
- * re-derives everything it needs.
+ * Whether this swap is structurally within EquityGuard's protected universe.
+ *
+ * PROVES: which side is the protected mint, that its account presents a
+ * supported economic-state model, and the adapter kind and direction that
+ * would cover it.
+ *
+ * DOES NOT PROVE: that a protected transaction can be produced. It does not
+ * read the Clock, evaluate the protection window, resolve or verify a guard
+ * deployment for the cluster, validate the Jupiter route grammar, or compose
+ * or commit anything. A `STRUCTURALLY_SUPPORTED` swap can still come back
+ * UNSUPPORTED_PROTECTED_ROUTE or ERROR from `protectJupiterSwap`, which
+ * re-derives everything it needs and is the only function whose PROTECTED
+ * result may be signed.
+ *
+ * Wallets use it to decide what to show before a user commits.
  */
 export async function supportsJupiterSwap(input: SupportsJupiterSwapInput): Promise<JupiterSwapSupport> {
   let build: BuildResponse;
@@ -321,9 +488,18 @@ export async function supportsJupiterSwap(input: SupportsJupiterSwapInput): Prom
   const classified = await classify(build, input.rpc, input.commitment ?? "confirmed");
   switch (classified.kind) {
     case "PROTECTED":
-      return { supported: true, protectedMint: classified.protectedMint, direction: classified.direction, adapterKind: classified.adapterKind };
+      return {
+        supported: true,
+        level: "STRUCTURALLY_SUPPORTED",
+        protectedMint: classified.protectedMint,
+        direction: classified.direction,
+        adapterKind: classified.adapterKind,
+        knownAsset: classified.knownAsset,
+      };
     case "NOT_APPLICABLE":
       return { supported: false, protectedMint: null, status: "NOT_APPLICABLE", code: classified.reason, message: classified.message };
+    case "UNSUPPORTED_ASSET":
+      return { supported: false, protectedMint: classified.protectedMint, status: "UNSUPPORTED_PROTECTED_ASSET", code: classified.code, message: classified.message };
     case "UNSUPPORTED":
       return { supported: false, protectedMint: classified.protectedMint, status: "UNSUPPORTED_PROTECTED_ROUTE", code: classified.code, message: classified.message };
     default:
@@ -351,13 +527,22 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
   const commitment = input.commitment ?? "confirmed";
   const classified = await classify(build, input.rpc, commitment);
   if (classified.kind === "NOT_APPLICABLE") return { status: "NOT_APPLICABLE", reason: classified.reason, message: classified.message };
+  if (classified.kind === "UNSUPPORTED_ASSET") {
+    return { status: "UNSUPPORTED_PROTECTED_ASSET", code: classified.code, message: classified.message, protectedMint: classified.protectedMint, knownAsset: classified.knownAsset };
+  }
   if (classified.kind === "UNSUPPORTED") {
     return { status: "UNSUPPORTED_PROTECTED_ROUTE", code: classified.code, message: classified.message, protectedMint: classified.protectedMint, guardError: null, details: [] };
   }
   if (classified.kind === "ERROR") {
     return { status: "ERROR", code: classified.code, message: classified.message, protectedMint: classified.protectedMint, guardError: null, details: [] };
   }
-  const { protectedMint, direction, adapterKind } = classified;
+  const { protectedMint, direction, adapterKind, knownAsset } = classified;
+
+  // Protection is bound to a deployment that can run where the caller is.
+  const deployment = await resolveDeployment(input.rpc, input.programAddress, commitment);
+  if (!deployment.ok) {
+    return { status: "ERROR", code: deployment.code, message: deployment.message, protectedMint, guardError: null, details: [] };
+  }
 
   let snapshot: GuardSnapshot;
   try {
@@ -388,7 +573,7 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
   try {
     const composed = await composeGuardedJupiterTrade({
       build,
-      programAddress: input.programAddress ?? DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS,
+      programAddress: deployment.programAddress,
       feePayer: input.userPublicKey,
       taker: input.userPublicKey,
       protectedMint,
@@ -401,7 +586,9 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
       protectedMint,
       direction,
       adapterKind,
-      programAddress: input.programAddress ?? DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS,
+      programAddress: deployment.programAddress,
+      cluster: deployment.cluster,
+      knownAsset,
       transaction: composed.wireBytes,
       transactionBase64: getBase64Decoder().decode(composed.wireBytes),
       instructions: composed.trade.instructions,
@@ -451,6 +638,8 @@ export function explainEquityGuardError(result: ProtectJupiterSwapResult): strin
       return `EquityGuard is protecting this ${result.direction.toLowerCase()} of ${result.protectedMint}: the transaction fails atomically if the token's economic state changes before it lands.`;
     case "NOT_APPLICABLE":
       return `EquityGuard does not apply to this swap: ${result.message}. Continue with your existing Jupiter flow.`;
+    case "UNSUPPORTED_PROTECTED_ASSET":
+      return `${EXPLANATIONS[result.code]} EquityGuard did not produce a protected transaction, and the unguarded Jupiter transaction must not be sent in its place. (${result.knownAsset.symbol} is a known ${result.knownAsset.issuer} representation of ${result.knownAsset.underlying})`;
     default:
       return `${EXPLANATIONS[result.code]} EquityGuard did not produce a protected transaction, and the unguarded Jupiter transaction must not be sent in its place.${detailSuffix(result.details, result.guardError)}`;
   }
@@ -468,6 +657,11 @@ const EXPLANATIONS: Readonly<Record<EquityGuardFailureCode, string>> = {
   INSIDE_TRANSITION_WINDOW: "A corporate action is activating right now, inside the configured protection window. Wait for the window to pass and rebuild.",
   INVALID_GUARD_REQUEST: "The protection window or state expectation supplied to EquityGuard could not be encoded.",
   COMMITMENT_FAILURE: "The composed transaction did not match the commitment the guard was built over, so it was discarded.",
+  GUARD_DEPLOYMENT_UNAVAILABLE: "No EquityGuard deployment is available on the cluster this RPC serves, so protection cannot be constructed here. EquityGuard is deployed on devnet only.",
+  GUARD_PROGRAM_NOT_EXECUTABLE: "The EquityGuard program address given for this cluster is not an executable program, so a guard instruction built against it would never run.",
+  UNSUPPORTED_CLUSTER: "This RPC serves a cluster EquityGuard has no deployment knowledge for. Pass an explicit programAddress to build against a deployment you trust.",
+  NO_SUPPORTED_STATE_ADAPTER: "This is a known tokenized equity, but its mint no longer presents an economic-state model EquityGuard can assert, so its protection semantics cannot be established.",
+  UNSUPPORTED_STATE_MODEL: "This is a known tokenized equity whose economic-state model this EquityGuard client does not implement.",
 };
 
 // ----------------------------------------------------------------- internals
@@ -556,4 +750,7 @@ function detailSuffix(details: readonly string[], guardError: EquityGuardErrorNa
 
 /** Canonical USDC: the only counter asset adapter kinds 2 and 3 support. */
 export { USDC_MINT_ADDRESS };
+/** The tokenized equities this client holds decoded mainnet evidence for. */
+export { KNOWN_PROTECTED_ASSETS } from "@equityguard/guard-client";
+export type { KnownProtectedAsset, SolanaCluster };
 export type { BuildResponse, EquityGuardErrorName, GuardSnapshot, JupiterAdapterKind, JupiterTradeBinding, ProtectedState, ProtectionWindow, TransactionMetrics };

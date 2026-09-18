@@ -11,11 +11,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { address } from "@solana/kit";
-import { DownstreamAdapterKind, USDC_MINT_ADDRESS, decodeProtectedState } from "@equityguard/guard-client";
+import { DownstreamAdapterKind, USDC_MINT_ADDRESS, decodeProtectedState, findKnownProtectedAsset } from "@equityguard/guard-client";
 
 import { MAX_TRANSACTION_BYTES } from "../src/index.ts";
 import {
-  DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS,
+  EQUITY_GUARD_DEVNET_DEPLOYMENT,
   explainEquityGuardError,
   protectJupiterSwap,
   supportsJupiterSwap,
@@ -31,6 +31,7 @@ import {
   UNHX_ACTIVATION_TIMESTAMP,
   UNHX_MINT,
   distinctAddress,
+  executableProgramAccount,
   fakeRpc,
   legacyMint,
   mainnetMint,
@@ -85,8 +86,8 @@ test("A: a supported protected BUY returns an unsigned guarded transaction", asy
   assert.equal(result.protectedMint, KOX_MINT);
   assert.equal(result.direction, "BUY");
   assert.equal(result.adapterKind, DownstreamAdapterKind.JUPITER_ROUTE_V2_BUY_USDC);
-  assert.equal(result.programAddress, DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS);
-  assert.equal(result.instructions[0]?.programAddress, DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS, "the guard executes as instruction 0");
+  assert.equal(result.programAddress, EQUITY_GUARD_DEVNET_DEPLOYMENT);
+  assert.equal(result.instructions[0]?.programAddress, EQUITY_GUARD_DEVNET_DEPLOYMENT, "the guard executes as instruction 0");
   assert.equal(result.instructions.length, 5);
   assert.equal(result.binding.adapterKind, "JUPITER_ROUTE_V2_BUY_USDC");
   assert.equal(result.binding.counterMint, USDC_MINT_ADDRESS);
@@ -110,7 +111,7 @@ test("A: a supported protected BUY returns an unsigned guarded transaction", asy
 test("A: the same build composes for a caller-chosen program, limit and commitment", async () => {
   const program = distinctAddress(7);
   const result = assertProtected(
-    await protect(recordedKoxBuyBuild(), koxAccounts, { programAddress: program, computeUnitLimit: 300_000, commitment: "finalized" }),
+    await protect(recordedKoxBuyBuild(), { ...koxAccounts, [program]: executableProgramAccount() }, { programAddress: program, computeUnitLimit: 300_000, commitment: "finalized" }),
   );
   assert.equal(result.programAddress, program);
   assert.equal(result.instructions[0]?.programAddress, program);
@@ -159,15 +160,22 @@ test("C: a Token-2022 mint with no ScaledUiAmount state is NOT_APPLICABLE", asyn
   const build = { ...recordedKoxBuyBuild(), outputMint: other };
   const result = await protect(build, { [other]: plainToken2022Mint() });
   assert.equal(result.status, "NOT_APPLICABLE");
-  assert.equal(result.status === "NOT_APPLICABLE" && result.reason, "NO_PROTECTED_STATE");
+  assert.equal(result.status === "NOT_APPLICABLE" && result.reason, "NO_PROTECTED_STATE_MODEL");
   assertNoTransaction(result);
 });
 
 test("C: supportsJupiterSwap answers the same question without building", async () => {
   const { rpc, reads } = fakeRpc({ accounts: koxAccounts, unixTimestamp: SETTLED_TIMESTAMP });
   const support = await supportsJupiterSwap({ build: recordedKoxBuyBuild(), rpc });
-  assert.deepEqual(support, { supported: true, protectedMint: KOX_MINT, direction: "BUY", adapterKind: DownstreamAdapterKind.JUPITER_ROUTE_V2_BUY_USDC });
-  assert.deepEqual(reads, [[KOX_MINT]], "only the non-USDC side is read, and the Clock is not");
+  assert.deepEqual(support, {
+    supported: true,
+    level: "STRUCTURALLY_SUPPORTED",
+    protectedMint: KOX_MINT,
+    direction: "BUY",
+    adapterKind: DownstreamAdapterKind.JUPITER_ROUTE_V2_BUY_USDC,
+    knownAsset: findKnownProtectedAsset(KOX_MINT),
+  });
+  assert.deepEqual(reads, [[KOX_MINT]], "only the non-USDC side is read: no Clock, no genesis hash, no guard deployment");
 
   const plain = distinctAddress(34);
   const unprotected = await supportsJupiterSwap({

@@ -24,7 +24,7 @@ import {
   recordedKoxBuyBuild,
   token2022Account,
 } from "../../../packages/jupiter/test/protect-fixtures.ts";
-import { DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS } from "../../../packages/jupiter/src/protect.ts";
+import { EQUITY_GUARD_DEVNET_DEPLOYMENT } from "../../../packages/jupiter/src/protect.ts";
 import { compileUnsignedTransaction, jupiterInstructions } from "../src/jupiter.ts";
 import { ordinarySwap, protectedSwap } from "../src/swap.ts";
 import { DryRunWallet } from "../src/wallet.ts";
@@ -67,7 +67,7 @@ test("the example sends the guarded transaction for a protected swap", async () 
   const guarded = wallet.signed[0] as Uint8Array;
   assert.notDeepEqual(guarded, unprotected);
   assert.ok(guarded.length > unprotected.length, "the guard instruction adds bytes");
-  const guardProgram = Buffer.from(getAddressEncoder().encode(DEFAULT_EQUITY_GUARD_PROGRAM_ADDRESS));
+  const guardProgram = Buffer.from(getAddressEncoder().encode(EQUITY_GUARD_DEVNET_DEPLOYMENT));
   assert.ok(Buffer.from(guarded).includes(guardProgram), "the guard program is an account of the signed transaction");
   assert.ok(!Buffer.from(unprotected).includes(guardProgram), "and is absent from the unprotected one");
 });

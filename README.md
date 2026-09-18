@@ -140,7 +140,7 @@ Implemented without any execution path:
 ## Integrating with Jupiter
 
 Applications that already build Jupiter Swap V2 swaps add EquityGuard with one
-import, one call, and a three-way decision on the result:
+import, one call, and a decision on the typed result:
 
 ```ts
 import { protectJupiterSwap } from "@equityguard/jupiter/protect";
@@ -156,23 +156,48 @@ if (guarded.status === "PROTECTED") await wallet.signAndSendTransaction(guarded.
 ```
 
 The SDK derives the protected mint, adapter kind, economic state, activation
-phase and downstream commitment itself: an integrator never encodes multiplier
-bytes, phases, timestamps or `route_v2` account grammar. It returns unsigned
-bytes and cannot sign, submit, hold a key or read configuration — a test scans
-every source file in the integration path to keep that true.
+phase, guard deployment and downstream commitment itself: an integrator never
+encodes multiplier bytes, phases, timestamps or `route_v2` account grammar.
 
-The other three statuses are refusals, and `NOT_APPLICABLE` is the only one
-that means "carry on as before":
+Every other status is a refusal, and `NOT_APPLICABLE` is the only one that
+means "carry on as before":
 
 | `status` | Meaning |
 | --- | --- |
-| `PROTECTED` | Supported protected route; sign and send `transaction` |
-| `NOT_APPLICABLE` | No protected asset involved; continue your existing path |
+| `PROTECTED` | Supported protected route, built against a guard deployment that can execute on this cluster; sign and send `transaction` |
+| `NOT_APPLICABLE` | The asset was read and is positively outside EquityGuard's protected universe; continue your existing path |
+| `UNSUPPORTED_PROTECTED_ASSET` | A known tokenized equity whose protection semantics cannot be established; fail closed |
 | `UNSUPPORTED_PROTECTED_ROUTE` | Protected asset on a route EquityGuard cannot represent; fail closed |
-| `ERROR` | Malformed input, unreadable state, or state that moved; fail closed |
+| `ERROR` | Malformed input, unreadable state, state that moved, or no usable guard deployment; fail closed |
 
 **`unsupported` is never `unprotected`.** No refusal carries a transaction, and
 sending the plain Jupiter transaction instead would defeat the product.
+
+**`NOT_APPLICABLE` never means "the state could not be decoded".** EquityGuard
+protects one economic-state model — a Token-2022 ScaledUiAmount multiplier with
+its scheduled activation — and a mint that presents it is protected on its own
+merits. A small registry of the six mainnet representations this repository
+holds decoded evidence for (xStocks KOx, UNHx, CRMx; Ondo KOon, UNHon, CRMon)
+exists for the opposite case: if one of those stops presenting a supported
+state model, or cannot be read, it fails closed instead of being mistaken for
+an ordinary token. Unknown protection semantics never become permission.
+
+**`PROTECTED` is bound to a real deployment.** EquityGuard resolves the cluster
+from the RPC's genesis hash and reads the program account back: the guard
+program must exist and be executable there. There is one deployment, on devnet
+(`EbzHfaoS…VeEtNnhT`). **No mainnet deployment is claimed or implied**: a
+mainnet or unknown-cluster build with no explicit `programAddress` fails closed
+with `GUARD_DEPLOYMENT_UNAVAILABLE` or `UNSUPPORTED_CLUSTER` rather than
+silently reusing the devnet address. Supplying `programAddress` yourself is
+honoured on any cluster — trusting that deployment is your decision — but it is
+still read back and must be an executable program.
+
+`supportsJupiterSwap({ build, rpc })` answers the cheaper question: which side
+is protected and which adapter would cover it. It proves structure only. It
+does not read the Clock, evaluate the protection window, resolve a deployment,
+validate the route grammar or build anything, so a `STRUCTURALLY_SUPPORTED`
+answer can still end as a refusal from `protectJupiterSwap` — the only function
+whose result may be signed.
 
 Supported today: Jupiter v6 `route_v2`, `ExactIn`, canonical USDC against one
 protected Token-2022 mint, BUY and SELL, guard at instruction 0, optional
@@ -180,8 +205,10 @@ destination-ATA setup. Everything else is refused with a typed reason. Guarded
 KOx and UNHx builds compile to 675 bytes (+176 B over unguarded, 557 B of
 headroom); the guard costs 4,658 compute units to pass.
 
-EquityGuard is deployed on devnet only, and Jupiter exists only on mainnet, so
-a guarded mainnet swap is buildable but not submittable today.
+The package is build-only: it returns unsigned bytes and cannot sign, submit,
+hold a key or read configuration. Jupiter exists only on mainnet and the guard
+only on devnet, so a guarded mainnet swap is buildable but not submittable
+today.
 
 Guide: [`docs/m10-jupiter-integration.md`](docs/m10-jupiter-integration.md).
 Worked before/after example:
