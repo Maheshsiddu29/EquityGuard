@@ -47,8 +47,10 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
       - name: Build SBF program
         run: cargo build-sbf --manifest-path programs/equity_guard/Cargo.toml -- --locked
-      - name: LiteSVM atomicity tests
-        run: cargo test --locked -p equity_guard --test litesvm_atomicity
+      # Every test target, including the LiteSVM and adversarial suites that
+      # need the SBF artifact built above.
+      - name: All Rust tests against the SBF artifact
+        run: cargo test --workspace --locked
 
   typescript:
     name: TypeScript and JS (typecheck, tests)
