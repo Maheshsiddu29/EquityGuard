@@ -1,152 +1,74 @@
 # EquityGuard
 
-**Corporate-action-aware execution infrastructure for tokenized equities on
-Solana.**
+**EquityGuard is an economic-intent protection layer for tokenized assets.**
 
-_Slippage protection, but for corporate actions._
+A transaction authorized under one tokenized-stock economic state must not silently execute under another.
 
-## Why
+A trade can be prepared under one economic state and land after that state has changed. EquityGuard binds the expected state to the transaction and checks it atomically before the protected action executes.
 
-Tokenized equities change economic state through dividends, splits, reverse
-splits, mergers, issuer pauses, and Token-2022 `ScaledUiAmount` multiplier
-changes, including scheduled multiplier activations.
-
-A backend can inspect that state before building a transaction, but the state
-can change between quote/check time, wallet signing, and transaction landing.
-EquityGuard puts the check inside the transaction:
+Integrators are venues, wallets, aggregators, trading applications, agents, and DeFi protocols. EquityGuard is not primarily a retail product.
 
 ```
-transaction
- ├─ EquityGuard.assert_safe_execution(expected = S)   ← reads mint at execution time
- └─ execution instruction(s), e.g. Jupiter swap        ← settle only if the guard passed
+ONE SOLANA TRANSACTION
+     │
+     ├── instruction 0: EquityGuard.assert_safe_execution
+     │     ├─ reads mint state directly from chain account
+     │     ├─ checks clock phase & expected multiplier bytes
+     │     └─ validates downstream instruction commitment
+     │
+     └── next instruction: Protected Action / Jupiter Swap
+           └─ executes ONLY if instruction 0 succeeds
 ```
 
-If the protected state has moved from `S` to `S'`, the guard fails and Solana's
-transaction atomicity guarantees the downstream instructions do not settle.
+---
 
-Integrators are venues, wallets, aggregators, trading apps, agents and DeFi
-protocols. EquityGuard is not primarily a retail product.
+## Status & Proof Stack
 
-## Status
+EquityGuard has four distinct proof layers:
 
-EquityGuard executes on Solana devnet and atomically prevents later
-instructions from settling when protected ScaledUiAmount state is stale or
-transitioning. Devnet program:
-[`EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT`](https://explorer.solana.com/address/EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT?cluster=devnet).
-The evidence uses devnet **test mints** (EQ-A, EQ-B; not issuer assets) and a
-system transfer as the downstream instruction. Each transaction below was sent
-as `[assert_safe_execution, system transfer]`:
+### 1. Real Mainnet Data
+- **19,986** real tokenized-stock state observations captured read-only from Solana mainnet.
+- **294,527** authorization-to-execution pairs evaluated.
+- **7,029** economically stale pairs detected and **all 7,029** blocked by the guard model.
+- **0** unexpected ALLOWs, **0** unexpected BLOCKs.
+- *No EquityGuard transaction was sent on mainnet.*
 
-| # | Scenario | Result | Devnet transaction |
-| --- | --- | --- | --- |
-| 1 | Safe: fresh snapshot (EQ-B) | succeeds; transfer settles | [`5RNgyfWj…TVuERX`](https://explorer.solana.com/tx/5RNgyfWjDmQYLwQtZr8jsHKLfqth1UewmNjrSsjuhZB4m3sxgf9kKBjvzfG3zugW1sdSCwspAwrXVdied3TVuERX?cluster=devnet) |
-| 2 | Stale snapshot after multiplier changed (EQ-A) | fails `MultiplierChanged`; transfer does not settle | [`3NMHpzCc…6bKngJ`](https://explorer.solana.com/tx/3NMHpzCc1X5pFrebj5PR8aJiEV2q35xcGncqtaiGpRJqfNYhrpoJLEMq3nYVXi3XizttoBwG6X2VNJnwxE6bKngJ?cluster=devnet) |
-| 3 | Fresh snapshot recovery (EQ-A) | succeeds; transfer settles | [`46WaWA5q…BviaJDJ`](https://explorer.solana.com/tx/46WaWA5qC42p4vwhg1qYNzFpMqsPu1J3UYDTy1PaX6MckwwB5jTzzmzzW4mfZhjkrUQSSWgCoXfNcD99QBviaJDJ?cluster=devnet) |
-| 4 | Pending phase, before transition window (EQ-A) | succeeds; transfer settles | [`2NSvgdfc…iYd7Mbz`](https://explorer.solana.com/tx/2NSvgdfcDoiB28wjyY5aRm95orn3zuR5npu4x53RU6zRCPbN9Zs1Uh94Bi38yYnDSVPkeLcqwu51qBqANiYd7Mbz?cluster=devnet) |
-| 5 | Same payload, same mint bytes, clock inside transition window | fails `InsideTransitionWindow`; transfer does not settle | [`2LYSTjXg…v9bMsHm8`](https://explorer.solana.com/tx/2LYSTjXgzrMgCDapr7LQEuc2j5hpkxHq2BWHT82nzX4LbfzF3SjgunyaySf8y7A6GwWKDAtRdrqkCgpMv9bMsHm8?cluster=devnet) |
-| 6 | Same payload after the window (activation passed) | fails `ActivationPhaseChanged`; transfer does not settle | [`2z7xv8VJ…PGrPX6`](https://explorer.solana.com/tx/2z7xv8VJnXu75cK512qSLVQMc6DYMxVugqLD5bvubeSTNknUgeo7z9C1K2QiDAdajKKPS42E95hcrAJQZkPGrPX6?cluster=devnet) |
-| 7 | Fresh activated snapshot (EQ-A) | succeeds; transfer settles | [`hySXRPu5…J3HA5`](https://explorer.solana.com/tx/hySXRPu5ennbRT2fyZsKWoZX1aR8Xue9BdYxpdMSWAYuhE5kgeNPqmqK6iB2pHHJGdBPwiBjroyTMPGWKYJ3HA5?cluster=devnet) |
+### 2. Guard-Model Replay
+- Demonstrates **SAFE / BLOCK / REFRESH** state evaluations using real captured mainnet state.
+- Illustrates zero-window protection boundaries around corporate-action transitions.
+- *Evaluated by the guard model; not an executed transaction crossing the event.*
 
-EquityGuard has been composed into a real Jupiter Swap V2 mainnet transaction
-build for a real xStock. The composition was build-only: a USDC → KOx `/build`
-route, with a guard instruction encoded from KOx's live mainnet ScaledUiAmount
-state, compiled into one v0 transaction using Jupiter's lookup table. The
-original (ABI v1) guarded transaction was 577 bytes; with the ABI v2 Jupiter
-adapter (below), fresh KOx BUY and UNHx BUY/SELL builds (2026-09-17) compile to
-675 bytes against the 1232-byte limit. Nothing was signed or submitted on
-mainnet, and EquityGuard is not deployed there, so the guard has not executed
-alongside a Jupiter swap on any public cluster; it has done so once on a local
-validator (see the claim boundary below).
+### 3. Local Execution Replay
+- Ran on local `solana-test-validator` loaded with real **Jupiter v6** and **Orca Whirlpool** program binaries and mainnet-derived state.
+- Executed valid guarded KOx trade (USDC → KOx).
+- Stale-state expectation and mutated swap route were rejected at instruction 0 before Jupiter ran.
+- *NOT mainnet execution. NOT devnet Jupiter. NOT a real purchase.*
 
-**Deployed on devnet (upgrade
-[`5Vb8aaU4…vQ1jXmb`](https://explorer.solana.com/tx/5Vb8aaU47wz2bK8iA5yvAyYFEGQbWPy5vzVTo46kZi6VJb22gman2KaRyEBLpcgkkiQSvJSYkg6nSHZZvvQ1jXmb?cluster=devnet),
-SBF SHA-256 `d7d59ccd…a41e4e46`, verified against the ProgramData bytes):**
-ABI v2 adapter kinds 2 and 3 guard a whole Jupiter `route_v2` transaction
-(`guard, price, limit, [destination ATA], route_v2`). Adapter kinds 2 and 3
-support only USDC ↔ protected-equity `route_v2` trades. The program checks
-the transaction grammar and the trade's semantics itself; the suffix
-commitment is not treated as semantic validation.
+### 4. Live Devnet Wallet Proof
+- Signed by real **Phantom browser wallet** (`2jMicXzM68ecXLvWDikT92cLaKMQA8mePrQ9T6hPp6b5`), distinct from the deployment authority keypair (`JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT`).
+- Program deployed on devnet: [`EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT`](https://explorer.solana.com/address/EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT?cluster=devnet) (SBF SHA-256 `d7d59ccd…a41e4e46`).
+- Fresh Token-2022 demo mint (`GtSMAJiKyu1cEoD8UshqFGGAK78nHYCb2gYJzKbHB8Ar`).
+- **SAFE:** [`3uExQAQZ…vGDNH`](https://explorer.solana.com/tx/3uExQAQZvMaTfcQzomSX5b1vumZhqfYJHEKMhh49BEynBicbH8qcKe999LbYndmAYNwWxEQoJirDy2kA34vGDNH?cluster=devnet) · Slot 500612756 · Source -0.10 · Destination +0.10 (Confirmed on-chain).
+- **BLOCK:** [`bTX3qQEy…tpvw`](https://explorer.solana.com/tx/bTX3qQEytQQvryTKRD3UZcmAHWkZmFp5ToaDy29LMxGZff81TkTX4GkYi22ZA3DMn7aSGHAfHhGCeYiAUi7tpvw?cluster=devnet) · Refused at Instruction 0 with `0x9` (`MultiplierChanged`) · 0 tokens transferred (No tokens transferred; a network fee may still have been charged).
+- **REFRESH:** [`4TZnvpKk…AqhVy`](https://explorer.solana.com/tx/4TZnvpKkdNkba69o74R1BBWrGgGvPX7jjRYEkM8n7AT9ZrbHjzfrftQMoqWorxRi9FMoVXJ7mvgdH8DiTV7AqhVy?cluster=devnet) · Slot 500612820 · Source -0.10 · Destination +0.10 (Confirmed on-chain).
+- *Fresh devnet demo token — not a security. No Jupiter execution on devnet.*
 
-Jupiter's program is not executable on devnet, so any transaction invoking it
-is rejected at load time, before the guard runs. Devnet therefore shows the
-kind 2/3 rejections that precede the trade-program check (e.g.
-`GuardNotFirst`
-[`3jLywJan…E471aKBL`](https://explorer.solana.com/tx/3jLywJan1CiSARDrHi6WKaRrBxDEi1Sadhnms9XTg57HFhbinKY2qfx8CTgG2qKAQ145C8uCBecF3xqdE471aKBL?cluster=devnet),
-which also rolls back a token transfer placed before the guard). It cannot
-show a guarded Jupiter trade.
+---
 
-### Claim boundary
+## Real Mainnet Observations
 
-Proven:
+We observed real tokenized-stock state transitions on Solana mainnet across xStocks (xStocks KOx, UNHx, CRMx) and Ondo (Ondo KOon, UNHon, CRMon):
 
-- real mainnet KOx (`XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ`) Token-2022
-  ScaledUiAmount state, read at one slot together with the chain Clock;
-- a real Jupiter Swap V2 `/build` route for USDC → KOx (single Orca Whirlpool
-  hop, recorded 2026-09-14);
-- real v0 composition of that route with an EquityGuard instruction encoded
-  from the KOx state, using Jupiter's address lookup table: 577 bytes guarded
-  vs 507 bytes baseline (+70 bytes, +1 static account, +1 instruction); no
-  `maxAccounts` reduction was needed;
-- guard execution and atomic rollback on **devnet** (table above), re-run
-  against the upgraded binary with adapter kind 1;
-- adapter kind 2/3 grammar rejections on **devnet** that precede the
-  trade-program check, matching the client model;
-- one guarded KOx Jupiter trade executed on a **local** `solana-test-validator`
-  loaded with the real Jupiter and Orca Whirlpool program binaries and
-  mainnet-derived accounts (2026-09-17), with an outdated-phase and an
-  altered-swap transaction rejected at the guard before Jupiter ran.
+- **KOx (xStocks):** Showed a scheduled economic-state activation. The new multiplier was stored in advance (`pending`), and became active when the Solana Clock passed the effective timestamp `T` (2026-09-15 00:30:00 UTC).
+- **KOon (Ondo):** Showed an immediate-style state update written already active around the same corporate-action period.
+- **Timestamp Divergence:** Their stored effective timestamps differed by **25 min 56 sec**.
+- **Clock-Driven Activation:** The account bytes carrying `multiplier`, `newMultiplier`, and `T` were unchanged across the adjacent KOx activation observations. The effective phase changed because the Solana Clock crossed `T`. *Watching only for account-byte changes is insufficient for a Clock-driven activation.*
 
-Not proven:
-
-- EquityGuard execution on mainnet (the program is deployed on devnet only);
-- guard + Jupiter atomicity on mainnet;
-- a guarded Jupiter trade on a public cluster (devnet or mainnet), and the
-  kind 2/3 checks after the trade-program check on a public cluster: beyond
-  the single local-validator trade above, these are verified in LiteSVM,
-  where a stand-in occupies the Jupiter address and no trade executes;
-- protection of live xStocks trades, or any real purchase;
-- automatic cross-issuer rerouting (the decision engine decides; nothing
-  executes the alternative), live protection in a UI (the reference app
-  renders recorded evidence only), or calibrated issuer transition policies.
-
-### Off-chain representation state
-
-Implemented without any execution path:
-
-- a canonical registry of KO, UNH and CRM representations (xStocks KOx, UNHx,
-  CRMx; Ondo KOon, UNHon, CRMon). These are representations associated with
-  the same underlying equity, not fungible or legally identical instruments;
-- state resolution to SAFE, TRANSITION, PAUSED or UNKNOWN, with state source
-  `chain`, `api`, `both-agree` or `conflict`. xStocks is chain-primary. Ondo
-  chain and API evidence are observed independently, and disagreement is kept
-  as a conflict. There is no live Ondo API client yet, and issuer transition
-  policies are uncalibrated;
-- read-only capture decoding and change detection that only analyse copies
-  of captures and never write to the input;
-- exact share-equivalent normalization (`outAmountRaw × multiplier /
-  10^decimals` in bigint rationals) with a switching cost that is never
-  understated;
-- a pure decision engine returning `USE_PREFERRED`, `REQUIRES_CONSENT`,
-  `USE_ALTERNATIVE`, `NO_SAFE_ROUTE` or `UNKNOWN_STATE`, with a disclosure
-  for any cross-issuer outcome.
-
-| Component | Status |
-| --- | --- |
-| `programs/equity_guard` — `assert_safe_execution` | ABI v2 deployed on devnet with adapter kinds 1 (committed Token-2022 `TransferChecked`) and 2/3 (USDC ↔ protected-equity Jupiter `route_v2`; positive path LiteSVM-only, since devnet has no Jupiter) |
-| Token-2022 ScaledUiAmount decoding | implemented in Rust and TypeScript; cross-checked on golden vectors and real mainnet mint bytes |
-| `packages/guard-client` | TypeScript builders for ABI v2 guards: kind 1 `TransferChecked`, kinds 2/3 Jupiter `route_v2` (grammar mirror, suffix commitment) |
-| `scripts/devnet/` | devnet test mints EQ-A/EQ-B, scenario runner, evidence |
-| `packages/jupiter` | Jupiter Swap V2 `/build` client and guard-first v0 composition for adapter kinds 2/3 (build-only; unsupported builds are refused) |
-| `scripts/evidence/capture-equity-mints.mjs` | raw mainnet mint recorder, verified watchlist |
-| `packages/representation-state` | registry, issuer state adapters, capture decoding, normalization, decision engine (no execution) |
-| `scripts/observation/` | read-only decoding and event detection over capture copies |
-| `apps/reference` | reference integration UI over recorded evidence (no signing, no network) |
-| Executed rerouting | later |
+---
 
 ## Integrating with Jupiter
 
-Applications that already build Jupiter Swap V2 swaps add EquityGuard with one
-import, one call, and a decision on the typed result:
+Applications that build Jupiter Swap V2 swaps add EquityGuard using the integration surface:
 
 ```ts
 import { protectJupiterSwap } from "@equityguard/jupiter/protect";
@@ -161,12 +83,7 @@ const guarded = await protectJupiterSwap({
 if (guarded.status === "PROTECTED") await wallet.signAndSendTransaction(guarded.transaction);
 ```
 
-The SDK derives the protected mint, adapter kind, economic state, activation
-phase, guard deployment and downstream commitment itself: an integrator never
-encodes multiplier bytes, phases, timestamps or `route_v2` account grammar.
-
-Every other status is a refusal, and `NOT_APPLICABLE` is the only one that
-means "carry on as before":
+### Typed Integration Outcomes
 
 | `status` | Meaning |
 | --- | --- |
@@ -176,210 +93,76 @@ means "carry on as before":
 | `UNSUPPORTED_PROTECTED_ROUTE` | Protected asset on a route EquityGuard cannot represent; fail closed |
 | `ERROR` | Malformed input, unreadable state, state that moved, or no usable guard deployment; fail closed |
 
-**`unsupported` is never `unprotected`.** No refusal carries a transaction, and
-sending the plain Jupiter transaction instead would defeat the product.
+- **`unsupported` is never `unprotected`.** No refusal carries a transaction; sending the plain Jupiter transaction instead would defeat the product.
+- **`NOT_APPLICABLE` never means "the state could not be decoded".** Unknown protection semantics never become permission.
+- **Deployment Verification:** Resolves cluster from RPC genesis hash and verifies the 63,840-byte reviewed ELF binary (SHA-256 `d7d59ccd…a41e4e46`).
 
-**`NOT_APPLICABLE` never means "the state could not be decoded".** EquityGuard
-protects one economic-state model — a Token-2022 ScaledUiAmount multiplier with
-its scheduled activation — and a mint that presents it is protected on its own
-merits. A small registry of the six mainnet representations this repository
-holds decoded evidence for (xStocks KOx, UNHx, CRMx; Ondo KOon, UNHon, CRMon)
-exists for the opposite case: if one of those stops presenting a supported
-state model, or cannot be read, it fails closed instead of being mistaken for
-an ordinary token. Unknown protection semantics never become permission.
+---
 
-**`PROTECTED` is bound to a real deployment.** EquityGuard resolves the cluster
-from the RPC's genesis hash and reads the program account back: the guard
-program must exist and be executable there. There is one deployment, on devnet
-(`EbzHfaoS…VeEtNnhT`), and it must also be the reviewed binary: the SDK reads
-the Program and ProgramData accounts in one call and requires the
-upgradeable-loader pairing, the recorded ProgramData address, the reviewed
-63,840-byte ELF (SHA-256 `d7d59ccd…a41e4e46`) and only zeros after it,
-otherwise `GUARD_BINARY_UNVERIFIED`. **No mainnet deployment is claimed or
-implied**: a mainnet or unknown-cluster build with no explicit `programAddress`
-fails closed with `GUARD_DEPLOYMENT_UNAVAILABLE` or `UNSUPPORTED_CLUSTER`
-rather than silently reusing the devnet address. Supplying `programAddress`
-yourself is honoured on any cluster — trusting that deployment is your
-decision, reported as `deploymentIdentity: "CALLER_TRUSTED"` — but it is still
-read back and must be an executable program. The check proves what the cluster
-held at build time; an upgrade between build and landing is outside it.
+## Why Solana
 
-`supportsJupiterSwap({ build, rpc })` answers the cheaper question: which side
-is protected and which adapter would cover it. It proves structure only. It
-does not read the Clock, evaluate the protection window, resolve a deployment,
-validate the route grammar or build anything, so a `STRUCTURALLY_SUPPORTED`
-answer can still end as a refusal from `protectJupiterSwap` — the only function
-whose result may be signed.
+EquityGuard relies fundamentally on Solana-native primitives:
+- **Token-2022 Extensions:** `ScaledUiAmount` multiplier state stored directly on token mint accounts.
+- **Solana Clock:** Enables deterministic, on-chain evaluation of scheduled economic-state activations.
+- **Instructions Sysvar:** Enables instruction 0 to introspect the transaction and cryptographically bind the guard to the exact downstream swap.
+- **Atomic Instruction Ordering:** Guarantees that if instruction 0 fails, all downstream state changes in the same transaction roll back automatically.
 
-Supported today: Jupiter v6 `route_v2`, `ExactIn`, canonical USDC against one
-protected Token-2022 mint, BUY and SELL, guard at instruction 0, optional
-destination-ATA setup. Everything else is refused with a typed reason.
+---
 
-Cost, measured on recorded mainnet builds: the EquityGuard instruction adds
-168 B — two static account keys (the guard program and the Instructions
-sysvar, 64 B) and the compiled instruction (104 B, including its 99 B
-payload). A protected transaction is 176 B larger than Jupiter's recorded
-unguarded build (499 → 675 B for KOx/UNHx) because the composer also adds an
-explicit `SetComputeUnitLimit` instruction (8 B), which that `/build` response
-did not include. Guarded builds measure 675–918 B against the 1,232 B limit.
-The guard costs 10,675–15,243 compute units to pass for adapter kinds 2/3
-(LiteSVM, recorded routes; 10,743 in the local real-Jupiter replay) and
-4,811–5,615 for kind 1 on real mainnet mint accounts. When the build carries
-no compute-unit limit the SDK requests 1,400,000; pass `computeUnitLimit` to
-choose your own, since the priority fee is charged on the requested limit.
+## Validation Metrics
 
-The package is build-only: it returns unsigned bytes and cannot sign, submit,
-hold a key or read configuration. Jupiter exists only on mainnet and the guard
-only on devnet, so a guarded mainnet swap is buildable but not submittable
-today.
+Verified empirical metrics from the release candidate:
 
-API reference: the typed results and every refusal reason are documented in
-[`packages/jupiter/src/protect.ts`](packages/jupiter/src/protect.ts). Worked
-before/after example:
-[`apps/example-jupiter-protected/`](apps/example-jupiter-protected/)
-(`src/swap.ts` holds both versions; its tests run offline in `npm test`).
+| Metric | Value | Context |
+| --- | --- | --- |
+| Mainnet Observations | **19,986** | 6 representations, 3,331 polls (2026-09-13 to 2026-09-15) |
+| Authorization Pairs | **294,527** | Authorization-to-execution comparisons evaluated |
+| Economically Stale Pairs | **7,029** | All 7,029 stale pairs blocked (0 unexpected ALLOWs / BLOCKs) |
+| Differential Cases | **1,000,000** | 1,000,000 seeded TypeScript/Rust differential cases · 0 disagreements |
+| Guard Transaction Size | **675–918 B** | +176 B vs unguarded Jupiter build; 314 B minimum headroom |
+| Compute Units | **10.7k–15.5k CU** | Guard CU overhead for Jupiter adapter kinds 2 & 3 |
 
-## Reference app
+---
 
-`apps/reference` shows how a wallet, trading app or agent platform could
-surface EquityGuard. Its main flow uses the two real KOx observations either
-side of the Sep 15 2026 dividend activation (00:29:46Z and 00:30:16Z block
-time): a trade prepared under the pending state (**ALLOW**), the same
-authorization checked after activation
-(**BLOCK: ECONOMIC_STATE_CHANGED**, `ActivationPhaseChanged`), and a refreshed
-trade (**ALLOW**). These checks use a zero protection window to isolate the
-activation; with the 15 min / 5 min demo window, both moments are already
-blocked as `InsideTransitionWindow`.
+## Known Limitations
 
-The Sep 17 local-validator replay (guarded trade executed; outdated-phase and
-altered-swap transactions rejected before Jupiter ran) is shown as a separate
-test. It ran two days after the activation and did not cross it. A secondary
-issuer-switch case (**REQUIRES_CONSENT: REPRESENTATION_CHANGE**) is
-illustrative: its KOon quote is made up, because Jupiter returned no KOon
-route.
+This release is a **hackathon release candidate / reviewed prototype**:
 
-```sh
-npm run app:build          # derive state, compile, write apps/reference/dist
-npm run app:serve          # http://127.0.0.1:4173/  (?state=stale, ?demo, #advanced)
-```
+1. **No Mainnet Deployment:** EquityGuard is deployed on Solana devnet only (`EbzHfaoS…NnhT`). No mainnet deployment exists.
+2. **Strict Supported Jupiter Subset:** Supports only Jupiter v6 `route_v2`, `ExactIn`, canonical USDC ↔ protected mint, BUY and SELL, guard at instruction 0. Any route-shape drift fails closed.
+3. **Uncalibrated Protection Windows:** Pre/post transition windows are policy inputs configured by the integrator; they are uncalibrated demo values.
+4. **Scalar State Model:** Protects Token-2022 `ScaledUiAmount` scalar multiplier state. Structural corporate actions (mergers, spinoffs, redemptions) are not represented by the current scalar model.
+5. **No External Security Audit:** The codebase has undergone internal security reviews, but no external security audit has been performed.
+6. **Upgrade-Authority TOCTOU (R-01):** The reviewed devnet program keeps an upgrade authority (`JArGaWxr…BuNT`), so an upgrade between build-time verification and transaction landing is not prevented.
+7. **Unpublished Packages:** Workspace packages (`@equityguard/guard-client`, `@equityguard/jupiter`, `@equityguard/representation-state`) are private 0.1.0 packages and not yet published.
 
-Decisions are computed at build time by the existing code:
-`checkGuardOffline` over the curated mainnet KOx/KOon bytes, and the
-representation decision engine for the illustrative case. The replay results
-come from `apps/reference/data/local-replay-2026-09-17.json`, an excerpt that
-records the SHA-256 of its source record. The browser only renders. It has no
-network, wallet or signing code, and the tests pin that.
+---
 
-Boundary: the page shows recorded evidence, not live state. It does not
-show mainnet EquityGuard execution, a real purchase, a guarded Jupiter trade
-on devnet, a trade that crossed the Sep 15 event, or a real cross-issuer
-reroute. The 15 min / 5 min window is an uncalibrated demo policy.
-
-## Release-candidate evidence
-
-Recorded in [`release-candidate.json`](release-candidate.json), which a test
-checks against the code. Environment and scope matter for every number:
-
-- **Replay of real mainnet history.** 19,986 captured observations of the six
-  representations (3,331 polls, 2026-09-13 21:24 → 2026-09-15 01:09 UTC) decode
-  without failure; all 5 known state transitions are detected. Of 294,527
-  authorization→execution pairs, 7,029 were economically stale and all were
-  blocked; no fresh authorization outside a window was blocked. The raw
-  capture is local evidence and is not in the repository, so a clean checkout
-  replays only the curated observations.
-- **Implementations agree.** 1,000,000 seeded cases give identical verdicts in
-  the TypeScript client model and the Rust program model, and a 20,000-case
-  sample run against the compiled program in LiteSVM agrees with both.
-- **No shared write lock.** The guard's accounts are the protected mint and the
-  Instructions sysvar, both read-only; the program writes no account and makes
-  no CPI, and every measured protected transaction has the same writable
-  accounts with and without the guard. Guard calls do not serialize on any
-  EquityGuard-owned state.
-- **Client cost.** About 4–4.5 ms of CPU per protected build (Apple M3 Pro,
-  Node 22) plus 4 sequential RPC round trips returning about 94 KB of base64,
-  about 69 KB of it the reviewed-binary check re-reading the ProgramData
-  account. This is a laptop benchmark, not a throughput or latency guarantee.
-
-Known limitations: the reviewed devnet program keeps an upgrade authority, so
-an upgrade between build-time verification and landing is not prevented
-(tracked risk R-01, Medium); protection windows are policy inputs and are not
-calibrated; the model protects the ScaledUiAmount multiplier and cannot express
-mergers, spin-offs or other structural actions; only the Jupiter subset above
-is supported and other route shapes are refused; the SDK trusts its RPC for
-reads (the on-chain guard remains the final check); the packages are not
-published; there is no mainnet deployment and no external audit.
-
-## Repository layout
+## Repository Layout
 
 ```
-programs/equity_guard/    on-chain guard program (native Rust)
-packages/guard-client/    TypeScript instruction builder used by clients
-packages/jupiter/         Jupiter /build client and guarded transaction composition
-packages/representation-state/  representation registry, state, normalization, decisions
-scripts/observation/      read-only capture decoding and event detection
-scripts/devnet/           devnet test mints, scenarios, deployment record
-scripts/evidence/         raw mainnet evidence capture (output is local, gitignored)
-apps/reference/           reference integration UI over recorded evidence
+programs/equity_guard/           on-chain guard program (native Rust)
+packages/guard-client/           TypeScript instruction builder used by clients
+packages/jupiter/                Jupiter /build client and guarded transaction composition
+packages/representation-state/   representation registry, state, normalization, decisions
+scripts/observation/             read-only capture decoding and event detection
+scripts/devnet/                  devnet test mints, scenarios, deployment record
+scripts/evidence/                raw mainnet evidence capture (output is local, gitignored)
+apps/reference/                  reference integration UI over recorded evidence
+apps/devnet-wallet-demo/         live Phantom browser wallet proof on devnet
 apps/example-jupiter-protected/  minimal before/after Jupiter integration example
 ```
 
-## Development
+---
 
-Requirements: Rust (pinned by `rust-toolchain.toml`), Node.js ≥ 22.18, and the
-Agave CLI (validated with 4.2.2) for `cargo build-sbf`.
+## Development & Verification
 
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo build-sbf --manifest-path programs/equity_guard/Cargo.toml -- --locked
-cargo test --workspace --locked        # unit, golden, deployment-ID, LiteSVM (needs the .so)
-npm ci && npm run typecheck && npm test   # offline; includes the recorded Jupiter fixture
-npm run app:build                         # reference app
+cargo test --workspace --locked        # unit, golden, deployment-ID, LiteSVM
+npm ci && npm run typecheck && npm test # 542 JS unit tests
+npm run app:build                       # reference app static build
+npm run wallet-demo:build               # devnet wallet demo static build
 ```
-
-On a clean checkout two local-evidence tests are skipped by design: they
-replay raw captures that are never committed (`tmp/`). Everything else runs
-from committed fixtures.
-
-The Jupiter tests compose recorded mainnet `/build` responses offline; the
-2026-09-14 ABI v1 composition remains as historical sizing evidence. CI is
-credential-free and never calls Jupiter.
-
-Capture analysis reads only a copy of a capture file. The tools require
-`--input`, open it read-only, refuse files modified in the last 90 seconds or
-listed in `EQUITYGUARD_PROTECTED_CAPTURE_PATHS`, and write only to stdout or a
-new file:
-
-```sh
-npm run observation:snapshot -- --input <backup.jsonl>          # sealed read-only copy + SHA-256 manifest
-npm run observation:extract -- --input <snapshot> --start <ISO-Z> --end <ISO-Z> [--symbols KOx,KOon] --output <new.jsonl>
-npm run observation:timeline -- --input <snapshot> [--symbols KOx,KOon] [--verbose]
-npm run observation:decode -- --input <copy.jsonl> [--output <new.jsonl>]
-npm run observation:events -- --input <copy.jsonl> [--output <new.jsonl>]
-```
-
-The timeline compresses unchanged periods, reports state changes (including
-phase changes with identical bytes), decode errors and capture gaps, and ends
-with evidence-quality metrics (coverage at the 30-second cadence, largest gaps,
-GOOD/DEGRADED/INSUFFICIENT). Window extraction copies lines byte-for-byte.
-Snapshots and extracts live in the gitignored `tmp/`.
-
-Devnet deployment is manual and performed by the owner; scenarios run with an
-explicitly devnet-targeted wallet. `EQUITYGUARD_DEVNET_WALLET` is required (there
-is no default wallet), and nothing is signed unless the RPC reports the exact
-devnet genesis hash, checked at connect and again before every signature:
-
-```sh
-export EQUITYGUARD_DEVNET_WALLET=<path to a devnet-only keypair file>
-npm run devnet -- scenario safe --label EQ-B
-npm run devnet -- scenario stale --label EQ-A
-npm run devnet -- scenario transition --label EQ-A
-```
-
-The scenario runner and the devnet demo build ABI v2 guards and refuse to run
-while `scripts/devnet/devnet.json` records the deployed program as ABI v1.
-
-The devnet program ID, deployment signature and test mint addresses are
-recorded in `scripts/devnet/devnet.json`. The on-chain ABI is documented in
-`programs/equity_guard/src/instruction.rs`, and error codes in
-`programs/equity_guard/src/error.rs`.

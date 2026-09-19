@@ -35,10 +35,10 @@ const clock = (isoTime: string) => new Date(isoTime).toISOString().slice(11, 19)
 const minSec = (secs: number) => `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
 
 const PROVENANCE_LABEL: Record<Provenance, string> = {
-  MAINNET_OBSERVATION: "Mainnet observation",
-  LOCAL_REPLAY: "Local replay",
-  GUARD_MODEL: "Guard model",
-  ILLUSTRATIVE: "Illustrative",
+  MAINNET_OBSERVATION: "Real Mainnet Observation",
+  LOCAL_REPLAY: "Local Execution Replay",
+  GUARD_MODEL: "Recorded Mainnet Evidence · Guard Model",
+  ILLUSTRATIVE: "Illustrative (Not Real Reroute)",
 };
 
 const BLOCK_COPY: Record<BlockReason, string> = {
@@ -220,9 +220,9 @@ function transitionSection(s: Scenario, state: ReferenceState, active: ScenarioI
       <div>
         <div class="eyebrow">State-transition case · ${esc(day(kox.effectiveAt))}</div>
         <h2 id="transition-title">A stale KOx trade, stopped</h2>
-        <p class="muted">Real KOx states recorded at ${esc(clock(kox.lastPendingBlockTime))} and ${esc(clock(kox.firstActivatedBlockTime))} UTC, either side of its ${esc(clock(kox.effectiveAt))} dividend adjustment. Checked by EquityGuard's guard model; no transaction was sent.</p>
+        <p class="muted">Real KOx states recorded at ${esc(clock(kox.lastPendingBlockTime))} and ${esc(clock(kox.firstActivatedBlockTime))} UTC, either side of its ${esc(clock(kox.effectiveAt))} dividend adjustment. Evaluated by EquityGuard's guard model; no transaction was sent.</p>
       </div>
-      <div class="chips">${chip("MAINNET_OBSERVATION")}${chip("GUARD_MODEL")}</div>
+      <div class="chips">${chip("GUARD_MODEL")}</div>
     </div>
     ${flowBar(active, state, demoOpen)}
     <div class="grid">${tradeCard(s, state)}${protectionPanel(s, state)}</div>
@@ -249,7 +249,7 @@ function timeline(state: ReferenceState) {
       <div>
         <div class="eyebrow">Observed evidence · ${esc(day(kox.effectiveAt))}</div>
         <h2 id="timeline-title">Corporate-action timeline</h2>
-        <p class="muted">Coca-Cola dividend adjustment. Two tokenized representations, two update mechanisms.</p>
+        <p class="muted">Coca-Cola corporate-action period observation. Two tokenized representations, two update mechanisms.</p>
       </div>
       ${chip("MAINNET_OBSERVATION")}
     </div>
@@ -295,13 +295,10 @@ function timeline(state: ReferenceState) {
         <span><i class="sw sw-pending"></i>New multiplier scheduled</span>
         <span><i class="sw sw-new"></i>New multiplier active</span>
         <span class="muted">Times UTC, Sep 15 2026 · ~${pollingSecs}s observation cadence</span>
-      </div>
-    </div>
-
-    <div class="facts">
+        <div class="facts">
       <div class="fact">
         <div class="fact-big">${esc(minSec(seconds))}</div>
-        <div class="muted">between the stored effective times of KOon (${esc(clock(koon.effectiveAt))}) and KOx (${esc(clock(kox.effectiveAt))}) for the same corporate action.</div>
+        <div class="muted">KOx showed a scheduled economic-state activation; KOon showed an immediate-style state update around the same corporate-action period. Their stored effective timestamps differed by 25 min 56 sec.</div>
       </div>
       <div class="fact">
         <div class="fact-title">KOx · scheduled</div>
@@ -310,6 +307,48 @@ function timeline(state: ReferenceState) {
       <div class="fact">
         <div class="fact-title">KOon · immediate</div>
         <div class="muted">New multiplier written already active. Last old state seen ${esc(clock(koon.lastOldObservedAt))}, first new state ${esc(clock(koon.firstNewObservedAt))}; ${koon.pendingPhaseObserved ? "a" : "no"} pending phase observed.</div>
+      </div>
+    </div>
+  </section>`;
+}
+
+function architectureVisual() {
+  return `
+  <section class="section" aria-labelledby="arch-title">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Execution Architecture</div>
+        <h2 id="arch-title">One Solana Transaction</h2>
+        <p class="muted">EquityGuard enforces atomic economic-state verification at execution time, placed in instruction 0 of the same transaction as the trade.</p>
+      </div>
+    </div>
+    <div class="card arch-card">
+      <div class="arch-box">
+        <div class="arch-header">
+          <span class="arch-tag">ONE SOLANA TRANSACTION</span>
+          <span class="arch-sub">Atomic Execution & Rollback</span>
+        </div>
+        <div class="arch-steps">
+          <div class="arch-step arch-guard">
+            <div class="step-badge">Instruction 0</div>
+            <div class="step-content">
+              <strong>EquityGuard.assert_safe_execution</strong>
+              <ul>
+                <li>Reads Token-2022 mint state directly from chain account</li>
+                <li>Verifies clock phase & expected multiplier bytes</li>
+                <li>Validates downstream instruction commitment</li>
+              </ul>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">↓</div>
+          <div class="arch-step arch-action">
+            <div class="step-badge">Next Protected Instruction</div>
+            <div class="step-content">
+              <strong>Protected Action / Jupiter Swap</strong>
+              <p class="muted small">Executes ONLY if Instruction 0 succeeds. If the guard fails, Solana atomically rolls back all state changes.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>`;
@@ -367,7 +406,7 @@ function evidence(state: ReferenceState) {
     <div class="ev-grid">
       ${card("What we observed", "observed", [
         "KOx (xStocks) and KOon (Ondo) are two tokenized representations of Coca-Cola.",
-        "They applied the same dividend adjustment differently: KOx scheduled it and activated on the Solana Clock; KOon updated immediately.",
+        "KOx showed a scheduled economic-state activation; KOon showed an immediate-style state update around the same corporate-action period.",
         `Their stored effective times differ by ${esc(minSec(seconds))}.`,
         "Recorded read-only from Solana mainnet account state; no mainnet transaction was sent.",
       ])}
@@ -378,6 +417,7 @@ function evidence(state: ReferenceState) {
         "If anything differs, the whole transaction fails and the trade never runs.",
       ])}
       ${card("What this demo proves", "proves", [
+        "1,000,000 seeded TypeScript/Rust differential cases · 0 disagreements.",
         "Sep 15: on real KOx states recorded 14 s before and 16 s after activation, the guard model allows the earlier authorization before activation and rejects it after.",
         "Sep 17, separately: locally, with a mainnet-derived Jupiter route, mainnet-derived account state, and the real Jupiter and Orca Whirlpool program binaries, a guarded KOx trade executed.",
         "In that replay, a stale-state transaction and a modified transaction were rejected at the guard, before Jupiter ran.",
@@ -472,6 +512,7 @@ function main() {
     root.innerHTML = `
       ${hero}
       ${transitionSection(s, state, active, demoOpen)}
+      ${architectureVisual()}
       ${timeline(state)}
       ${replaySection(state)}
       ${evidence(state)}
@@ -530,7 +571,19 @@ function main() {
       case "toggle-demo":
         demoOpen = !demoOpen;
         return render();
+      case "open-devnet-demo": {
+        const host = location.hostname || "127.0.0.1";
+        window.open(`//${host}:4174/`, "_blank", "noopener");
+        return;
+      }
     }
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-action='open-devnet-demo']");
+    if (!target) return;
+    const host = location.hostname || "127.0.0.1";
+    window.open(`//${host}:4174/`, "_blank", "noopener");
   });
 
   document.addEventListener("keydown", (event) => {

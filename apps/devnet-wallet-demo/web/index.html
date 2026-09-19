@@ -4,20 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EquityGuard · Live Devnet Proof</title>
-    <meta name="description" content="EquityGuard devnet wallet demo - Testing slippage protection for tokenized equities with corporate actions.">
+    <meta name="description" content="EquityGuard devnet wallet demo - Real Phantom browser wallet proof for Token-2022 corporate-action protection.">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="banner-warning">
-        Devnet demonstration — no real securities or mainnet funds.
+        Fresh devnet demo token — not a security. This proof does not execute Jupiter or a mainnet transaction.
     </div>
     
     <div class="container">
         <header>
-            <h1>EquityGuard</h1>
-            <div class="badges">
-                <span id="devnet-badge" class="badge">Devnet</span>
-                <span id="program-badge" class="badge">Program Pending</span>
+            <div class="brand">
+                <h1>EquityGuard</h1>
+                <span class="subtitle">Live Devnet Proof</span>
+            </div>
+            <div class="header-right">
+                <div class="badges">
+                    <span id="devnet-badge" class="badge badge-devnet">LIVE DEVNET</span>
+                    <span id="program-badge" class="badge">Program Pending</span>
+                </div>
+                <a href="http://127.0.0.1:4173/" target="_blank" rel="noopener" class="nav-btn">← Reference Evidence</a>
             </div>
         </header>
 
@@ -32,14 +38,15 @@
             </section>
 
             <section id="faucet-section" class="card">
-                <h2>Faucet</h2>
-                <p>You need devnet SOL to execute transactions.</p>
+                <h2>Devnet SOL Faucet</h2>
+                <p>Transfer devnet SOL to your connected Phantom wallet to execute live transactions.</p>
                 <button id="faucet-btn" class="btn-secondary" disabled>Get devnet SOL</button>
                 <p id="faucet-status" class="status-msg"></p>
             </section>
 
             <section id="asset-section" class="card">
                 <h2>Demo Asset (Token-2022)</h2>
+                <p>Fresh devnet demo token with ScaledUiAmount multiplier extension — not a security.</p>
                 <div class="asset-info">
                     <p>Mint: <span id="mint-address" class="mono-text">None</span></p>
                     <p>Balance: <span id="token-balance" class="mono-text">0</span></p>
@@ -49,23 +56,63 @@
 
             <section id="step1-section" class="card">
                 <h2>Step 1: Protected Transfer</h2>
-                <p>Creates a transfer instruction bundled with an EquityGuard check against the current asset state.</p>
+                <p>Executes a transfer bundled with an EquityGuard check against the current asset state. Expectation matches live state.</p>
                 <button id="step1-btn" class="btn-primary" disabled>Execute Protected Transfer</button>
                 <div id="step1-result" class="result-container"></div>
             </section>
 
             <section id="step2-section" class="card">
                 <h2>Step 2: Stale-State Test</h2>
-                <p>Simulates a corporate action occurring after you received a quote but before your transaction lands. The guard should fail the transaction.</p>
+                <p>Simulates a corporate action multiplier change after quote time. EquityGuard instruction 0 fails on-chain and prevents Token-2022 transfer settlement.</p>
                 <button id="step2-btn" class="btn-primary" disabled>Execute Stale Transfer</button>
                 <div id="step2-result" class="result-container"></div>
             </section>
 
             <section id="step3-section" class="card">
                 <h2>Step 3: Refresh & Retry</h2>
-                <p>Refreshes the quote with the post-corporate-action state and successfully executes the transfer.</p>
+                <p>Refreshes the expectation to match post-transition state and successfully executes the protected transfer.</p>
                 <button id="step3-btn" class="btn-primary" disabled>Refresh & Retry</button>
                 <div id="step3-result" class="result-container"></div>
+            </section>
+
+            <section id="fallback-section" class="card fallback-card">
+                <div class="fallback-header">
+                    <h2>Recorded Devnet Proof</h2>
+                    <span class="badge badge-recorded">RECORDED DEVNET PROOF</span>
+                </div>
+                <p class="muted">Verified on-chain transactions signed by Phantom Wallet <code class="mono-text">2jMicXzM68ecXLvWDikT92cLaKMQA8mePrQ9T6hPp6b5</code> against deployed program <code class="mono-text">EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT</code>.</p>
+                <div class="recorded-proofs">
+                    <div class="proof-item proof-allow">
+                        <div class="proof-head">
+                            <span class="status-tag allow">SAFE</span>
+                            <span class="proof-label">Protected Transfer Allowed</span>
+                        </div>
+                        <div class="proof-details mono-text">
+                            <span>Sig: <a href="https://explorer.solana.com/tx/3uExQAQZvMaTfcQzomSX5b1vumZhqfYJHEKMhh49BEynBicbH8qcKe999LbYndmAYNwWxEQoJirDy2kA34vGDNH?cluster=devnet" target="_blank" rel="noopener">3uExQAQZ...vGDNH</a></span>
+                            <span>Slot: 500612756 · Source -0.10 · Destination +0.10</span>
+                        </div>
+                    </div>
+                    <div class="proof-item proof-block">
+                        <div class="proof-head">
+                            <span class="status-tag block">BLOCK</span>
+                            <span class="proof-label">Stale Expectation Rejected at Instruction 0</span>
+                        </div>
+                        <div class="proof-details mono-text">
+                            <span>Sig: <a href="https://explorer.solana.com/tx/bTX3qQEytQQvryTKRD3UZcmAHWkZmFp5ToaDy29LMxGZff81TkTX4GkYi22ZA3DMn7aSGHAfHhGCeYiAUi7tpvw?cluster=devnet" target="_blank" rel="noopener">bTX3qQEy...tpvw</a></span>
+                            <span>Error: 0x9 (MultiplierChanged) · 0 tokens transferred (Network fee charged)</span>
+                        </div>
+                    </div>
+                    <div class="proof-item proof-refresh">
+                        <div class="proof-head">
+                            <span class="status-tag refresh">REFRESH</span>
+                            <span class="proof-label">Refreshed Expectation Allowed</span>
+                        </div>
+                        <div class="proof-details mono-text">
+                            <span>Sig: <a href="https://explorer.solana.com/tx/4TZnvpKkdNkba69o74R1BBWrGgGvPX7jjRYEkM8n7AT9ZrbHjzfrftQMoqWorxRi9FMoVXJ7mvgdH8DiTV7AqhVy?cluster=devnet" target="_blank" rel="noopener">4TZnvpKk...AqhVy</a></span>
+                            <span>Slot: 500612820 · Source -0.10 · Destination +0.10</span>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <section class="card log-card">
@@ -75,7 +122,7 @@
         </main>
 
         <footer>
-            <p>Devnet proof · Phantom</p>
+            <p>Devnet Proof · Phantom Browser Wallet · EquityGuard</p>
         </footer>
     </div>
 
