@@ -11,10 +11,12 @@
     "packages/representation-state"
   ],
   "scripts": {
-    "typecheck": "tsc --project tsconfig.json && tsc --project apps/reference/tsconfig.json --noEmit",
+    "typecheck": "tsc --project tsconfig.json && tsc --project apps/reference/tsconfig.json --noEmit && tsc --project apps/devnet-wallet-demo/tsconfig.json --noEmit",
     "test": "node --test \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\" \"scripts/evidence/*.test.mjs\" \"apps/**/*.test.ts\"",
     "app:build": "node apps/reference/build/build.ts",
     "app:serve": "node apps/reference/build/serve.ts",
+    "wallet-demo:build": "npx tsx apps/devnet-wallet-demo/build/build.ts",
+    "wallet-demo:serve": "npx tsx apps/devnet-wallet-demo/build/serve.ts",
     "devnet": "node scripts/devnet/cli.ts",
     "devnet:guard-v2-proof": "node scripts/devnet/guard-v2-live-proof.ts",
     "observation:decode": "node scripts/observation/decode-capture.ts",

@@ -17,6 +17,7 @@ node_modules/
 
 # Reference app build output
 apps/reference/dist/
+apps/devnet-wallet-demo/dist/
 
 # Python fixture generators
 __pycache__/

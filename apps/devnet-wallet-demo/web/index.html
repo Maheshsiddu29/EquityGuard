@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EquityGuard · Live Devnet Proof</title>
+    <meta name="description" content="EquityGuard devnet wallet demo - Testing slippage protection for tokenized equities with corporate actions.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="banner-warning">
+        Devnet demonstration — no real securities or mainnet funds.
+    </div>
+    
+    <div class="container">
+        <header>
+            <h1>EquityGuard</h1>
+            <div class="badges">
+                <span id="devnet-badge" class="badge">Devnet</span>
+                <span id="program-badge" class="badge">Program Pending</span>
+            </div>
+        </header>
+
+        <main>
+            <section id="wallet-section" class="card">
+                <h2>Wallet</h2>
+                <button id="connect-btn" class="btn-primary">Connect Phantom</button>
+                <div class="wallet-info">
+                    <p>Address: <span id="wallet-address" class="mono-text">Not connected</span></p>
+                    <p>Balance: <span id="sol-balance" class="mono-text">0.00</span> SOL</p>
+                </div>
+            </section>
+
+            <section id="faucet-section" class="card">
+                <h2>Faucet</h2>
+                <p>You need devnet SOL to execute transactions.</p>
+                <button id="faucet-btn" class="btn-secondary" disabled>Get devnet SOL</button>
+                <p id="faucet-status" class="status-msg"></p>
+            </section>
+
+            <section id="asset-section" class="card">
+                <h2>Demo Asset (Token-2022)</h2>
+                <div class="asset-info">
+                    <p>Mint: <span id="mint-address" class="mono-text">None</span></p>
+                    <p>Balance: <span id="token-balance" class="mono-text">0</span></p>
+                </div>
+                <button id="create-asset-btn" class="btn-primary" disabled>Create Demo Asset</button>
+            </section>
+
+            <section id="step1-section" class="card">
+                <h2>Step 1: Protected Transfer</h2>
+                <p>Creates a transfer instruction bundled with an EquityGuard check against the current asset state.</p>
+                <button id="step1-btn" class="btn-primary" disabled>Execute Protected Transfer</button>
+                <div id="step1-result" class="result-container"></div>
+            </section>
+
+            <section id="step2-section" class="card">
+                <h2>Step 2: Stale-State Test</h2>
+                <p>Simulates a corporate action occurring after you received a quote but before your transaction lands. The guard should fail the transaction.</p>
+                <button id="step2-btn" class="btn-primary" disabled>Execute Stale Transfer</button>
+                <div id="step2-result" class="result-container"></div>
+            </section>
+
+            <section id="step3-section" class="card">
+                <h2>Step 3: Refresh & Retry</h2>
+                <p>Refreshes the quote with the post-corporate-action state and successfully executes the transfer.</p>
+                <button id="step3-btn" class="btn-primary" disabled>Refresh & Retry</button>
+                <div id="step3-result" class="result-container"></div>
+            </section>
+
+            <section class="card log-card">
+                <h2>Activity Log</h2>
+                <div id="activity-log" class="log-container mono-text"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Devnet proof · Phantom</p>
+        </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
