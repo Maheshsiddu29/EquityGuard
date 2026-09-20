@@ -1,0 +1,313 @@
+{
+  "kind": "equityguard-kox-trade-replay",
+  "schemaVersion": 1,
+  "description": "Authorization derived from recorded Sep 15 KOx mainnet state; protected action from an independent Sep 17 mainnet-derived Jupiter fixture; execution on local solana-test-validator. This is not a mainnet transaction or purchase.",
+  "recordedAt": "2026-09-20T22:04:03.799Z",
+  "marketEvidence": {
+    "asset": {
+      "name": "Coca-Cola",
+      "symbol": "KOx",
+      "mint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+      "decimals": 8
+    },
+    "environment": "SOLANA_MAINNET_READ_ONLY_CAPTURE",
+    "sourceCapture": {
+      "sourceFile": "ko-final-evidence-window.jsonl",
+      "sourceSha256": "f137feeda9b0340559f5a98cb7ec74fdd1741d515e5d231b3144f5a0f874eb06",
+      "eventWindowSha256": "d364d627e7f816bfaec549add64c2ba97c680483c571d1f28aea7967aa215abe",
+      "accountDataSha256": "3a5fdda06e4e678b6af829222021ea125a4b28e2c74d885d8e95cbcad8b6d876"
+    },
+    "preparedObservation": {
+      "blockTime": 1789432186,
+      "observedAt": "2026-09-15T00:29:47.501Z",
+      "slot": "447113427"
+    },
+    "scheduledActivation": "1789432200",
+    "postActivationObservation": {
+      "blockTime": 1789432216,
+      "observedAt": "2026-09-15T00:30:17.503Z",
+      "slot": "447113520"
+    },
+    "rawProtectedFields": {
+      "multiplierHex": "73833748164bf03f",
+      "newMultiplierHex": "df525701685cf03f",
+      "newMultiplierEffectiveTimestamp": "1789432200",
+      "expectedPhase": 0,
+      "window": {
+        "beforeSecs": 0,
+        "afterSecs": 0
+      }
+    },
+    "accountBytesIdenticalAcrossBoundary": true
+  },
+  "routeEvidence": {
+    "environment": "MAINNET_DERIVED_FIXTURE",
+    "captureTimestamp": "2026-09-17T00:54:45.096Z",
+    "accountsReadSlot": "447663736",
+    "fixtureSha256": "d5d76b2ccf222ea9f9a53e340a9cd76540a24e133966838168a726a428cc1914",
+    "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "outputMint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+    "inputAmountRaw": "5000000",
+    "inputAmount": "5",
+    "outputAmountRaw": "5504261",
+    "outputAmount": "0.05504261",
+    "minimumOutputRaw": "5476740",
+    "venue": "Whirlpool",
+    "pool": "BG7f49R2sb2UBCMu3AHuDmgDRyzqVgeMpDEk9S9gvQhy",
+    "commitmentHex": "b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a"
+  },
+  "localExecution": {
+    "environment": "solana-test-validator",
+    "executionDidNotOccurOnMainnet": true,
+    "genesisHash": "FXpp9e8tTt2MFBzc7A6TMKGxuCL9gAeZp9fFkTgmaCgw",
+    "clock": {
+      "slot": "447663874",
+      "unixTimestamp": "1789958583",
+      "phase": 1
+    },
+    "taker": "6ZuNEkQXE5WZzsmLH21sSmTXfff6iQKr6EtErcxxBxpy",
+    "accounts": {
+      "usdc": "Bze38ZNYkoKZXBWv7hGfqYkH4KBhAAmUkwPMNqNbzCRp",
+      "kox": "Cv8LSh7Udip71rxXVqyMKx7bY64ED6ToBE1fSeKGXPyv"
+    },
+    "binaries": [
+      {
+        "program": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+        "programData": "4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 63840,
+        "sha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46",
+        "tailIsZero": true
+      },
+      {
+        "program": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+        "programData": "BctLf2Q2KxwYHwDd584NxUzECjgoHeTfQX2LqCBcGjdm",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 105032,
+        "sha256": "6804554e69fd3a58caa191dc4a58f4c67223d30ca28ab8987f39fc18d2f7374d",
+        "tailIsZero": true
+      },
+      {
+        "program": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+        "programData": "4Ec7ZxZS6Sbdg5UGSLHbAnM7GQHp2eFd4KYWRexAipQT",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 2316760,
+        "sha256": "2312a4871d892a3d41bb11280d13599db6d5167dba01e320e7dd4911b58ff4a3",
+        "tailIsZero": true
+      },
+      {
+        "program": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+        "programData": "J4fqc9H8UsVySAv2Xj8o1nskDgJTy8WN8AjAY4LjEEvC",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 74800,
+        "sha256": "f520eaf096361abbb9639ea4dc3e5388a87b9330e121f476607b87c46ef67954",
+        "tailIsZero": true
+      },
+      {
+        "program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "programData": "3gvYRKWyXRR9xKWe1ZjPhLY5ZJRN7KDB4rFZFGoJfFk2",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 108600,
+        "sha256": "8190d3f7ceb6cb7a7a8d8924bff89f9f611e15ce1f806f2b6237f3311a98f697",
+        "tailIsZero": true
+      },
+      {
+        "program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        "programData": "DoU57AYuPFu2QU514RktNPG22QhApEjnKxnBcu4BHDTY",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 632560,
+        "sha256": "9bbf90b30e06778ca0feca100b29f0eeb9be576ae024f6323cc207308f51a5d1",
+        "tailIsZero": true
+      },
+      {
+        "program": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+        "programData": "CtXfPzz36dH5Ws4UYKZvrQ1Xqzn42ecDW6y8NKuiN8nD",
+        "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+        "loadedBytes": 1488104,
+        "sha256": "4b5cb126a352f68d716be62393c70abf276094d767701366f08c40c11789cfb4",
+        "tailIsZero": true
+      }
+    ]
+  },
+  "staleExecution": {
+    "authorizationSource": "SEALED_SEP_15_PRE_ACTIVATION_OBSERVATION",
+    "label": "STALE",
+    "authorization": {
+      "multiplierHex": "73833748164bf03f",
+      "newMultiplierHex": "df525701685cf03f",
+      "newMultiplierEffectiveTimestamp": "1789432200",
+      "expectedPhase": 0,
+      "window": {
+        "beforeSecs": 0,
+        "afterSecs": 0
+      }
+    },
+    "suffixCommitmentHex": "b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+    "derivedGuardDataHex": "0207e89b37f89d4291e411740e896b5fc25f2ff288564ff980a5b45ee5c37d645d73833748164bf03fdf525701685cf03f8891a86a0000000000000000000000000002b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+    "submittedGuardDataHex": "0207e89b37f89d4291e411740e896b5fc25f2ff288564ff980a5b45ee5c37d645d73833748164bf03fdf525701685cf03f8891a86a0000000000000000000000000002b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+    "guardDataUnchanged": true,
+    "clientVerdictOnWire": null,
+    "transactionBytes": 675,
+    "programs": [
+      "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+      "ComputeBudget111111111111111111111111111111",
+      "ComputeBudget111111111111111111111111111111",
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+      "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
+    ],
+    "invoked": [
+      "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT@1"
+    ],
+    "before": {
+      "usdc": "10000000",
+      "kox": null,
+      "lamports": "9999994559"
+    },
+    "after": {
+      "usdc": "10000000",
+      "kox": null,
+      "lamports": "9999989118"
+    },
+    "deltas": {
+      "usdc": "0",
+      "kox": "0"
+    },
+    "outcome": {
+      "signature": "3tR4WJVif4yFjrpEsYr7PW2y4dqd4H4oqPtou6ogDXZPixYJqcpUE9gERVzjBk6C31vTiPrDsT7j7kDJHA3zDqBG",
+      "slot": "447663875",
+      "succeeded": false,
+      "err": {
+        "InstructionError": [
+          "0",
+          {
+            "Custom": "12"
+          }
+        ]
+      },
+      "failedInstruction": 0,
+      "customCode": 12,
+      "guardErrorName": "ActivationPhaseChanged",
+      "computeUnitsConsumed": "10955",
+      "logs": [
+        "Program EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT invoke [1]",
+        "Program log: EquityGuard rejected: ActivationPhaseChanged",
+        "Program EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT consumed 10955 of 400000 compute units",
+        "Program EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT failed: custom program error: 0xc"
+      ]
+    }
+  },
+  "refreshedExecution": {
+    "authorizationSource": "SEALED_SEP_15_POST_ACTIVATION_OBSERVATION",
+    "label": "REFRESHED",
+    "authorization": {
+      "multiplierHex": "73833748164bf03f",
+      "newMultiplierHex": "df525701685cf03f",
+      "newMultiplierEffectiveTimestamp": "1789432200",
+      "expectedPhase": 1,
+      "window": {
+        "beforeSecs": 0,
+        "afterSecs": 0
+      }
+    },
+    "suffixCommitmentHex": "b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+    "derivedGuardDataHex": "0207e89b37f89d4291e411740e896b5fc25f2ff288564ff980a5b45ee5c37d645d73833748164bf03fdf525701685cf03f8891a86a0000000001000000000000000002b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+    "submittedGuardDataHex": "0207e89b37f89d4291e411740e896b5fc25f2ff288564ff980a5b45ee5c37d645d73833748164bf03fdf525701685cf03f8891a86a0000000001000000000000000002b4785517e2a0cc4614316abe71aa7085f44adba742093c8b4316edfccc93194a",
+    "guardDataUnchanged": true,
+    "clientVerdictOnWire": null,
+    "transactionBytes": 675,
+    "programs": [
+      "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+      "ComputeBudget111111111111111111111111111111",
+      "ComputeBudget111111111111111111111111111111",
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+      "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
+    ],
+    "invoked": [
+      "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT@1",
+      "ComputeBudget111111111111111111111111111111@1",
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL@1",
+      "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb@2",
+      "11111111111111111111111111111111@2",
+      "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4@1",
+      "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc@2",
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA@3",
+      "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb@3",
+      "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4@2"
+    ],
+    "before": {
+      "usdc": "10000000",
+      "kox": null,
+      "lamports": "9999989118"
+    },
+    "after": {
+      "usdc": "5000000",
+      "kox": "5504261",
+      "lamports": "9997846957"
+    },
+    "deltas": {
+      "usdc": "-5000000",
+      "kox": "5504261"
+    },
+    "outcome": {
+      "signature": "3xgppFaybmjxzmVMHygP3yaKJrLguBnapsmRgafuDLTmcxT5LjVrfQmjCThT8jR3TLBg9TRiHbp4Mgq3eTX1di4y",
+      "slot": "447663877",
+      "succeeded": true,
+      "err": null,
+      "failedInstruction": null,
+      "customCode": null,
+      "guardErrorName": null,
+      "computeUnitsConsumed": "81785",
+      "logs": [
+        "Program EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT invoke [1]",
+        "Program log: EquityGuard: safe",
+        "Program EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT consumed 10745 of 400000 compute units",
+        "Program EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT success",
+        "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+        "Program ComputeBudget111111111111111111111111111111 success",
+        "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+        "Program ComputeBudget111111111111111111111111111111 success",
+        "Program ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL invoke [1]",
+        "Program log: CreateIdempotent",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [2]",
+        "Program log: Instruction: GetAccountDataSize",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb consumed 2116 of 383690 compute units",
+        "Program return: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb swAAAAAAAAA=",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb success",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program log: Initialize the associated token account",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [2]",
+        "Program log: Instruction: InitializeImmutableOwner",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb consumed 736 of 376752 compute units",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb success",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [2]",
+        "Program log: Instruction: InitializeAccount3",
+        "Program log: Warning: Mint has a permanent delegate, so tokens in this account may be seized at any time",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb consumed 3682 of 373680 compute units",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb success",
+        "Program ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL consumed 19240 of 388955 compute units",
+        "Program ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL success",
+        "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 invoke [1]",
+        "Program log: Instruction: RouteV2",
+        "Program whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc invoke [2]",
+        "Program log: Instruction: SwapV2",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [3]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 105 of 332672 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [3]",
+        "Program log: Instruction: TransferChecked",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb consumed 3818 of 327809 compute units",
+        "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb success",
+        "Program data: 4cpJr5MroJaYdBuEFcBMRCfm0W/AnvubQWrxbX3hZPJL6HPu43qBfACzTWUpMZEy8wAAAAAAAAAAOAs3LkqiMvMAAAAAAAAAAEBLTAAAAAAABf1TAAAAAAAAAAAAAAAAAAAAAAAAAAAAc24AAAAAAACBEAAAAAAAAA==",
+        "Program whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc consumed 43803 of 365011 compute units",
+        "Program whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc success",
+        "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 invoke [2]",
+        "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 consumed 106 of 319176 compute units",
+        "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 success",
+        "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 consumed 51500 of 369715 compute units",
+        "Program return: JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 Bf1TAAAAAAA=",
+        "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 success"
+      ]
+    }
+  }
+}
