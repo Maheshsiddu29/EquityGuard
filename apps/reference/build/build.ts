@@ -33,7 +33,9 @@ function main() {
   execFileSync(process.execPath, [TSC, "--project", fileURLToPath(new URL("tsconfig.json", APP))], { stdio: "inherit" });
   const html = readFileSync(new URL("web/index.html", APP), "utf8");
   writeFileSync(new URL("index.html", DIST), embedState(html, state));
-  copyFileSync(new URL("web/styles.css", APP), new URL("styles.css", DIST));
+  const sharedCss = readFileSync(new URL("../shared/equityguard.css", APP), "utf8");
+  const appCss = readFileSync(new URL("web/styles.css", APP), "utf8");
+  writeFileSync(new URL("styles.css", DIST), `${sharedCss}\n${appCss}`);
   console.log(`reference app built: ${fileURLToPath(DIST)}`);
   for (const scenario of Object.values(state.scenarios)) {
     const d = scenario.decision;

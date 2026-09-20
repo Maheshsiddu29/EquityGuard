@@ -5,6 +5,13 @@ export interface PhantomProvider {
   disconnect(): Promise<void>;
   signTransaction(transaction: unknown): Promise<unknown>;
   signAndSendTransaction(transaction: unknown, options?: { skipPreflight?: boolean }): Promise<{ signature: string }>;
+  request(input: {
+    readonly method: "signAndSendTransaction" | "signTransaction";
+    readonly params: {
+      readonly message: string;
+      readonly options?: { readonly skipPreflight?: boolean };
+    };
+  }): Promise<unknown>;
   on(event: string, callback: (...args: unknown[]) => void): void;
   off(event: string, callback: (...args: unknown[]) => void): void;
 }

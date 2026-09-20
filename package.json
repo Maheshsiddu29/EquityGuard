@@ -15,8 +15,8 @@
     "test": "node --test \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\" \"scripts/evidence/*.test.mjs\" \"apps/**/*.test.ts\"",
     "app:build": "node apps/reference/build/build.ts",
     "app:serve": "node apps/reference/build/serve.ts",
-    "wallet-demo:build": "npx tsx apps/devnet-wallet-demo/build/build.ts",
-    "wallet-demo:serve": "npx tsx apps/devnet-wallet-demo/build/serve.ts",
+    "wallet-demo:build": "node apps/devnet-wallet-demo/build/build.ts",
+    "wallet-demo:serve": "node apps/devnet-wallet-demo/build/serve.ts",
     "devnet": "node scripts/devnet/cli.ts",
     "devnet:guard-v2-proof": "node scripts/devnet/guard-v2-live-proof.ts",
     "observation:decode": "node scripts/observation/decode-capture.ts",
@@ -34,10 +34,12 @@
   "dependencies": {
     "@solana-program/system": "0.14.1",
     "@solana-program/token-2022": "0.17.0",
-    "@solana/kit": "8.3.0"
+    "@solana/kit": "8.3.0",
+    "buffer": "6.0.3"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
+    "esbuild": "0.25.10",
     "typescript": "7.0.2"
   }
 }

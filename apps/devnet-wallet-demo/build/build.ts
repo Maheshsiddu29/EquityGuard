@@ -17,15 +17,14 @@ async function build() {
   }
 
   const cryptoShimPath = path.join(rootDir, "src", "crypto-shim.ts");
+  const bufferShimPath = path.join(rootDir, "src", "buffer-shim.ts");
   const entryPoint = path.join(rootDir, "src", "app.ts");
   const outFile = path.join(distDir, "app.js");
 
-  // Run esbuild via npx
+  const esbuild = path.join(repoRoot, "node_modules", "esbuild", "bin", "esbuild");
   execFileSync(
-    "npx",
+    esbuild,
     [
-      "-y",
-      "esbuild",
       entryPoint,
       "--bundle",
       `--outfile=${outFile}`,
@@ -34,6 +33,7 @@ async function build() {
       "--platform=browser",
       "--sourcemap",
       `--alias:node:crypto=${cryptoShimPath}`,
+      `--inject:${bufferShimPath}`,
       "--define:process.env.NODE_ENV=\"production\"",
       "--define:global=window",
     ],
@@ -42,7 +42,9 @@ async function build() {
 
   // Copy static web assets (index.html, styles.css) to dist/
   fs.copyFileSync(path.join(webDir, "index.html"), path.join(distDir, "index.html"));
-  fs.copyFileSync(path.join(webDir, "styles.css"), path.join(distDir, "styles.css"));
+  const sharedCss = fs.readFileSync(path.join(repoRoot, "apps", "shared", "equityguard.css"), "utf8");
+  const appCss = fs.readFileSync(path.join(webDir, "styles.css"), "utf8");
+  fs.writeFileSync(path.join(distDir, "styles.css"), `${sharedCss}\n${appCss}`);
 
   console.log(`Build complete! Static files ready in ${distDir}`);
 }

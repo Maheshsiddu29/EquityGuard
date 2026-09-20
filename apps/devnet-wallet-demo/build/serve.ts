@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, "..", "dist");
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4174;
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -44,6 +44,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`EquityGuard Devnet Wallet Demo serving on http://localhost:${PORT}`);
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(`EquityGuard Devnet Wallet Demo serving on http://127.0.0.1:${PORT}`);
 });

@@ -1,131 +1,40 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EquityGuard · Live Devnet Proof</title>
-    <meta name="description" content="EquityGuard devnet wallet demo - Real Phantom browser wallet proof for Token-2022 corporate-action protection.">
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">
+  <title>EquityGuard · Live Devnet Proof</title>
+  <meta name="description" content="Sign and confirm a live EquityGuard SAFE, BLOCK, REFRESH proof on Solana devnet with Phantom.">
+  <meta property="og:title" content="EquityGuard · Live Devnet Proof"><link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="banner-warning">
-        Fresh devnet demo token — not a security. This proof does not execute Jupiter or a mainnet transaction.
-    </div>
-    
-    <div class="container">
-        <header>
-            <div class="brand">
-                <h1>EquityGuard</h1>
-                <span class="subtitle">Live Devnet Proof</span>
-            </div>
-            <div class="header-right">
-                <div class="badges">
-                    <span id="devnet-badge" class="badge badge-devnet">LIVE DEVNET</span>
-                    <span id="program-badge" class="badge">Program Pending</span>
-                </div>
-                <a href="http://127.0.0.1:4173/" target="_blank" rel="noopener" class="nav-btn">← Reference Evidence</a>
-            </div>
-        </header>
+  <header class="shell topbar">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.5-2.8 8-7 9.6-4.2-1.6-7-5.1-7-9.6V6z"/><path d="M8.5 12l2.2 2.2 4.8-5"/></svg></span><span>EquityGuard</span><span class="product-tag">Live Devnet Proof</span></a>
+    <div class="nav-actions"><span id="devnet-badge" class="badge badge-wait">Checking devnet</span><span id="program-badge" class="badge badge-wait">Checking program</span><a class="button button-quiet" href="http://127.0.0.1:4173/">Reference evidence ↗</a></div>
+  </header>
+  <main class="shell wallet-page">
+    <section class="wallet-hero">
+      <div><span class="eyebrow">Real wallet · real transactions</span><h1>See stale state <span class="gradient-text">stop on-chain.</span></h1><p class="lede">Create a temporary Token-2022 asset, then sign SAFE, BLOCK, and REFRESH transactions with Phantom.</p><p class="disclosure">Fresh devnet demo token — not a security. No mainnet transaction and no Jupiter execution.</p></div>
+      <aside class="wallet-card card"><div class="wallet-avatar">◎</div><div><span class="small muted">Phantom wallet</span><strong id="wallet-address">Not connected</strong><span id="sol-balance" class="muted">—</span></div><button id="connect-btn" class="button button-primary">Connect Phantom</button><p id="wallet-status" class="small muted" aria-live="polite"></p><div class="faucet-row"><button id="faucet-btn" class="text-button" disabled>Get devnet SOL</button><span id="faucet-status" class="small muted"></span></div></aside>
+    </section>
 
-        <main>
-            <section id="wallet-section" class="card">
-                <h2>Wallet</h2>
-                <button id="connect-btn" class="btn-primary">Connect Phantom</button>
-                <div class="wallet-info">
-                    <p>Address: <span id="wallet-address" class="mono-text">Not connected</span></p>
-                    <p>Balance: <span id="sol-balance" class="mono-text">0.00</span> SOL</p>
-                </div>
-            </section>
+    <section class="setup card" aria-labelledby="setup-title"><div class="step-number">0</div><div class="step-copy"><span class="eyebrow">Prepare demo</span><h2 id="setup-title">Create demo asset</h2><p>Create a temporary Token-2022 demo asset for this proof.</p><div class="asset-line"><span>Mint <strong id="mint-address">Not created</strong></span><span id="token-balance">—</span></div></div><div class="step-action"><button id="create-asset-btn" class="button button-primary" disabled>Create Demo Asset</button><div id="setup-result" aria-live="polite"></div></div></section>
 
-            <section id="faucet-section" class="card">
-                <h2>Devnet SOL Faucet</h2>
-                <p>Transfer devnet SOL to your connected Phantom wallet to execute live transactions.</p>
-                <button id="faucet-btn" class="btn-secondary" disabled>Get devnet SOL</button>
-                <p id="faucet-status" class="status-msg"></p>
-            </section>
+    <section class="workflow" aria-labelledby="workflow-title"><div class="section-head"><span class="eyebrow">Live workflow</span><h2 id="workflow-title">SAFE → BLOCK → REFRESH</h2><p>Each button builds a transaction, opens Phantom, submits to devnet, waits for confirmation, and checks token balances.</p></div>
+      <div class="flow-grid">
+        <article class="flow-card card flow-safe"><div class="step-number">1</div><span class="state-word">SAFE</span><h3>Protected Transfer</h3><p>State matches the authorization.</p><div class="expected"><span>Expected</span><strong>Guard allows</strong></div><button id="safe-btn" class="button button-primary" disabled>Send Protected Transfer</button><div id="safe-result" aria-live="polite"></div></article>
+        <article class="flow-card card flow-block"><div class="step-number">2</div><span class="state-word">BLOCK</span><h3>Stale-State Test</h3><p>Use a deliberately stale economic-state expectation.</p><div class="expected"><span>Expected</span><strong>Guard rejects</strong></div><button id="block-btn" class="button button-primary" disabled>Try Stale Authorization</button><div id="block-result" aria-live="polite"></div></article>
+        <article class="flow-card card flow-refresh"><div class="step-number">3</div><span class="state-word">REFRESH</span><h3>Refresh Protection</h3><p>Bind a new authorization to current state.</p><div class="expected"><span>Expected</span><strong>Guard allows</strong></div><button id="refresh-btn" class="button button-primary" disabled>Refresh &amp; Retry</button><div id="refresh-result" aria-live="polite"></div></article>
+      </div>
+    </section>
 
-            <section id="asset-section" class="card">
-                <h2>Demo Asset (Token-2022)</h2>
-                <p>Fresh devnet demo token with ScaledUiAmount multiplier extension — not a security.</p>
-                <div class="asset-info">
-                    <p>Mint: <span id="mint-address" class="mono-text">None</span></p>
-                    <p>Balance: <span id="token-balance" class="mono-text">0</span></p>
-                </div>
-                <button id="create-asset-btn" class="btn-primary" disabled>Create Demo Asset</button>
-            </section>
+    <section class="recorded card"><div><span class="badge badge-wait">Recorded devnet proof</span><h2>Known proof, always available</h2><p class="muted">A previous Phantom session against the same reviewed deployment.</p></div><div class="proof-rows">
+      <div><strong>SAFE</strong><span>Confirmed</span><a href="https://explorer.solana.com/tx/3uExQAQZvMaTfcQzomSX5b1vumZhqfYJHEKMhh49BEynBicbH8qcKe999LbYndmAYNwWxEQoJirDy2kA34vGDNH?cluster=devnet" target="_blank" rel="noopener">View transaction ↗</a></div>
+      <div><strong>BLOCK</strong><span>Rejected at EquityGuard</span><a href="https://explorer.solana.com/tx/bTX3qQEytQQvryTKRD3UZcmAHWkZmFp5ToaDy29LMxGZff81TkTX4GkYi22ZA3DMn7aSGHAfHhGCeYiAUi7tpvw?cluster=devnet" target="_blank" rel="noopener">View transaction ↗</a></div>
+      <div><strong>REFRESH</strong><span>Confirmed</span><a href="https://explorer.solana.com/tx/4TZnvpKkdNkba69o74R1BBWrGgGvPX7jjRYEkM8n7AT9ZrbHjzfrftQMoqWorxRi9FMoVXJ7mvgdH8DiTV7AqhVy?cluster=devnet" target="_blank" rel="noopener">View transaction ↗</a></div>
+    </div><details><summary>Technical transaction IDs</summary><code>SAFE 3uExQAQZvMaTfcQzomSX5b1vumZhqfYJHEKMhh49BEynBicbH8qcKe999LbYndmAYNwWxEQoJirDy2kA34vGDNH<br>BLOCK bTX3qQEytQQvryTKRD3UZcmAHWkZmFp5ToaDy29LMxGZff81TkTX4GkYi22ZA3DMn7aSGHAfHhGCeYiAUi7tpvw<br>REFRESH 4TZnvpKkdNkba69o74R1BBWrGgGvPX7jjRYEkM8n7AT9ZrbHjzfrftQMoqWorxRi9FMoVXJ7mvgdH8DiTV7AqhVy</code></details></section>
 
-            <section id="step1-section" class="card">
-                <h2>Step 1: Protected Transfer</h2>
-                <p>Executes a transfer bundled with an EquityGuard check against the current asset state. Expectation matches live state.</p>
-                <button id="step1-btn" class="btn-primary" disabled>Execute Protected Transfer</button>
-                <div id="step1-result" class="result-container"></div>
-            </section>
-
-            <section id="step2-section" class="card">
-                <h2>Step 2: Stale-State Test</h2>
-                <p>Simulates a corporate action multiplier change after quote time. EquityGuard instruction 0 fails on-chain and prevents Token-2022 transfer settlement.</p>
-                <button id="step2-btn" class="btn-primary" disabled>Execute Stale Transfer</button>
-                <div id="step2-result" class="result-container"></div>
-            </section>
-
-            <section id="step3-section" class="card">
-                <h2>Step 3: Refresh & Retry</h2>
-                <p>Refreshes the expectation to match post-transition state and successfully executes the protected transfer.</p>
-                <button id="step3-btn" class="btn-primary" disabled>Refresh & Retry</button>
-                <div id="step3-result" class="result-container"></div>
-            </section>
-
-            <section id="fallback-section" class="card fallback-card">
-                <div class="fallback-header">
-                    <h2>Recorded Devnet Proof</h2>
-                    <span class="badge badge-recorded">RECORDED DEVNET PROOF</span>
-                </div>
-                <p class="muted">Verified on-chain transactions signed by Phantom Wallet <code class="mono-text">2jMicXzM68ecXLvWDikT92cLaKMQA8mePrQ9T6hPp6b5</code> against deployed program <code class="mono-text">EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT</code>.</p>
-                <div class="recorded-proofs">
-                    <div class="proof-item proof-allow">
-                        <div class="proof-head">
-                            <span class="status-tag allow">SAFE</span>
-                            <span class="proof-label">Protected Transfer Allowed</span>
-                        </div>
-                        <div class="proof-details mono-text">
-                            <span>Sig: <a href="https://explorer.solana.com/tx/3uExQAQZvMaTfcQzomSX5b1vumZhqfYJHEKMhh49BEynBicbH8qcKe999LbYndmAYNwWxEQoJirDy2kA34vGDNH?cluster=devnet" target="_blank" rel="noopener">3uExQAQZ...vGDNH</a></span>
-                            <span>Slot: 500612756 · Source -0.10 · Destination +0.10</span>
-                        </div>
-                    </div>
-                    <div class="proof-item proof-block">
-                        <div class="proof-head">
-                            <span class="status-tag block">BLOCK</span>
-                            <span class="proof-label">Stale Expectation Rejected at Instruction 0</span>
-                        </div>
-                        <div class="proof-details mono-text">
-                            <span>Sig: <a href="https://explorer.solana.com/tx/bTX3qQEytQQvryTKRD3UZcmAHWkZmFp5ToaDy29LMxGZff81TkTX4GkYi22ZA3DMn7aSGHAfHhGCeYiAUi7tpvw?cluster=devnet" target="_blank" rel="noopener">bTX3qQEy...tpvw</a></span>
-                            <span>Error: 0x9 (MultiplierChanged) · 0 tokens transferred (Network fee charged)</span>
-                        </div>
-                    </div>
-                    <div class="proof-item proof-refresh">
-                        <div class="proof-head">
-                            <span class="status-tag refresh">REFRESH</span>
-                            <span class="proof-label">Refreshed Expectation Allowed</span>
-                        </div>
-                        <div class="proof-details mono-text">
-                            <span>Sig: <a href="https://explorer.solana.com/tx/4TZnvpKkdNkba69o74R1BBWrGgGvPX7jjRYEkM8n7AT9ZrbHjzfrftQMoqWorxRi9FMoVXJ7mvgdH8DiTV7AqhVy?cluster=devnet" target="_blank" rel="noopener">4TZnvpKk...AqhVy</a></span>
-                            <span>Slot: 500612820 · Source -0.10 · Destination +0.10</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="card log-card">
-                <h2>Activity Log</h2>
-                <div id="activity-log" class="log-container mono-text"></div>
-            </section>
-        </main>
-
-        <footer>
-            <p>Devnet Proof · Phantom Browser Wallet · EquityGuard</p>
-        </footer>
-    </div>
-
-    <script type="module" src="app.js"></script>
-</body>
-</html>
+    <details class="technical card"><summary>View Technical Details</summary><div class="technical-grid"><div><span>Program ID</span><code>EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT</code></div><div><span>ProgramData</span><code>4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3</code></div><div><span>Reviewed ELF SHA-256</span><code>d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46</code></div><div><span>Devnet genesis</span><code>EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG</code></div><div><span>Connected wallet</span><code id="wallet-full">Not connected</code></div><div><span>Demo mint</span><code id="mint-full">Not created</code></div><div><span>Raw token balance</span><code id="token-raw">—</code></div><div><span>Current setup stage</span><code id="live-stage">READY</code></div><div><span>Current transaction signature</span><code id="live-signature">No signature returned</code></div></div><h3>Raw activity</h3><div id="activity-log" class="activity mono"></div></details>
+  </main>
+  <footer class="footer"><div class="shell footer-inner"><span>EquityGuard · Live Devnet Proof</span><span>Wallet signs. Solana confirms. EquityGuard decides first.</span></div></footer>
+  <script type="module" src="app.js"></script>
+</body></html>

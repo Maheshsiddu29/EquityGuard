@@ -3,23 +3,14 @@
  * a fresh ScaledUiAmount mint where it is both payer and mint/multiplier
  * authority. No committed secret, no pre-existing authority, no faucet server.
  *
- * The ephemeral keypair is used ONLY as the mint account signer during
- * creation. It is never:
- * - used as the user's wallet
- * - persisted to any storage
- * - logged or committed
- * - stored in localStorage/sessionStorage
- *
- * After mint creation, the keypair reference is cleared.
+ * The mint address is derived from the connected wallet plus a fresh random
+ * seed. This lets Phantom remain the transaction's only signer. The seed is
+ * used only to derive and create the mint account; it is not an authority or
+ * secret and is never persisted.
  */
 
-import {
-  generateKeyPairSigner,
-  getAddressEncoder,
-  type Address,
-  type Instruction,
-  type TransactionSigner,
-} from "@solana/kit";
+import { type Address, type Instruction, type TransactionSigner } from "@solana/kit";
+import { bytesEqual, decodeMintMetadata, decodeProtectedState } from "@equityguard/guard-client";
 import {
   TOKEN_2022_PROGRAM_ADDRESS,
   findAssociatedTokenPda,
@@ -31,17 +22,17 @@ import {
   getTransferCheckedInstruction,
   extension,
 } from "@solana-program/token-2022";
-import { getCreateAccountInstruction } from "@solana-program/system";
+import { getCreateAccountWithSeedInstruction } from "@solana-program/system";
 
 export const DEMO_MINT_DECIMALS = 6;
 export const DEMO_INITIAL_MULTIPLIER = 1.0;
 /** Amount to mint to the wallet's ATA (in base units, 1_000_000 = 1.0 token). */
 export const DEMO_MINT_AMOUNT = 1_000_000n;
 /** Amount for each test transfer. */
-export const DEMO_TRANSFER_AMOUNT = 1_000n;
+export const DEMO_TRANSFER_AMOUNT = 100_000n;
 
 export interface DemoAssetSetup {
-  /** The new mint address (public key only — ephemeral keypair is cleared). */
+  /** The new mint address derived from the connected wallet and random seed. */
   readonly mintAddress: Address;
   /** Source ATA owned by the wallet. */
   readonly sourceAta: Address;
@@ -49,6 +40,27 @@ export interface DemoAssetSetup {
   readonly destinationAta: Address;
   /** Throwaway recipient public key (for destination ATA derivation only). */
   readonly recipientAddress: Address;
+}
+
+const EXPECTED_MULTIPLIER = (() => {
+  const bytes = new Uint8Array(8);
+  new DataView(bytes.buffer).setFloat64(0, DEMO_INITIAL_MULTIPLIER, true);
+  return bytes;
+})();
+
+export function verifyDemoMintAccount(owner: string, data: Uint8Array): void {
+  const protectedState = decodeProtectedState(owner, data);
+  const metadata = decodeMintMetadata(owner, data);
+  if (metadata.decimals !== DEMO_MINT_DECIMALS) throw new Error(`Demo mint decimals were ${metadata.decimals}, expected ${DEMO_MINT_DECIMALS}`);
+  if (!bytesEqual(protectedState.multiplier, EXPECTED_MULTIPLIER) || !bytesEqual(protectedState.newMultiplier, EXPECTED_MULTIPLIER)) {
+    throw new Error("Demo mint ScaledUiAmount multiplier did not match the expected state");
+  }
+  if (protectedState.newMultiplierEffectiveTimestamp !== 0n) throw new Error("Demo mint ScaledUiAmount activation timestamp was not zero");
+}
+
+export function verifyDemoTokenAccountOwners(sourceOwner: string, destinationOwner: string): void {
+  if (sourceOwner !== TOKEN_2022_PROGRAM_ADDRESS) throw new Error("Source ATA owner is not Token-2022");
+  if (destinationOwner !== TOKEN_2022_PROGRAM_ADDRESS) throw new Error("Destination ATA owner is not Token-2022");
 }
 
 /**
@@ -71,30 +83,34 @@ export function demoMintSpace(authority: Address): number {
  * The payer is both mint authority and multiplier authority.
  *
  * @param payer Wallet signer (payer + authority)
- * @param mintSigner Ephemeral keypair signer for the mint account
+ * @param mintAddress Address derived from the connected wallet and seed
  * @param rentLamports Rent-exempt balance for the mint account
  */
 export function getCreateDemoMintInstructions(input: {
   readonly payer: TransactionSigner;
-  readonly mintSigner: TransactionSigner;
+  readonly mintAddress: Address;
+  readonly seed: string;
   readonly rentLamports: bigint;
 }): Instruction[] {
-  const { payer, mintSigner } = input;
+  const { payer, mintAddress } = input;
   return [
-    getCreateAccountInstruction({
+    getCreateAccountWithSeedInstruction({
       payer,
-      newAccount: mintSigner,
-      lamports: input.rentLamports,
+      newAccount: mintAddress,
+      base: payer.address,
+      baseAccount: payer,
+      seed: input.seed,
+      amount: input.rentLamports,
       space: demoMintSpace(payer.address),
       programAddress: TOKEN_2022_PROGRAM_ADDRESS,
     }),
     getInitializeScaledUiAmountMintInstruction({
-      mint: mintSigner.address,
+      mint: mintAddress,
       authority: payer.address,
       multiplier: DEMO_INITIAL_MULTIPLIER,
     }),
     getInitializeMint2Instruction({
-      mint: mintSigner.address,
+      mint: mintAddress,
       decimals: DEMO_MINT_DECIMALS,
       mintAuthority: payer.address,
     }),
