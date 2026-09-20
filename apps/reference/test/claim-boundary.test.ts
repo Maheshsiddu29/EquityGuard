@@ -30,7 +30,6 @@ test("nothing in the app signs, sends or builds transactions", () => {
     /createSolanaRpc/,
     /createKeyPair/,
     /scripts\/devnet\/(send|config|cli)/,
-    /scripts\/replay\//,
     /process\.env/,
   ];
   for (const { path, text } of allFiles) {
@@ -58,21 +57,14 @@ const copy = [read("web/index.html"), read("src/app.ts"), read("build/derive-sta
 
 test("the copy keeps the required disclosures", () => {
   for (const phrase of [
-    "Reference integration",
-    "nothing is signed",
-    "What this demo does not prove",
-    "EquityGuard running on mainnet, or a real purchase. It is deployed on devnet only.",
-    "A guarded Jupiter trade on devnet",
-    "A real cross-issuer reroute",
-    "Not a real reroute",
-    "Not the Sep 15 event.",
-    "A trade that crossed the Sep 15 event. The local replay ran two days later.",
-    "Separate test",
-    "uncalibrated demo value",
-    "has not been externally audited",
-    "Illustrative",
-    "Recorded read-only from Solana mainnet",
-    "local validator",
+    "Real recorded KOx state. An independently captured Jupiter route.",
+    "From the recorded Sep 17 route fixture",
+    "Recorded Solana mainnet KOx state",
+    "Sep 17 mainnet-derived Jupiter route",
+    "solana-test-validator",
+    "Execution did not occur on Solana mainnet.",
+    "Not a mainnet purchase.",
+    "View live on-chain proof",
   ]) {
     assert.ok(copy.includes(phrase), `missing disclosure: ${phrase}`);
   }

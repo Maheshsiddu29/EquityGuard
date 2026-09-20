@@ -1,8 +1,4 @@
-import type { ReferenceState, ScenarioId } from "./model.ts";
-
-const esc = (value: unknown) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] as string);
-const utc = (iso: string) => new Date(iso).toISOString().replace("T", " ").replace(".000Z", " UTC");
-const short = (value: string) => `${value.slice(0, 7)}…${value.slice(-7)}`;
+import type { ReferenceState } from "./model.ts";
 
 function loadState(): ReferenceState {
   const node = document.getElementById("eg-reference-state");
@@ -10,43 +6,70 @@ function loadState(): ReferenceState {
   return JSON.parse(node.textContent) as ReferenceState;
 }
 
-function scenarioDemo(state: ReferenceState, active: Exclude<ScenarioId, "consent">): string {
-  const scenario = state.scenarios[active];
-  const blocked = scenario.decision.type === "BLOCK";
-  const refreshed = active === "refreshed";
-  const rows = refreshed
-    ? [["New authorization", scenario.authorized.tag], ["Execution", scenario.current.tag]]
-    : [["State at authorization", scenario.authorized.tag], ["State at execution", scenario.current.tag]];
-  return `<div class="demo-panel demo-${active}">
-    <div class="demo-timeline">${rows.map(([label, value], index) => `<div class="state-point"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>${index === 0 ? '<div class="state-line"><span></span></div>' : ""}`).join("")}</div>
-    <div class="verdict"><span>Result</span><strong>${blocked ? "BLOCK" : "ALLOW"}</strong><p>${esc(scenario.headline)}. ${esc(scenario.detail)}</p></div>
-    <details><summary>View evidence details</summary><div class="evidence-detail"><div><span>Authorization time</span><code>${esc(utc(scenario.authorized.chainTime))}</code></div><div><span>Execution time</span><code>${esc(utc(scenario.current.chainTime))}</code></div><div><span>Multiplier</span><code>${esc(scenario.current.multiplier)}</code></div><div><span>New multiplier</span><code>${esc(scenario.current.newMultiplier)}</code></div><div><span>Activation T</span><code>${esc(utc(scenario.current.effectiveAt))}</code></div><div><span>Slot</span><code>${esc(scenario.current.slot)}</code></div><div><span>State fingerprint</span><code>${esc(scenario.current.fingerprint)}</code></div><div><span>Transaction commitment</span><code>Not applicable — guard-model replay</code></div></div></details>
-  </div>`;
+const byId = (id: string) => {
+  const node = document.getElementById(id);
+  if (!node) throw new Error(`missing UI node ${id}`);
+  return node;
+};
+const set = (id: string, value: string) => { byId(id).textContent = value; };
+const utcTime = (iso: string) => new Date(iso).toISOString().slice(11, 19) + " UTC";
+const short = (value: string) => `${value.slice(0, 7)}…${value.slice(-7)}`;
+const rawAmount = (raw: string, decimals: number) => {
+  const negative = raw.startsWith("-");
+  const digits = (negative ? raw.slice(1) : raw).padStart(decimals + 1, "0");
+  const whole = digits.slice(0, -decimals);
+  const fraction = digits.slice(-decimals).replace(/0+$/, "");
+  return `${negative ? "−" : "+"}${whole}${fraction ? `.${fraction}` : ""}`;
+};
+
+const stages = ["Preparing order", "Checking market state", "Attempting protected trade", "Order needs refresh", "Refreshing automatically", "Protected trade completed"] as const;
+
+function populate(state: ReferenceState): void {
+  set("asset-name", state.asset.name);
+  set("asset-symbol", state.asset.symbol);
+  set("pay-amount", `${state.order.inputAmount} ${state.order.inputSymbol}`);
+  set("receive-amount", `${state.order.estimatedOutput} ${state.order.outputSymbol}`);
+  set("prepared-time", utcTime(state.marketEvidence.preparedAt));
+  set("activation-time", utcTime(state.marketEvidence.activationAt));
+  set("post-time", utcTime(state.marketEvidence.postAt));
+  set("stale-guard", `${state.staleExecution.equityGuard} at instruction ${String(state.staleExecution.failedInstruction)}`);
+  set("stale-jupiter", state.staleExecution.jupiter.replace("_", " "));
+  set("stale-usdc", rawAmount(state.staleExecution.usdcDelta, 6));
+  set("stale-kox", rawAmount(state.staleExecution.koxDelta, state.asset.decimals));
+  set("refresh-guard", state.refreshedExecution.equityGuard);
+  set("refresh-jupiter", state.refreshedExecution.jupiter);
+  set("refresh-whirlpool", state.refreshedExecution.whirlpool);
+  set("refresh-usdc", rawAmount(state.refreshedExecution.usdcDelta, 6));
+  set("refresh-kox", rawAmount(state.refreshedExecution.koxDelta, state.asset.decimals));
+  set("route-date", new Date(state.routeEvidence.capturedAt).toISOString().slice(0, 10));
+  set("route-venue", state.routeEvidence.venue);
+  set("route-pool", short(state.routeEvidence.pool));
+  set("guard-program", short(state.localExecution.guardProgram));
+  set("guard-hash", short(state.localExecution.guardBinarySha256));
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-live-devnet]")) link.href = state.liveDevnetProofUrl;
 }
 
-function render(state: ReferenceState, active: Exclude<ScenarioId, "consent">): void {
-  const demo = document.getElementById("interactive-demo");
-  if (!demo) return;
-  demo.innerHTML = scenarioDemo(state, active);
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-scenario]")) {
-    const selected = button.dataset.scenario === active;
-    button.classList.toggle("selected", selected); button.setAttribute("aria-selected", String(selected));
+async function runReplay(button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  byId("trade-progress").classList.add("running");
+  byId("trade-result").hidden = true;
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-stage]")];
+  for (let i = 0; i < stages.length; i++) {
+    rows.forEach((row, index) => row.classList.toggle("active", index === i));
+    rows.slice(0, i).forEach((row) => row.classList.add("done"));
+    set("stage-live", stages[i]!);
+    await new Promise((resolve) => window.setTimeout(resolve, i === 3 ? 700 : 380));
   }
+  rows.forEach((row) => { row.classList.remove("active"); row.classList.add("done"); });
+  byId("trade-result").hidden = false;
+  button.textContent = "Replay complete";
 }
 
 function main(): void {
-  const state = loadState(); let active: Exclude<ScenarioId, "consent"> = "safe";
-  document.addEventListener("click", (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-scenario]");
-    const next = target?.dataset.scenario;
-    if (next === "safe" || next === "stale" || next === "refreshed") { active = next; render(state, active); }
-  });
-  const fields: Record<string, string> = {
-    "kox-effective": utc(state.divergence.kox.effectiveAt), "koon-effective": utc(state.divergence.koon.effectiveAt),
-    "replay-bytes": String(state.replay.transactionBytes), "guard-hash": short(state.replay.guardBinarySha256),
-  };
-  for (const [id, value] of Object.entries(fields)) { const node = document.getElementById(id); if (node) node.textContent = value; }
-  render(state, active);
+  const state = loadState();
+  populate(state);
+  const button = byId("run-trade") as HTMLButtonElement;
+  button.addEventListener("click", () => { void runReplay(button); });
 }
 
 main();

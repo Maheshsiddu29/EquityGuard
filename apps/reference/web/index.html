@@ -1,33 +1,66 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>EquityGuard · Stale-State Protection</title><meta name="description" content="Protect tokenized-stock trades from stale economic state with an atomic Solana guard."><link rel="stylesheet" href="styles.css"><!--EG_REFERENCE_STATE--><script type="module" src="app.js"></script></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>EquityGuard · Protected KOx Trade Replay</title>
+  <meta name="description" content="Replay an evidence-linked protected KOx purchase through EquityGuard, Jupiter, and Whirlpool.">
+  <link rel="stylesheet" href="styles.css">
+  <!--EG_REFERENCE_STATE-->
+  <script type="module" src="app.js"></script>
+</head>
 <body>
-  <header class="shell topbar"><a class="brand" href="#top"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.5-2.8 8-7 9.6-4.2-1.6-7-5.1-7-9.6V6z"/><path d="M8.5 12l2.2 2.2 4.8-5"/></svg></span><span>EquityGuard</span><span class="product-tag">Reference integration</span></a><nav class="nav-actions"><a class="button button-quiet" href="#proof">Evidence</a><a class="button button-primary" href="//127.0.0.1:4174/">Live Devnet Proof</a></nav></header>
-  <main id="top">
-    <section class="shell hero"><div class="hero-copy"><span class="eyebrow">Corporate-action-aware execution</span><h1>Protect tokenized-stock trades from <span class="gradient-text">stale economic state.</span></h1><p class="lede">The route may still be valid while the asset state is no longer what the user authorized.</p><div class="hero-actions"><a class="button button-primary" href="#how">See how it works</a><a class="button button-secondary" href="//127.0.0.1:4174/">Live Devnet Proof ↗</a></div><p class="hero-note">Recorded evidence only · nothing is signed · no wallet, RPC, or network access</p></div><div class="shield-visual soft-card" aria-label="A transaction moves from authorized state S through EquityGuard. A changed state S prime is stopped."><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="visual-state">S</div><div class="visual-shield"><svg viewBox="0 0 100 116"><path d="M50 5l42 16v34c0 27-17 49-42 58C25 104 8 82 8 55V21z"/><path d="M29 58l14 14 29-34"/></svg><span>CHECK</span></div><div class="visual-state changed">S′</div><div class="stop-line">stale authorization stops here</div></div></section>
+  <header class="shell topbar">
+    <a class="brand" href="#top"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.5-2.8 8-7 9.6-4.2-1.6-7-5.1-7-9.6V6z"/><path d="M8.5 12l2.2 2.2 4.8-5"/></svg></span><span>EquityGuard</span><span class="product-tag">Evidence replay</span></a>
+    <a class="button button-quiet" href="//127.0.0.1:4174/" data-live-devnet target="_blank" rel="noreferrer">View live on-chain proof ↗</a>
+  </header>
 
-    <section class="shell value-strip"><article><span class="value-icon allow">✓</span><div><strong>SAFE</strong><p>Allow when state still matches.</p></div></article><article><span class="value-icon block">×</span><div><strong>BLOCK</strong><p>Stop stale authorization before execution.</p></div></article><article><span class="value-icon refresh">↻</span><div><strong>REFRESH</strong><p>Rebind the transaction to current state.</p></div></article></section>
+  <main id="top" class="shell replay-page">
+    <section class="intro">
+      <span class="eyebrow">One-click protected trade replay</span>
+      <h1>Watch EquityGuard catch a stale <span class="gradient-text">KOx order.</span></h1>
+      <p>Real recorded KOx state. An independently captured Jupiter route. Compiled programs executing locally.</p>
+    </section>
 
-    <section id="how" class="how-section"><div class="shell"><div class="section-head"><span class="eyebrow">How it works</span><h2>The check happens where it matters.</h2><p>EquityGuard reads the economic state immediately before the protected action executes.</p></div><div class="three-stage"><div><span>01</span><strong>Trade prepared</strong><p>Authorization binds state S.</p></div><i>→</i><div><span>02</span><strong>EquityGuard checks state</strong><p>On-chain, at execution time.</p></div><i>→</i><div><span>03</span><strong>Execute or stop</strong><p>Match allows. Change blocks.</p></div></div><div class="transaction-card card"><span class="transaction-label">One Solana transaction</span><div class="instruction guard"><b>0</b><span><strong>EquityGuard</strong><small>Verify state + protected action</small></span></div><div class="down-arrow">↓</div><div class="instruction action"><b>1</b><span><strong>Protected Action</strong><small>Runs only if instruction 0 succeeds</small></span></div><p>If the guard fails, the transaction stops before the protected action.</p></div></div></section>
+    <section class="trade-layout">
+      <article class="trade-card card">
+        <div class="asset-row"><div class="stock-logo">KO</div><div><span id="asset-name">Coca-Cola</span><strong id="asset-symbol">KOx</strong></div><span class="side-pill">Buy</span></div>
+        <div class="amount-box"><span>You pay</span><strong id="pay-amount">5.00 USDC</strong></div>
+        <div class="swap-arrow">↓</div>
+        <div class="amount-box receive"><span>Estimated</span><strong id="receive-amount">0.05504261 KOx</strong><small>From the recorded Sep 17 route fixture</small></div>
+        <button id="run-trade" class="run-button">Run protected trade</button>
+        <p class="replay-note">Evidence replay · nothing is signed · no wallet, RPC, or network access</p>
+      </article>
 
-    <section class="shell section demo-section"><div class="section-head"><span class="eyebrow">Recorded mainnet evidence · guard-model replay</span><h2>See SAFE → BLOCK → REFRESH</h2><p>Adjacent recorded KOx observations around a real scheduled activation, evaluated by the frozen guard model. No mainnet transaction was sent.</p></div><div class="scenario-tabs" role="tablist"><button data-scenario="safe" role="tab" aria-selected="true">SAFE</button><button data-scenario="stale" role="tab" aria-selected="false">BLOCK</button><button data-scenario="refreshed" role="tab" aria-selected="false">REFRESH</button></div><div id="interactive-demo"></div></section>
+      <article id="trade-progress" class="progress-card card" aria-live="polite">
+        <div class="progress-head"><span>Protected execution</span><strong id="stage-live">Ready to replay</strong></div>
+        <ol class="stage-list">
+          <li data-stage><i></i><span>Preparing order</span></li>
+          <li data-stage><i></i><span>Checking market state</span></li>
+          <li data-stage><i></i><span>Attempting protected trade</span></li>
+          <li data-stage class="refresh-stage"><i></i><span>Order needs refresh</span><small>The asset changed after authorization. No tokens were exchanged.</small></li>
+          <li data-stage><i></i><span>Refreshing automatically</span></li>
+          <li data-stage><i></i><span>Protected trade completed</span></li>
+        </ol>
+        <div id="trade-result" class="trade-result" hidden><span>Completed</span><strong>0.05504261 KOx received</strong><p>The refreshed authorization passed, then Jupiter and Whirlpool executed.</p></div>
+      </article>
+    </section>
 
-    <section class="observation"><div class="shell"><div class="section-head"><span class="eyebrow">Real mainnet observation</span><h2>One event. Two update mechanisms.</h2><p>Coca-Cola representations were observed read-only around the same corporate-action period.</p></div><div class="observation-grid"><article class="card"><div class="stock-mark">KOx</div><span>xStocks</span><h3>Scheduled state activation</h3><p>New state was stored in advance, then activated when Solana Clock crossed T.</p><small id="kox-effective"></small></article><div class="gap-stat"><strong>25 min 56 sec</strong><span>between stored effective timestamps</span></div><article class="card"><div class="stock-mark ondo">KOon</div><span>Ondo</span><h3>Immediate-style state update</h3><p>The new multiplier appeared already active; no pending phase was observed.</p><small id="koon-effective"></small></article></div><div class="insight">Watching only for account-byte changes is insufficient for a Clock-driven activation.</div><details class="source-details"><summary>View source details</summary><p>KOx account bytes were byte-identical across the adjacent activation observations. The decoded effective phase changed as Solana Clock passed the stored activation timestamp.</p></details></div></section>
+    <details class="evidence-drawer card">
+      <summary><span>View what happened</span></summary>
+      <div class="evidence-grid">
+        <section><span class="layer">1 · Real market evidence</span><h2>Recorded Solana mainnet KOx state</h2><dl><div><dt>Prepared observation</dt><dd id="prepared-time"></dd></div><div><dt>Scheduled activation</dt><dd id="activation-time"></dd></div><div><dt>Post-activation observation</dt><dd id="post-time"></dd></div></dl><p>Account bytes were identical across the adjacent observations. Solana Clock changed the effective phase.</p></section>
+        <section><span class="layer">2 · Local execution proof</span><h2>Stale authorization rejected</h2><dl><div><dt>Environment</dt><dd>solana-test-validator</dd></div><div><dt>Authorization</dt><dd>Recorded pre-activation state</dd></div><div><dt>Protected action</dt><dd>Sep 17 mainnet-derived Jupiter route</dd></div><div><dt>EquityGuard</dt><dd id="stale-guard"></dd></div><div><dt>Jupiter</dt><dd id="stale-jupiter"></dd></div><div><dt>USDC movement</dt><dd id="stale-usdc"></dd></div><div><dt>KOx movement</dt><dd id="stale-kox"></dd></div></dl></section>
+        <section><span class="layer">3 · Refreshed execution</span><h2>Protected route completed</h2><dl><div><dt>Authorization</dt><dd>Recorded post-activation state</dd></div><div><dt>EquityGuard</dt><dd id="refresh-guard"></dd></div><div><dt>Jupiter</dt><dd id="refresh-jupiter"></dd></div><div><dt>Whirlpool</dt><dd id="refresh-whirlpool"></dd></div><div><dt>USDC</dt><dd id="refresh-usdc"></dd></div><div><dt>KOx</dt><dd id="refresh-kox"></dd></div></dl></section>
+      </div>
+      <div class="technical-strip"><div><span>Route captured</span><strong id="route-date"></strong></div><div><span>Venue</span><strong id="route-venue"></strong></div><div><span>Pool</span><code id="route-pool"></code></div><div><span>Guard program</span><code id="guard-program"></code></div><div><span>Reviewed ELF</span><code id="guard-hash"></code></div></div>
+      <p class="mainnet-boundary">Execution did not occur on Solana mainnet. The market state and route are independent mainnet-derived evidence; the guarded execution ran on local solana-test-validator.</p>
+    </details>
 
-    <section id="proof" class="shell section"><div class="section-head"><span class="eyebrow">Execution proof</span><h2>Evidence at three layers.</h2></div><div class="proof-grid"><article class="card"><span>01</span><h3>Real Mainnet Data</h3><p>Observed real economic-state changes across KOx, KOon, UNHx, UNHon, CRMx, and CRMon.</p><details><summary>Boundary</summary><p>Read-only observations. No EquityGuard mainnet deployment or transaction.</p></details></article><article class="card"><span>02</span><h3>Local Execution Replay</h3><p>Real Jupiter + Whirlpool binaries. Valid guarded route executed locally; stale and mutated cases stopped before Jupiter.</p><details><summary>Details</summary><p><span id="replay-bytes"></span>-byte recorded guarded transaction. This replay ran Sep 17, separately from the Sep 15 corporate-action observation.</p></details></article><article class="card"><span>03</span><h3>Live Devnet</h3><p>Real Phantom signatures against the reviewed EquityGuard deployment. SAFE → BLOCK → REFRESH.</p><details><summary>Identity</summary><p>Reviewed guard ELF <code id="guard-hash"></code>. Devnet only.</p></details></article></div></section>
-
-    <section class="metrics"><div class="shell metric-grid"><div><strong>19,986</strong><span>real observations</span></div><div><strong>294,527</strong><span>authorization / execution comparisons</span></div><div><strong>7,029 / 7,029</strong><span>stale pairs blocked</span></div><div><strong>1,000,000</strong><span>differential cases</span></div><div><strong>0</strong><span>TypeScript / Rust disagreements</span></div></div></section>
-
-    <section class="shell section integration"><div class="section-head"><span class="eyebrow">Integration</span><h2>Jupiter builds. EquityGuard protects. Wallet signs.</h2></div><pre class="card"><code>const build = await buildJupiterSwap({ quote, userPublicKey });
-const protectedSwap = await protectJupiterSwap({
-  build, userPublicKey, rpc,
-  protectionWindow: { beforeSecs: 60, afterSecs: 60 },
-});
-
-if (protectedSwap.status === "PROTECTED") {
-  await wallet.signAndSendTransaction(protectedSwap.transaction);
-}</code></pre></section>
-
-    <section class="shell limits"><details class="card"><summary>What this demo does not prove · limitations and technical details</summary><div class="limit-grid"><p><strong>Devnet deployment only.</strong> EquityGuard running on mainnet, or a real purchase. It is deployed on devnet only.</p><p><strong>Separate test.</strong> Not the Sep 15 event. A trade that crossed the Sep 15 event. The local replay ran two days later.</p><p><strong>Devnet boundary.</strong> A guarded Jupiter trade on devnet is not claimed; Jupiter is unavailable there.</p><p><strong>Illustrative route.</strong> Illustrative. Not a real reroute. A real cross-issuer reroute was not demonstrated.</p><p><strong>Uncalibrated windows.</strong> The 15 min / 5 min protection window is an uncalibrated demo value.</p><p><strong>Review status.</strong> EquityGuard has not been externally audited.</p><p><strong>Real source.</strong> Recorded read-only from Solana mainnet; the execution replay used a local validator.</p><p><strong>Strict support.</strong> Unsupported state semantics and Jupiter route shapes fail closed.</p><p><strong>Scalar state model.</strong> Mergers, spinoffs, and legal identity are outside the current model.</p><p><strong>Upgrade risk.</strong> The reviewed devnet program can be upgraded after client attestation and before landing.</p><p><strong>Package status.</strong> The SDK packages are currently unpublished.</p></div></details></section>
+    <section class="proof-callout"><div><span class="eyebrow">Separate on-chain evidence</span><h2>Want to sign the live devnet proof?</h2><p>The existing Phantom flow remains separate. It shows the reviewed EquityGuard deployment running on Solana devnet with a real wallet.</p></div><a class="button button-primary" href="//127.0.0.1:4174/" data-live-devnet target="_blank" rel="noreferrer">View live on-chain proof ↗</a></section>
   </main>
-  <footer class="footer"><div class="shell footer-inner"><span>EquityGuard · recorded evidence reference</span><span>Nothing on this page signs, sends, or reads a live network.</span></div></footer>
-</body></html>
+
+  <footer class="footer"><div class="shell footer-inner"><span>EquityGuard · evidence-linked reference integration</span><span>Not a mainnet purchase. No transaction is sent by this page.</span></div></footer>
+</body>
+</html>

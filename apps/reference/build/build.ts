@@ -37,10 +37,8 @@ function main() {
   const appCss = readFileSync(new URL("web/styles.css", APP), "utf8");
   writeFileSync(new URL("styles.css", DIST), `${sharedCss}\n${appCss}`);
   console.log(`reference app built: ${fileURLToPath(DIST)}`);
-  for (const scenario of Object.values(state.scenarios)) {
-    const d = scenario.decision;
-    console.log(`  ${scenario.id.padEnd(10)} ${d.type}${d.type === "ALLOW" ? "" : `: ${d.reason} (${d.guardResult})`}`);
-  }
+  console.log(`  stale      ${state.staleExecution.equityGuard} · Jupiter ${state.staleExecution.jupiter}`);
+  console.log(`  refreshed  ${state.refreshedExecution.equityGuard} · Jupiter ${state.refreshedExecution.jupiter}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

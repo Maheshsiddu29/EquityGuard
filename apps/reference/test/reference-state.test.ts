@@ -3,143 +3,79 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { koDivergenceFacts } from "../../../scripts/demo/mainnet-replay.ts";
-import { deriveReferenceState, loadReplayExcerpt } from "../build/derive-state.ts";
+import { ActivationPhase } from "@equityguard/guard-client";
+
+import { expectationView, loadKoxTradeEvidence } from "../../../scripts/demo/kox-trade-evidence.ts";
+import { deriveReferenceState, loadTradeReplay } from "../build/derive-state.ts";
 
 const state = deriveReferenceState();
-const replay = loadReplayExcerpt();
-const facts = koDivergenceFacts();
-const T = Date.parse(state.divergence.kox.effectiveAt);
+const replay = loadTradeReplay();
+const sealed = loadKoxTradeEvidence();
 
-test("the three-step flow is SAFE → BLOCK: ECONOMIC_STATE_CHANGED → ALLOW", () => {
-  const { safe, stale, refreshed } = state.scenarios;
-  assert.deepEqual(safe.decision, { type: "ALLOW", guardResult: null });
-  assert.deepEqual(stale.decision, { type: "BLOCK", reason: "ECONOMIC_STATE_CHANGED", guardResult: "ActivationPhaseChanged" });
-  assert.deepEqual(refreshed.decision, { type: "ALLOW", guardResult: null });
-  assert.equal(stale.authorized.fingerprint, safe.authorized.fingerprint);
-  assert.notEqual(stale.current.fingerprint, stale.authorized.fingerprint);
-  assert.equal(refreshed.authorized.fingerprint, stale.current.fingerprint);
-  // The Clock crossed T without any byte change: only the phase differs.
-  assert.equal(stale.authorized.multiplierHex, stale.current.multiplierHex);
-  assert.equal(stale.authorized.newMultiplierHex, stale.current.newMultiplierHex);
-  assert.deepEqual([stale.authorized.phase, stale.current.phase], ["PENDING", "ACTIVATED"]);
+test("stale and refreshed expectations derive from the adjacent sealed observations", () => {
+  assert.deepEqual(replay.staleExecution.authorization, expectationView(sealed.pre.expectation));
+  assert.deepEqual(replay.refreshedExecution.authorization, expectationView(sealed.post.expectation));
+  assert.equal(replay.staleExecution.authorization.expectedPhase, ActivationPhase.Pending);
+  assert.equal(replay.refreshedExecution.authorization.expectedPhase, ActivationPhase.Activated);
+  assert.deepEqual([sealed.pre.source.blockTime, sealed.post.source.blockTime], [1_789_432_186, 1_789_432_216]);
+  assert.equal(sealed.pre.expectation.expected.newMultiplierEffectiveTimestamp, 1_789_432_200n);
 });
 
-test("the stale case uses the adjacent real observations immediately around activation", () => {
-  const { safe, stale } = state.scenarios;
-  // Last pending and first activated observation of the curated window.
-  assert.deepEqual([stale.authorized.slot, stale.current.slot], ["447113427", "447113520"]);
-  const prepared = Date.parse(stale.authorized.chainTime);
-  const checked = Date.parse(stale.evaluatedAt);
-  assert.ok(prepared < T && T <= checked);
-  assert.ok(T - prepared <= 30_000 && checked - T <= 30_000, "both observations within one polling interval of T");
-  assert.equal(checked - prepared, 30_000);
-  assert.equal(safe.evaluatedAt, stale.authorized.chainTime);
-});
-
-test("the transition cases use a zero window and match the existing clock-crossing facts", () => {
-  const { safe, stale, refreshed } = state.scenarios;
-  for (const s of [safe, stale, refreshed]) assert.deepEqual([s.window.beforeSecs, s.window.afterSecs], [0, 0]);
-  const crossing = facts.koxClockCrossing;
-  assert.equal(crossing.pendingSnapshotZeroWindow.guardResult, stale.decision.guardResult);
-  assert.equal(crossing.freshActivatedSnapshotZeroWindow.guardResult, refreshed.decision.guardResult);
-  // The window note's claim: the demo window would have blocked these moments.
-  assert.equal(crossing.pendingSnapshotDemoWindow.guardResult, "InsideTransitionWindow");
-  assert.match(stale.window.note, /InsideTransitionWindow/);
-});
-
-test("the Sep 15 transition cases never draw on the Sep 17 local replay", () => {
-  const replayValues = [replay.route.outAmount, replay.route.otherAmountThreshold, ...replay.results.map((r) => r.suffixCommitmentHex), replay.recordedAt.slice(0, 10)];
-  for (const s of Object.values(state.scenarios)) {
-    assert.ok(!s.backing.some((b) => b.provenance === "LOCAL_REPLAY"), s.id);
-    const text = JSON.stringify(s);
-    for (const value of replayValues) assert.ok(!text.includes(value), `${s.id} contains replay value ${value}`);
-    assert.ok(!/Sep 17|replay/i.test(text), `${s.id} mentions the replay`);
-  }
-  assert.ok(!JSON.stringify(state.order).includes(replay.route.outAmount));
-});
-
-test("the local replay is described as a separate test after the event", () => {
-  const r = state.replay;
-  assert.ok(Date.parse(r.localClock) - T > 24 * 3600 * 1000, "the replay clock is days after activation");
-  assert.ok(Date.parse(r.routeObservedAt) - T > 24 * 3600 * 1000);
-  assert.equal(r.localClockPhase, "ACTIVATED");
-  const [safe, stale, mutated] = r.cases;
+test("the submitted stale authorization was unchanged and rejection came from execution", () => {
+  const stale = replay.staleExecution;
+  assert.equal(stale.guardDataUnchanged, true);
+  assert.equal(stale.submittedGuardDataHex, stale.derivedGuardDataHex);
   assert.deepEqual(
-    r.cases.map((c) => [c.label, c.decision.type, c.decision.guardResult, c.expectedPhase, c.jupiterRan]),
-    [
-      ["SAFE", "ALLOW", null, "ACTIVATED", true],
-      ["STALE_PRE_ACTIVATION", "BLOCK", "ActivationPhaseChanged", "PENDING", false],
-      ["MUTATED_SLIPPAGE", "BLOCK", "DownstreamCommitmentMismatch", "ACTIVATED", false],
-    ],
+    [stale.outcome.succeeded, stale.outcome.failedInstruction, stale.outcome.customCode, stale.outcome.guardErrorName],
+    [false, 0, 12, "ActivationPhaseChanged"],
   );
-  assert.equal(mutated?.decision.type === "BLOCK" && mutated.decision.reason, "INTENT_MISMATCH");
-  assert.match(stale?.description ?? "", /deliberately/);
-  assert.deepEqual([safe?.usdcDelta, safe?.stockDelta], ["-5000000", "5504261"]);
-  for (const c of [stale, mutated]) {
-    assert.deepEqual([c?.succeeded, c?.failedInstruction, c?.usdcDelta, c?.stockDelta, c?.programsInvoked, c?.feeLamports], [false, 0, "0", "0", 1, "5441"]);
+  assert.match(stale.outcome.signature, /^[1-9A-HJ-NP-Za-km-z]{80,90}$/);
+});
+
+test("stale execution stops before Jupiter and moves no tokens", () => {
+  assert.equal(replay.staleExecution.invoked.length, 1);
+  assert.match(replay.staleExecution.invoked[0] ?? "", /^EbzHfao/);
+  assert.ok(!replay.staleExecution.invoked.some((program) => program.startsWith("JUP6Lkb")));
+  assert.deepEqual(replay.staleExecution.deltas, { usdc: "0", kox: "0" });
+});
+
+test("refreshed execution uses the same route and executes Jupiter and Whirlpool", () => {
+  const refreshed = replay.refreshedExecution;
+  assert.equal(refreshed.outcome.succeeded, true);
+  assert.ok(refreshed.invoked.some((program) => program.startsWith("JUP6Lkb")));
+  assert.ok(refreshed.invoked.some((program) => program.startsWith("whirLb")));
+  assert.deepEqual(refreshed.deltas, { usdc: "-5000000", kox: "5504261" });
+  assert.equal(refreshed.suffixCommitmentHex, replay.staleExecution.suffixCommitmentHex);
+  assert.equal(refreshed.suffixCommitmentHex, replay.routeEvidence.commitmentHex);
+});
+
+test("frontend amounts and provenance come only from the structured replay", () => {
+  assert.deepEqual(state.order, { side: "Buy", inputAmount: "5.00", inputSymbol: "USDC", estimatedOutput: "0.05504261", outputSymbol: "KOx" });
+  assert.equal(state.asset.decimals, 8);
+  assert.equal(state.routeEvidence.outputRaw, "5504261");
+  assert.equal(state.routeEvidence.fixtureSha256, "d5d76b2ccf222ea9f9a53e340a9cd76540a24e133966838168a726a428cc1914");
+  assert.equal(state.marketEvidence.sourceSha256, "f137feeda9b0340559f5a98cb7ec74fdd1741d515e5d231b3144f5a0f874eb06");
+  assert.equal(state.localExecution.environment, "solana-test-validator");
+  assert.equal(state.localExecution.executionDidNotOccurOnMainnet, true);
+});
+
+test("browser contains no scenario selector or hard-coded economic phase", () => {
+  const app = readFileSync(new URL("../src/app.ts", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  for (const forbidden of [/data-scenario/, /ScenarioId/, /expectedPhase/, /ActivationPhase/, /multiplierHex/]) {
+    assert.ok(!forbidden.test(`${app}\n${html}`), `browser contains ${forbidden}`);
   }
+  assert.equal((html.match(/id="run-trade"/g) ?? []).length, 1);
 });
 
-test("the replay excerpt's expectations are the recorded KOx bytes", () => {
-  const { stale } = state.scenarios;
-  for (const r of replay.results) {
-    assert.equal(r.expectation.multiplierHex, stale.current.multiplierHex);
-    assert.equal(r.expectation.newMultiplierHex, stale.current.newMultiplierHex);
-    assert.equal(Number(r.expectation.newMultiplierEffectiveTimestamp) * 1000, T);
-  }
-});
-
-test("the consent case is secondary, from the decision engine, and illustrative", () => {
-  const { consent } = state.scenarios;
-  assert.equal(Object.keys(state.scenarios).at(-1), "consent");
-  assert.deepEqual(
-    Object.values(state.scenarios).filter((s) => s.illustrative).map((s) => s.id),
-    ["consent"],
-  );
-  for (const s of Object.values(state.scenarios).filter((s) => s.id !== "consent")) {
-    assert.ok(!s.backing.some((b) => b.provenance === "ILLUSTRATIVE"), s.id);
-  }
-  assert.equal(consent.decision.type, "REQUIRES_CONSENT");
-  if (consent.decision.type !== "REQUIRES_CONSENT") return;
-  assert.equal(consent.decision.reason, "REPRESENTATION_CHANGE");
-  assert.equal(consent.decision.guardResult, "InsideTransitionWindow");
-  assert.equal(consent.backing[0]?.provenance, "ILLUSTRATIVE");
-  assert.match(consent.headline, /^Illustrative/);
-  assert.match(consent.settlement, /never executes/);
-  assert.deepEqual([consent.window.beforeSecs, consent.window.afterSecs], [900, 300]);
-});
-
-test("the timeline carries the observed 25m 56s divergence and mechanisms", () => {
-  const { divergence } = state;
-  assert.equal(divergence.seconds, 25 * 60 + 56);
-  assert.equal(divergence.kox.effectiveAt, "2026-09-15T00:30:00Z");
-  assert.equal(divergence.koon.effectiveAt, "2026-09-15T00:04:04Z");
-  assert.equal(divergence.kox.bytesUnchangedAtActivation, true);
-  assert.equal(divergence.koon.pendingPhaseObserved, false);
-  assert.equal(divergence.kox.apiReason, "Dividend");
-  assert.deepEqual([divergence.kox.lastPendingBlockTime, divergence.kox.firstActivatedBlockTime], ["2026-09-15T00:29:46Z", "2026-09-15T00:30:16Z"]);
-});
-
-test("derivation is deterministic and traceable to its inputs", () => {
+test("derivation is deterministic and traceable", () => {
   assert.deepEqual(deriveReferenceState(), state);
-  const excerptSha = createHash("sha256").update(readFileSync(new URL("../data/local-replay-2026-09-17.json", import.meta.url))).digest("hex");
-  assert.ok(state.generatedFrom.some((g) => g.sha256 === excerptSha));
-  assert.ok(state.generatedFrom.some((g) => g.sha256 === replay.sourceSha256));
+  const artifact = readFileSync(new URL("../data/kox-trade-replay.json", import.meta.url));
+  const artifactSha = createHash("sha256").update(artifact).digest("hex");
+  assert.ok(state.generatedFrom.some((source) => source.sha256 === artifactSha));
 });
 
-// The full replay record lives in the gitignored tmp/; check the excerpt against it when present.
-const RECORD = new URL(`../../../tmp/m9d-c1/${replay.sourceFile}`, import.meta.url);
-test("the replay excerpt matches its local source record", { skip: !existsSync(RECORD) && "local replay record not present" }, () => {
-  const bytes = readFileSync(RECORD);
-  assert.equal(createHash("sha256").update(bytes).digest("hex"), replay.sourceSha256);
-  const record = JSON.parse(bytes.toString("utf8")) as {
-    localSnapshot: { unixTimestamp: string; phase: number };
-    results: { label: string; suffixCommitmentHex: string; outcome: { succeeded: boolean; guardErrorName: string | null } }[];
-  };
-  assert.deepEqual([record.localSnapshot.unixTimestamp, record.localSnapshot.phase], [replay.localClock.unixTimestamp, replay.localClock.phase]);
-  assert.deepEqual(
-    record.results.map((r) => [r.label, r.suffixCommitmentHex, r.outcome.succeeded, r.outcome.guardErrorName]),
-    replay.results.map((r) => [r.label, r.suffixCommitmentHex, r.succeeded, r.guardErrorName]),
-  );
+const LOCAL_REPORT = new URL("../../../tmp/m9d-c1/kox-trade-replay-final.json", import.meta.url);
+test("committed replay is byte-identical to the local execution output", { skip: !existsSync(LOCAL_REPORT) && "local replay output absent" }, () => {
+  assert.deepEqual(readFileSync(new URL("../data/kox-trade-replay.json", import.meta.url)), readFileSync(LOCAL_REPORT));
 });
