@@ -1,0 +1,58 @@
+/*
+ * Motion foundation.
+ *
+ * Two primitives only: a page-enter fade and a per-element reveal. Both are
+ * opt-in via data attributes, both resolve to the final visual state, and
+ * both are inert under prefers-reduced-motion — the reduced-motion block in
+ * base.css collapses their durations, and the rules at the end of this file
+ * remove the starting offsets so nothing can be left mid-transition.
+ */
+
+/* ---- Page enter ----
+ * Applied to <main>. The keyframe runs once; if the animation never starts
+ * (no support, reduced motion) the element is already at its final state. */
+.eg-page-enter {
+  animation: eg-page-enter var(--eg-duration-slow) var(--eg-ease-out) both;
+}
+
+@keyframes eg-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Reveal ----
+ * Elements marked [data-reveal] start offset only after the script confirms
+ * it will observe them, so a scripting failure leaves content visible. */
+[data-reveal][data-reveal-state="hidden"] {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+[data-reveal][data-reveal-state] {
+  transition:
+    opacity var(--eg-duration-slow) var(--eg-ease-out),
+    transform var(--eg-duration-slow) var(--eg-ease-out);
+  transition-delay: var(--eg-reveal-delay, 0ms);
+}
+
+[data-reveal][data-reveal-state="shown"] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eg-page-enter {
+    animation: none;
+  }
+
+  [data-reveal][data-reveal-state="hidden"] {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,0 +1,662 @@
+/*
+ * Component layer. Every rule reads tokens only.
+ *
+ * Glass is deliberately rationed: the floating navigation, hero-highlight
+ * surfaces, deliberately-promoted cards and overlays. Ordinary cards are
+ * opaque white so the page keeps a readable, non-hazy baseline.
+ */
+
+/* ============================================================
+ * Glass
+ * ============================================================ */
+
+.eg-glass {
+  background: var(--eg-glass-nav-fallback);
+  border: 1px solid var(--eg-glass-nav-border);
+  box-shadow: var(--eg-glass-nav-shadow), var(--eg-glass-nav-inset);
+}
+
+.eg-glass--hero {
+  background: var(--eg-glass-hero-fallback);
+  border-color: var(--eg-glass-hero-border);
+  box-shadow: var(--eg-glass-hero-shadow), var(--eg-glass-hero-inset);
+}
+
+.eg-glass--dark {
+  background: var(--eg-glass-dark-fallback);
+  border-color: var(--eg-glass-dark-border);
+  color: var(--eg-technical-text);
+  box-shadow: var(--eg-shadow-lg);
+}
+
+/* Translucency is opt-in on capability, so browsers without backdrop-filter
+ * keep the opaque fallback above rather than an unreadable wash. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .eg-glass {
+    background: var(--eg-glass-nav-bg);
+    -webkit-backdrop-filter: blur(var(--eg-glass-nav-blur)) saturate(160%);
+    backdrop-filter: blur(var(--eg-glass-nav-blur)) saturate(160%);
+  }
+
+  .eg-glass--hero {
+    background: var(--eg-glass-hero-bg);
+    -webkit-backdrop-filter: blur(var(--eg-glass-hero-blur)) saturate(150%);
+    backdrop-filter: blur(var(--eg-glass-hero-blur)) saturate(150%);
+  }
+
+  .eg-glass--dark {
+    background: var(--eg-glass-dark-bg);
+    -webkit-backdrop-filter: blur(var(--eg-glass-dark-blur)) saturate(140%);
+    backdrop-filter: blur(var(--eg-glass-dark-blur)) saturate(140%);
+  }
+}
+
+/* ============================================================
+ * Buttons and links
+ * ============================================================ */
+
+.eg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--eg-space-2);
+  min-height: 44px;
+  padding-inline: var(--eg-space-5);
+  border: 1px solid transparent;
+  border-radius: var(--eg-radius-input);
+  font-size: var(--eg-text-body);
+  font-weight: var(--eg-weight-semibold);
+  letter-spacing: var(--eg-tracking-body);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    transform var(--eg-duration-fast) var(--eg-ease-out),
+    box-shadow var(--eg-duration) var(--eg-ease-out),
+    background-color var(--eg-duration) var(--eg-ease-out),
+    border-color var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-btn--primary {
+  background: var(--eg-primary);
+  color: #ffffff;
+  box-shadow: var(--eg-shadow-sm);
+}
+
+.eg-btn--primary:hover {
+  background: var(--eg-primary-strong);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: var(--eg-shadow-md);
+}
+
+.eg-btn--secondary {
+  background: var(--eg-surface);
+  border-color: var(--eg-border);
+  color: var(--eg-text);
+  box-shadow: var(--eg-shadow-xs);
+}
+
+.eg-btn--secondary:hover {
+  border-color: #cfdaec;
+  color: var(--eg-text);
+  transform: translateY(-1px);
+  box-shadow: var(--eg-shadow-sm);
+}
+
+.eg-btn--glass {
+  background: var(--eg-glass-hero-fallback);
+  border-color: var(--eg-glass-hero-border);
+  color: var(--eg-text);
+  box-shadow: var(--eg-shadow-xs);
+}
+
+.eg-btn:active {
+  transform: translateY(0);
+}
+
+.eg-btn:disabled,
+.eg-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+.eg-btn--wide {
+  width: 100%;
+}
+
+/* Text link with an optional directional arrow that leads on hover. */
+.eg-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--eg-space-2);
+  color: var(--eg-text);
+  font-weight: var(--eg-weight-semibold);
+  transition: color var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-link:hover {
+  color: var(--eg-primary);
+}
+
+.eg-link__arrow {
+  display: inline-block;
+  transition: transform var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-link:hover .eg-link__arrow {
+  transform: translateX(3px);
+}
+
+/* ============================================================
+ * Cards
+ * ============================================================ */
+
+.eg-card {
+  padding: var(--eg-space-6);
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-card);
+  background: var(--eg-surface);
+  box-shadow: var(--eg-shadow-xs);
+  transition:
+    transform var(--eg-duration) var(--eg-ease-out),
+    box-shadow var(--eg-duration) var(--eg-ease-out),
+    border-color var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-card--lg {
+  padding: var(--eg-space-8);
+  border-radius: var(--eg-radius-card-lg);
+}
+
+.eg-card--hero {
+  padding: var(--eg-space-8);
+  border-radius: var(--eg-radius-hero);
+}
+
+/* Only interactive cards lift; static cards stay put. */
+.eg-card--interactive:hover {
+  transform: translateY(-2px);
+  border-color: #cfdaec;
+  box-shadow: var(--eg-shadow-md);
+}
+
+.eg-card--technical {
+  border-color: var(--eg-technical-border);
+  background: var(--eg-technical);
+  color: var(--eg-technical-text);
+  box-shadow: var(--eg-shadow-lg);
+}
+
+.eg-card--technical h2,
+.eg-card--technical h3,
+.eg-card--technical h4 {
+  color: var(--eg-technical-text);
+}
+
+.eg-card--technical .eg-eyebrow {
+  color: var(--eg-secondary);
+}
+
+.eg-card--technical .eg-text-secondary,
+.eg-card--technical p {
+  color: var(--eg-technical-muted);
+}
+
+.eg-card__title {
+  font-size: var(--eg-text-h3);
+}
+
+/* ============================================================
+ * Status badge — shape and text carry the meaning, not colour alone
+ * ============================================================ */
+
+.eg-badge {
+  display: inline-flex;
+  align-items: center;
+  /* Hugs its content inside a stacked (grid) card rather than stretching. */
+  justify-self: start;
+  width: fit-content;
+  gap: var(--eg-space-2);
+  padding: 5px var(--eg-space-3);
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-pill);
+  background: var(--eg-surface);
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+  font-weight: var(--eg-weight-semibold);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.eg-badge__glyph {
+  font-size: 0.75em;
+  line-height: 1;
+}
+
+.eg-badge--ok {
+  border-color: #c8e7dc;
+  background: var(--eg-success-bg);
+  color: var(--eg-success-text);
+}
+
+.eg-badge--blocked {
+  border-color: #f0d2d2;
+  background: var(--eg-blocked-bg);
+  color: var(--eg-blocked-text);
+}
+
+.eg-badge--info {
+  border-color: #cfdcfb;
+  background: var(--eg-blue-light);
+  color: var(--eg-primary);
+}
+
+/* ============================================================
+ * Evidence row and metric
+ * ============================================================ */
+
+.eg-evidence {
+  display: grid;
+  gap: 0;
+}
+
+.eg-evidence-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--eg-space-3);
+  padding-block: var(--eg-space-3);
+  border-block-end: 1px solid var(--eg-border);
+}
+
+.eg-evidence-row:last-child {
+  border-block-end: 0;
+}
+
+.eg-evidence-row__label {
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+}
+
+.eg-evidence-row__value {
+  font-family: var(--eg-font-mono);
+  font-size: var(--eg-text-technical);
+  font-weight: var(--eg-weight-medium);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.eg-card--technical .eg-evidence-row {
+  border-block-end-color: var(--eg-technical-border);
+}
+
+.eg-card--technical .eg-evidence-row__label {
+  color: var(--eg-technical-muted);
+}
+
+.eg-metric {
+  display: grid;
+  gap: var(--eg-space-1);
+}
+
+.eg-metric__value {
+  font-size: var(--eg-text-h2);
+  font-weight: var(--eg-weight-bold);
+  letter-spacing: var(--eg-tracking-heading);
+  line-height: 1.1;
+}
+
+.eg-metric__label {
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+}
+
+/* ============================================================
+ * Diagram frame and code block
+ * ============================================================ */
+
+.eg-diagram {
+  display: grid;
+  gap: var(--eg-space-4);
+  padding: var(--eg-space-6);
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-card-lg);
+  /* A drafting grid, not graph paper: one step lighter than a real border. */
+  background:
+    linear-gradient(to right, var(--eg-grid-line) 1px, transparent 1px) 0 0 /
+      36px 36px,
+    linear-gradient(to bottom, var(--eg-grid-line) 1px, transparent 1px) 0 0 /
+      36px 36px,
+    var(--eg-surface);
+}
+
+.eg-diagram__caption {
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+}
+
+.eg-code {
+  margin: 0;
+  padding: var(--eg-space-5);
+  border: 1px solid var(--eg-technical-border);
+  border-radius: var(--eg-radius-card);
+  background: var(--eg-technical);
+  color: var(--eg-technical-text);
+  font-family: var(--eg-font-mono);
+  font-size: var(--eg-text-technical);
+  line-height: 1.6;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+.eg-code__caption {
+  display: block;
+  margin-block-end: var(--eg-space-3);
+  color: var(--eg-technical-muted);
+  font-size: var(--eg-text-eyebrow);
+  letter-spacing: var(--eg-tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+/* ============================================================
+ * Floating pill navigation
+ * ============================================================ */
+
+.eg-nav-wrap {
+  position: fixed;
+  inset-block-start: var(--eg-space-4);
+  inset-inline: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--eg-gutter);
+  pointer-events: none;
+}
+
+.eg-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--eg-space-4);
+  width: 100%;
+  max-width: var(--eg-max-width);
+  min-height: var(--eg-nav-height);
+  padding: var(--eg-space-2) var(--eg-space-2) var(--eg-space-2)
+    var(--eg-space-5);
+  border-radius: var(--eg-radius-pill);
+  pointer-events: auto;
+  transition: box-shadow var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--eg-space-2);
+  color: var(--eg-text);
+  font-size: 1.0625rem;
+  font-weight: var(--eg-weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.eg-nav__mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--eg-radius-sm);
+  background: var(--eg-primary);
+  color: #ffffff;
+}
+
+.eg-nav__mark svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eg-nav__links {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--eg-space-1);
+  margin-inline: auto;
+  list-style: none;
+}
+
+/* The travelling pill sits behind the links; JS writes its position into the
+ * custom properties below, so there is no layout thrash per hover. */
+.eg-nav__indicator {
+  position: absolute;
+  inset-block: 4px;
+  inset-inline-start: 0;
+  width: var(--eg-pill-width, 0);
+  border-radius: var(--eg-radius-pill);
+  background: var(--eg-blue-light);
+  transform: translateX(var(--eg-pill-x, 0));
+  opacity: var(--eg-pill-opacity, 0);
+  pointer-events: none;
+  transition:
+    transform var(--eg-duration) var(--eg-ease-pill),
+    width var(--eg-duration) var(--eg-ease-pill),
+    opacity var(--eg-duration-fast) var(--eg-ease-out);
+}
+
+/* First paint must not animate in from x=0. */
+.eg-nav__indicator[data-initial] {
+  transition: none;
+}
+
+.eg-nav__link {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--eg-space-2) var(--eg-space-4);
+  border-radius: var(--eg-radius-pill);
+  color: var(--eg-text-secondary);
+  font-size: 0.9375rem;
+  font-weight: var(--eg-weight-medium);
+  transition: color var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-nav__link:hover {
+  color: var(--eg-text);
+}
+
+.eg-nav__link[aria-current="page"] {
+  color: var(--eg-primary);
+  font-weight: var(--eg-weight-semibold);
+}
+
+/* Without JS the active route still reads as a pill. */
+.eg-nav__links:not([data-enhanced]) .eg-nav__link[aria-current="page"] {
+  background: var(--eg-blue-light);
+}
+
+.eg-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--eg-space-2);
+}
+
+.eg-nav__actions .eg-btn {
+  min-height: 40px;
+  padding-inline: var(--eg-space-4);
+  font-size: 0.9375rem;
+}
+
+.eg-nav__toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--eg-radius-pill);
+  color: var(--eg-text);
+  transition: background-color var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-nav__toggle:hover {
+  background: var(--eg-primary-soft);
+}
+
+.eg-nav__toggle-bars {
+  display: grid;
+  gap: 5px;
+  width: 18px;
+}
+
+.eg-nav__toggle-bars span {
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: transform var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-nav__toggle[aria-expanded="true"] .eg-nav__toggle-bars span:first-child {
+  transform: translateY(3.5px) rotate(45deg);
+}
+
+.eg-nav__toggle[aria-expanded="true"] .eg-nav__toggle-bars span:last-child {
+  transform: translateY(-3.5px) rotate(-45deg);
+}
+
+/* ---- Mobile sheet ---- */
+.eg-mobile-nav {
+  position: absolute;
+  inset-block-start: calc(var(--eg-nav-height) + var(--eg-space-3));
+  inset-inline: var(--eg-gutter);
+  z-index: 49;
+  display: grid;
+  gap: var(--eg-space-1);
+  max-width: var(--eg-max-width);
+  margin-inline: auto;
+  padding: var(--eg-space-3);
+  border-radius: var(--eg-radius-card-lg);
+  pointer-events: auto;
+  transform-origin: top center;
+  transition:
+    opacity var(--eg-duration) var(--eg-ease-out),
+    transform var(--eg-duration) var(--eg-ease-out);
+}
+
+.eg-mobile-nav[hidden] {
+  display: none;
+}
+
+.eg-mobile-nav[data-state="closed"] {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+}
+
+.eg-mobile-nav[data-state="open"] {
+  opacity: 1;
+  transform: none;
+}
+
+.eg-mobile-nav__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--eg-space-3);
+  min-height: 48px;
+  padding-inline: var(--eg-space-4);
+  border-radius: var(--eg-radius-card);
+  color: var(--eg-text);
+  font-weight: var(--eg-weight-medium);
+}
+
+.eg-mobile-nav__link[aria-current="page"] {
+  background: var(--eg-blue-light);
+  color: var(--eg-primary);
+  font-weight: var(--eg-weight-semibold);
+}
+
+.eg-mobile-nav__link:hover {
+  background: var(--eg-primary-soft);
+}
+
+.eg-mobile-nav .eg-btn {
+  margin-block-start: var(--eg-space-2);
+}
+
+@media (max-width: 880px) {
+  .eg-nav {
+    justify-content: space-between;
+    padding-inline: var(--eg-space-4) var(--eg-space-2);
+  }
+
+  .eg-nav__links,
+  .eg-nav__actions {
+    display: none;
+  }
+
+  .eg-nav__toggle {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 881px) {
+  .eg-mobile-nav {
+    display: none;
+  }
+}
+
+/* ============================================================
+ * Footer
+ * ============================================================ */
+
+.eg-footer {
+  margin-block-start: var(--eg-section-y);
+  border-block-start: 1px solid var(--eg-border);
+  padding-block: var(--eg-space-10) var(--eg-space-12);
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+}
+
+.eg-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--eg-space-8);
+}
+
+.eg-footer__brand {
+  display: grid;
+  gap: var(--eg-space-2);
+  max-width: 34ch;
+}
+
+.eg-footer__name {
+  color: var(--eg-text);
+  font-weight: var(--eg-weight-bold);
+}
+
+.eg-footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--eg-space-6);
+  list-style: none;
+}
+
+.eg-footer__nav a {
+  color: var(--eg-text-secondary);
+}
+
+.eg-footer__nav a:hover {
+  color: var(--eg-primary);
+}
+
+.eg-footer__note {
+  width: 100%;
+  margin-block-start: var(--eg-space-6);
+  padding-block-start: var(--eg-space-6);
+  border-block-start: 1px solid var(--eg-border);
+  max-width: none;
+}

@@ -1,0 +1,120 @@
+/*
+ * Layout primitives: Container and Section, plus the section-head trio
+ * (eyebrow / heading / intro) that every page uses to open a block.
+ */
+
+.eg-container {
+  width: 100%;
+  max-width: calc(var(--eg-max-width) + (var(--eg-gutter) * 2));
+  margin-inline: auto;
+  padding-inline: var(--eg-gutter);
+}
+
+.eg-container--narrow {
+  max-width: calc(880px + (var(--eg-gutter) * 2));
+}
+
+.eg-section {
+  padding-block: var(--eg-section-y);
+}
+
+.eg-section--tight {
+  padding-block: calc(var(--eg-section-y) * 0.55);
+}
+
+.eg-section--first {
+  /* Clears the floating navigation without doubling the section rhythm. */
+  padding-block-start: calc(var(--eg-nav-height) + var(--eg-space-16));
+}
+
+.eg-section + .eg-section {
+  padding-block-start: 0;
+}
+
+.eg-section-head {
+  display: grid;
+  gap: var(--eg-space-4);
+  max-width: var(--eg-measure);
+  margin-block-end: var(--eg-space-10);
+}
+
+.eg-section-head--center {
+  justify-items: center;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.eg-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--eg-space-2);
+  color: var(--eg-primary);
+  font-size: var(--eg-text-eyebrow);
+  font-weight: var(--eg-weight-semibold);
+  letter-spacing: var(--eg-tracking-eyebrow);
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.eg-heading--display-xl {
+  font-size: var(--eg-text-display-xl);
+  line-height: var(--eg-leading-display);
+  letter-spacing: var(--eg-tracking-display);
+}
+
+.eg-heading--display {
+  font-size: var(--eg-text-display);
+  line-height: var(--eg-leading-display);
+  letter-spacing: var(--eg-tracking-display);
+}
+
+.eg-intro {
+  max-width: var(--eg-measure);
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-body-lg);
+  line-height: 1.58;
+}
+
+.eg-section-head--center .eg-intro {
+  max-width: var(--eg-measure-tight);
+}
+
+.eg-text-small {
+  font-size: var(--eg-text-small);
+  line-height: 1.5;
+}
+
+.eg-text-secondary {
+  color: var(--eg-text-secondary);
+}
+
+.eg-text-technical {
+  font-family: var(--eg-font-mono);
+  font-size: var(--eg-text-technical);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Auto-fitting card grid; the floor keeps cards from collapsing on tablet. */
+.eg-grid {
+  display: grid;
+  gap: var(--eg-space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.eg-grid--2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+}
+
+.eg-stack {
+  display: grid;
+  gap: var(--eg-space-4);
+  align-content: start;
+}
+
+.eg-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--eg-space-3);
+}

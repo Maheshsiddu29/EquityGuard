@@ -1,0 +1,179 @@
+/*
+ * EquityGuard design tokens.
+ *
+ * Every colour, type step, space, radius, shadow, glass surface and motion
+ * curve used by the site resolves through a token declared here. Components
+ * never hard-code a hex value, so a palette change is a one-file change.
+ *
+ * The palette is locked: deep-navy text on a cool near-white field, a single
+ * blue brand ramp, and semantic green/red reserved for guard outcomes.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Colour: surfaces and text ---- */
+  --eg-bg: #f6f8fb;
+  --eg-surface: #ffffff;
+  --eg-text: #0b1739;
+  --eg-text-secondary: #5f6c83;
+  --eg-border: #e3e9f2;
+  --eg-grid-line: #eef2f8;
+
+  /* ---- Colour: brand ---- */
+  --eg-primary: #1f4fd6;
+  --eg-primary-strong: #1a43b8;
+  --eg-secondary: #4f7cff;
+  --eg-blue-light: #eaf1ff;
+
+  /* ---- Colour: guard semantics ---- */
+  --eg-success: #14866d;
+  --eg-success-bg: #eaf7f2;
+  --eg-blocked: #c84d4d;
+  --eg-blocked-bg: #fbecec;
+
+  /* The two colours above are the semantic identity — glyphs, rules, borders
+   * and display-sized text. On their own tinted backgrounds they reach only
+   * 4.1:1 and 4.0:1, so small text uses these darkened members of the same
+   * hue instead (5.5:1 and 5.0:1). */
+  --eg-success-text: #11705c;
+  --eg-blocked-text: #b23e3e;
+
+  /* Same semantics lifted for legibility on the technical surface. */
+  --eg-success-bright: #1fa98a;
+  --eg-blocked-bright: #e06a6a;
+
+  /* ---- Colour: technical surface ---- */
+  --eg-technical: #0e1424;
+  --eg-technical-text: #e7ecf6;
+  --eg-technical-muted: #97a3bd;
+  --eg-technical-border: rgba(255, 255, 255, 0.08);
+
+  /* ---- Colour: derived tints (all from the locked ramp) ---- */
+  --eg-primary-soft: rgba(31, 79, 214, 0.08);
+  --eg-primary-ring: rgba(31, 79, 214, 0.38);
+  --eg-text-soft: rgba(11, 23, 57, 0.06);
+
+  /* ---- Typography ---- */
+  --eg-font-sans: "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --eg-font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+    monospace;
+
+  --eg-text-display-xl: clamp(2.625rem, 2rem + 2.6vw, 4.5rem);
+  --eg-text-display: clamp(2.375rem, 1.9rem + 2.1vw, 4rem);
+  --eg-text-h1: clamp(2rem, 1.65rem + 1.6vw, 3.25rem);
+  --eg-text-h2: clamp(1.625rem, 1.4rem + 1vw, 2.375rem);
+  --eg-text-h3: clamp(1.1875rem, 1.12rem + 0.3vw, 1.5rem);
+  --eg-text-body-lg: clamp(1.0625rem, 1rem + 0.25vw, 1.25rem);
+  --eg-text-body: 1rem;
+  --eg-text-small: 0.84375rem;
+  --eg-text-technical: 0.8125rem;
+  --eg-text-eyebrow: 0.75rem;
+
+  --eg-leading-display: 1.03;
+  --eg-leading-heading: 1.14;
+  --eg-leading-body: 1.65;
+  --eg-leading-tight: 1.35;
+
+  --eg-tracking-display: -0.035em;
+  --eg-tracking-heading: -0.022em;
+  --eg-tracking-body: -0.006em;
+  --eg-tracking-eyebrow: 0.12em;
+
+  --eg-weight-regular: 400;
+  --eg-weight-medium: 500;
+  --eg-weight-semibold: 600;
+  --eg-weight-bold: 680;
+
+  /* Body copy stays short enough to scan without losing the line. */
+  --eg-measure: 68ch;
+  --eg-measure-tight: 54ch;
+
+  /* ---- Space (4px base) ---- */
+  --eg-space-1: 0.25rem;
+  --eg-space-2: 0.5rem;
+  --eg-space-3: 0.75rem;
+  --eg-space-4: 1rem;
+  --eg-space-5: 1.25rem;
+  --eg-space-6: 1.5rem;
+  --eg-space-8: 2rem;
+  --eg-space-10: 2.5rem;
+  --eg-space-12: 3rem;
+  --eg-space-16: 4rem;
+  --eg-space-20: 5rem;
+
+  /* ---- Layout ---- */
+  --eg-max-width: 1240px;
+  --eg-gutter: 64px;
+  --eg-section-y: 120px;
+  --eg-nav-height: 64px;
+
+  /* ---- Radius ---- */
+  --eg-radius-sm: 8px;
+  --eg-radius-input: 10px;
+  --eg-radius-card: 14px;
+  --eg-radius-card-lg: 20px;
+  --eg-radius-hero: 24px;
+  --eg-radius-pill: 999px;
+
+  /* ---- Elevation ---- */
+  --eg-shadow-xs: 0 1px 2px rgba(11, 23, 57, 0.04);
+  --eg-shadow-sm: 0 2px 8px rgba(11, 23, 57, 0.05);
+  --eg-shadow-md: 0 8px 24px rgba(11, 23, 57, 0.06);
+  --eg-shadow-lg: 0 18px 48px rgba(11, 23, 57, 0.09);
+
+  /* ---- Glass ----
+   * Three tiers only. Navigation is the lightest so content reads through it;
+   * hero glass is stronger; dark glass carries technical material. */
+  --eg-glass-nav-bg: rgba(255, 255, 255, 0.72);
+  --eg-glass-nav-blur: 18px;
+  --eg-glass-nav-border: rgba(227, 233, 242, 0.85);
+  --eg-glass-nav-shadow: 0 8px 30px rgba(11, 23, 57, 0.06);
+  --eg-glass-nav-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --eg-glass-nav-fallback: rgba(255, 255, 255, 0.96);
+
+  --eg-glass-hero-bg: rgba(255, 255, 255, 0.62);
+  --eg-glass-hero-blur: 24px;
+  --eg-glass-hero-border: rgba(227, 233, 242, 0.72);
+  --eg-glass-hero-shadow: 0 16px 40px rgba(11, 23, 57, 0.05);
+  --eg-glass-hero-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --eg-glass-hero-fallback: rgba(255, 255, 255, 0.94);
+
+  --eg-glass-dark-bg: rgba(14, 20, 36, 0.88);
+  --eg-glass-dark-blur: 18px;
+  --eg-glass-dark-border: rgba(255, 255, 255, 0.08);
+  --eg-glass-dark-fallback: rgba(14, 20, 36, 0.98);
+
+  /* ---- Motion ---- */
+  --eg-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --eg-ease-in-out: cubic-bezier(0.45, 0.05, 0.25, 1);
+  --eg-ease-pill: cubic-bezier(0.34, 1.16, 0.64, 1);
+  --eg-duration-fast: 140ms;
+  --eg-duration: 220ms;
+  --eg-duration-slow: 420ms;
+
+  /* ---- Focus ---- */
+  --eg-focus-ring: 0 0 0 3px var(--eg-primary-ring);
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --eg-gutter: 40px;
+    --eg-section-y: 80px;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --eg-gutter: 24px;
+    --eg-section-y: 60px;
+  }
+}
+
+@media (max-width: 400px) {
+  :root {
+    --eg-gutter: 20px;
+    --eg-section-y: 56px;
+  }
+}
