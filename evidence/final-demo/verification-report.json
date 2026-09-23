@@ -1,547 +1,335 @@
 {
-  "schemaVersion": 1,
-  "subject": "final verified Phantom activation-crossing run",
-  "sourceRun": "tmp/phantom-activation/run-2026-09-23T050540556Z.json",
-  "verificationOutput": {
-    "file": "tmp/phantom-activation/verification-run-2026-09-23T050540556Z.txt",
-    "tracked": false,
-    "sha256": "fa52950dab0f5f6dd98d0cc6c1d7e982a2d8beba2d05505c9aa5ea7cd84f1c3a",
-    "verifier": "tmp/phantom-activation/verify-run.mjs",
-    "verifierSha256": "001a3aa2bd3da4151f0ba4941ff54b71c9b5c9c0514c9a2d0d3a7fb07a460901",
-    "performed": "2026-09-22 ~22:09 PDT, after the run, before the demo commits"
+  "schemaVersion": 2,
+  "subject": "final remediated Phantom activation-crossing run",
+  "sourceRun": {
+    "file": "tmp/preserved-run/run-2026-09-23T153254821Z.json",
+    "sha256": "fa247eac79cc6324f00704a685d27fbb4ed6737a13137c7348cffec58c9cfc03"
   },
-  "implementationCommit": "c8782d4337d80aaf9501ff488c92ab6a99b62172",
-  "claimBoundary": {
-    "realMarketEvidence": "Recorded Sep 15 KOx Solana mainnet economic-state transition.",
-    "routeEvidence": "Independently captured Sep 17 mainnet-derived Jupiter route.",
-    "liveExecution": "Local solana-test-validator reproduction using compiled EquityGuard, Jupiter and Whirlpool programs.",
-    "notClaimed": [
-      "mainnet EquityGuard execution",
-      "live mainnet KOx purchase",
-      "the local validator ran at the historical Sep 15 time",
-      "the Jupiter route was captured during the Sep 15 event",
-      "a post-run live validator re-query of the demo transactions succeeded"
-    ]
+  "generatedBy": {
+    "script": "scripts/evidence/build-final-demo.ts",
+    "sha256": "fb44ec190e344f867aa407a2ca82e3650d87d0932bde2219d5e52877958777e9"
   },
   "summary": {
-    "totalChecks": 51,
-    "passed": 51,
-    "failed": 0,
-    "skipped": 0,
-    "assertions": 48,
-    "informationalRecords": 3,
-    "informationalNote": "3 of the 51 entries record context (pruning note, ledger status of each transaction) and pass unconditionally; 48 are substantive assertions."
+    "totalChecks": 63,
+    "passed": 63,
+    "failed": 0
   },
-  "validatorPruningCaveat": "The local validator pruned the demo transaction slots before post-run verification (getTransaction returned null; firstAvailableBlock 447666383 > execution slots 447666005 and 447666052). Transaction checks therefore used the validator record captured server-side from http://127.0.0.1:8899 via getTransaction while the demo was executing, and the exact transaction bytes were reconstructed from that captured record and hashed. No post-run live re-query of these transactions succeeded.",
-  "exactByteEquality": {
-    "result": true,
-    "signedWireSha256": "31738b9650fdab19e6afa69176b48ccc1dc91131fea4c85557e4f30ca710c0ad",
-    "wireLengthBytes": 675,
-    "method": "SHA-256 taken in the browser when Phantom returned the signed bytes, re-taken immediately before submission with byte-array equality, and matched by the SHA-256 of the v0 wire re-serialized from the captured validator record of the landed transaction.",
-    "checks": [
-      "STALE_LEDGER_WIRE_SHA_256_HASH_TAKEN_WHEN_PHANTOM_RETURNED_BYTES",
-      "STALE_HASH_BEFORE_HASH_AT_SUBMISSION_EXACT_EQUALITY",
-      "STALE_LEDGER_WIRE_LENGTH_SIGNED_WIRE_LENGTH"
-    ]
-  },
-  "staleExecutionVerification": {
-    "passed": true,
-    "signature": "4o2pHLDtwQ2wxjHab3KKd3kj6rAerH8cL4QPJwefN3LSrYCqieQAS3zFfw15QfpXuS2DCKrjHVJLe8EeA6VdYcSS",
-    "slot": "447666005",
-    "failedInstruction": 0,
-    "customCode": 12,
-    "guardErrorName": "ActivationPhaseChanged",
-    "jupiterInvoked": false,
-    "whirlpoolInvoked": false,
-    "tokenDelta": {
-      "usdcRaw": "0",
-      "koxRaw": "0"
-    }
-  },
-  "refreshedExecutionVerification": {
-    "passed": true,
-    "signature": "4vVv699VnJgpaswDWY48wmW75KeYKRjVBNTg1zZ7LBJoA8VY7ZLpZTUNCckuTs1yaLh2ciJdx5nmP3EGFBiqgTEp",
-    "slot": "447666052",
-    "equityGuardPassed": true,
-    "jupiterExecuted": true,
-    "whirlpoolExecuted": true,
-    "tokenDelta": {
-      "usdcRaw": "-5000000",
-      "koxRaw": "5504261"
-    },
-    "displayedOutput": "0.05504261"
-  },
-  "balanceVerification": {
-    "passed": true,
-    "source": "captured validator pre/postTokenBalances, cross-checked against the browser outcome and the live token balances at verification time"
-  },
-  "blockhashMargin": {
-    "staleBlocks": "65",
-    "refreshedBlocks": "132",
-    "lifetimeBlocks": 150
-  },
-  "executionOutcomesFromRpcMetadata": true,
-  "executionOutcomesFromRpcMetadataEvidence": "Outcome fields are computed by confirmReplay from getTransaction metadata and token balances; covered by apps/phantom-local-feasibility/test/rpc-derived-outcome.test.ts; browser outcome agrees with the captured validator record (slot, err, compute units, balances).",
-  "anyExecutionResultHardCoded": false,
-  "sealedHistoricalEvidenceModified": false,
-  "historicalEvidenceIntegrity": {
-    "passed": true,
-    "detail": "24 files (sealed fixtures, apps/reference/data, route fixture, captured accounts, program binaries, equity_guard.so) match the SHA-256 baseline recorded before the milestone began; tracked evidence paths show no git changes.",
-    "protectedFields": {
-      "multiplierHex": "73833748164bf03f",
-      "newMultiplierHex": "df525701685cf03f",
-      "effectiveTimestamp": "1789432200"
-    }
-  },
-  "fixtureIntegrity": {
-    "passed": true,
-    "routeFixtureSha256": "d5d76b2ccf222ea9f9a53e340a9cd76540a24e133966838168a726a428cc1914",
-    "sourceMintBytesSha256": "17f36f6085ffe1c9c1f958e7e8944f3feb1b9c2ab3a59201c752c8dd73ce45d2",
-    "detail": "Route fixture unchanged (also identical in dist/ and tmp/phantom-activation/); captured KOx mint account bytes match the run provenance sourceMintSha256."
-  },
+  "method": "Every check is re-derived from the preserved run record and the artifacts it references. Nothing is copied from the browser's own claims.",
   "checks": [
     {
-      "id": "VALIDATOR_IS_NOT_A_PUBLIC_CLUSTER",
-      "name": "validator is not a public cluster",
+      "id": "RUN_HAS_BOTH_LEGS",
       "passed": true,
-      "evidence": "HWnnDmtGMK46JbPNzG5HcFXM9xDCPJtJgJKBHoKABRKD",
-      "kind": "assertion",
-      "source": "live validator at verification time"
+      "evidence": ""
     },
     {
-      "id": "LEDGER_NOTE_LIVE_HISTORY_PRUNED_BELOW_FIRST_AVAILABLE_BLOCK",
-      "name": "ledger note: live history pruned below first available block",
+      "id": "RUN_HAS_TWO_COORDINATOR_PROOFS",
       "passed": true,
-      "evidence": "firstAvailableBlock 447666383",
-      "kind": "informational-record",
-      "source": "record"
+      "evidence": ""
     },
     {
-      "id": "STALE_SIMULATION_BEFORE_SIGNING_PASSED_ERR_NULL",
-      "name": "STALE simulation before signing passed (err null)",
+      "id": "RUN_HAS_TWO_VALIDATOR_RECORDS",
       "passed": true,
-      "evidence": "units 81783",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_SINGLE_SIGNER_FEE_PAYER_PHANTOM",
-      "name": "STALE single signer = fee payer = Phantom",
+      "id": "STALE_VALIDATOR_RECORD_PRESENT",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "5bd3FtVzHbdQeKwfVnKub5F36v3xUFbitPuWYKxBmpHYTZDKVTuWuUiMXwqktjFn6bzniS3WprcmEruAfazNrWh9"
     },
     {
-      "id": "STALE_LEDGER_WIRE_SHA_256_HASH_TAKEN_WHEN_PHANTOM_RETURNED_BYTES",
-      "name": "STALE ledger wire SHA-256 == hash taken when Phantom returned bytes",
+      "id": "STALE_RECONSTRUCTED_WIRE_MATCHES_HELD_HASH",
       "passed": true,
-      "evidence": "31738b9650fdab19e6afa69176b48ccc1dc91131fea4c85557e4f30ca710c0ad",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "16ed55dc04ce25b241bb351a62ff6f8c178945925e9003867033a219f77fa559"
     },
     {
-      "id": "STALE_HASH_BEFORE_HASH_AT_SUBMISSION_EXACT_EQUALITY",
-      "name": "STALE hash before == hash at submission, exact equality",
+      "id": "STALE_HELD_HASH_UNCHANGED_AT_SUBMISSION",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_LEDGER_WIRE_LENGTH_SIGNED_WIRE_LENGTH",
-      "name": "STALE ledger wire length == signed wire length",
+      "id": "STALE_EXACT_BYTE_EQUALITY",
       "passed": true,
-      "evidence": "675",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_LEDGER_RECENTBLOCKHASH_SIGNED_BLOCKHASH",
-      "name": "STALE ledger recentBlockhash == signed blockhash",
+      "id": "STALE_WIRE_LENGTH",
       "passed": true,
-      "evidence": "6iUkYinn9uU9Rrsk8NwVRqELDvNS5HZY8ZdeFDoRgpf9",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "675"
     },
     {
-      "id": "STALE_BLOCKHASH_VALID_AT_SUBMISSION",
-      "name": "STALE blockhash valid at submission",
+      "id": "STALE_SIGNATURE_VERIFIES_UNDER_PHANTOM",
       "passed": true,
-      "evidence": "height 2269 / lastValid 2334 (margin 65 blocks)",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "5bd3FtVzHbdQeKwfVnKub5F36v3xUFbitPuWYKxBmpHYTZDKVTuWuUiMXwqktjFn6bzniS3WprcmEruAfazNrWh9"
     },
     {
-      "id": "STALE_INSTRUCTION_0_PROGRAM_IS_EQUITYGUARD",
-      "name": "STALE instruction 0 program is EquityGuard",
+      "id": "STALE_SINGLE_SIGNER_IS_FEE_PAYER_PHANTOM",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_CLOCK_BEFORE_LOCALT_AT_PRE_SIGN_SIMULATION",
-      "name": "STALE Clock before localT at pre-sign simulation",
+      "id": "STALE_GUARD_PAYLOAD_IS_ABI_V2_JUPITER",
       "passed": true,
-      "evidence": "1790160551 < 1790160566",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_CLOCK_BEFORE_LOCALT_WHEN_SIGNED_BYTES_RETURNED",
-      "name": "STALE Clock before localT when signed bytes returned",
+      "id": "STALE_GUARD_PROTECTS_KOX",
       "passed": true,
-      "evidence": "1790160558 < 1790160566",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_CLOCK_AFTER_LOCALT_AT_SUBMISSION",
-      "name": "STALE Clock after localT at submission",
+      "id": "STALE_GUARD_NAMES_ARMED_ACTIVATION",
       "passed": true,
-      "evidence": "1790160567 > 1790160566",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "1790198291"
     },
     {
-      "id": "STALE_EXECUTION_SLOT_BLOCK_TIME_AFTER_LOCALT_VALIDATOR",
-      "name": "STALE execution-slot block time after localT (validator)",
+      "id": "STALE_SUFFIX_COMMITMENT_RECOMPUTES",
       "passed": true,
-      "evidence": "1790160567 (slot 447666005)",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "47307f46869eeef8363891643f25dff14a9565262bed541a17797fb047186de5"
     },
     {
-      "id": "STALE_LANDED_AT_SLOT_AFTER_SIGNING_SLOT",
-      "name": "STALE landed at slot after signing slot",
+      "id": "STALE_COORDINATOR_PROOF_FOR_THIS_PHASE",
       "passed": true,
-      "evidence": "447665958 -> 447666005",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "PENDING"
     },
     {
-      "id": "STALE_ERR_INSTRUCTIONERROR_0_CUSTOM_12_ACTIVATIONPHASECHANGED",
-      "name": "STALE err = InstructionError[0, Custom 12] ActivationPhaseChanged",
+      "id": "STALE_PRE_SIGN_CLOCK_MATCHES_ENCODED_PHASE",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "BEFORE_ACTIVATION for PENDING"
+    },
+    {
+      "id": "STALE_SIGNED_RECEIPT_CLOCK_MATCHES_ENCODED_PHASE",
+      "passed": true,
+      "evidence": "BEFORE_ACTIVATION for PENDING"
+    },
+    {
+      "id": "STALE_COORDINATOR_SIMULATION_SUCCEEDED",
+      "passed": true,
+      "evidence": "units 81783"
+    },
+    {
+      "id": "STALE_SIGNED_MESSAGE_IS_THE_SIMULATED_MESSAGE",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "STALE_COORDINATOR_VERIFIED_THE_SIGNATURE",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "STALE_COORDINATOR_ATTESTED_THE_SUBMITTED_WIRE",
+      "passed": true,
+      "evidence": "16ed55dc04ce25b241bb351a62ff6f8c178945925e9003867033a219f77fa559"
+    },
+    {
+      "id": "STALE_DEPLOYMENT_REATTESTED_BEFORE_SIGN_AND_SUBMIT",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "STALE_ENCODES_PENDING",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "STALE_REJECTED_AT_INSTRUCTION_0_CUSTOM_12",
+      "passed": true,
+      "evidence": "{\"InstructionError\":[0,{\"Custom\":12}]}"
     },
     {
       "id": "STALE_EQUITYGUARD_INVOKED",
-      "name": "STALE EquityGuard invoked",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
       "id": "STALE_JUPITER_ABSENT",
-      "name": "STALE Jupiter absent",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
       "id": "STALE_WHIRLPOOL_ABSENT",
-      "name": "STALE Whirlpool absent",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_USDC_BEFORE_AFTER_LEDGER",
-      "name": "STALE USDC before == after (ledger)",
+      "id": "STALE_NO_TOKEN_MOVEMENT",
       "passed": true,
-      "evidence": "5000000 -> 5000000",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
-    },
-    {
-      "id": "STALE_KOX_BEFORE_AFTER_LEDGER",
-      "name": "STALE KOx before == after (ledger)",
-      "passed": true,
-      "evidence": "0 -> 0",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "usdc 5000000 kox 0"
     },
     {
       "id": "STALE_SOL_CHANGE_IS_FEE_ONLY",
-      "name": "STALE SOL change is fee only",
       "passed": true,
-      "evidence": "fee 5441",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "fee 5441"
     },
     {
-      "id": "STALE_SUBMITTED_WITH_SKIPPREFLIGHT_STALE_ONLY",
-      "name": "STALE submitted with skipPreflight (stale only)",
+      "id": "STALE_EXECUTED_AFTER_ACTIVATION",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "blockTime 1790198292 > 1790198291"
     },
     {
-      "id": "STALE_COMPUTE_UNITS_MATCH_LEDGER",
-      "name": "STALE compute units match ledger",
+      "id": "STALE_SUBMITTED_WITH_SKIPPREFLIGHT",
       "passed": true,
-      "evidence": "10955",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "STALE_FIRST_RUN_FILE_HOLDS_IDENTICAL_STALE_PROOF",
-      "name": "STALE first run file holds identical stale proof",
+      "id": "REFRESHED_VALIDATOR_RECORD_PRESENT",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "4ezDs511Z7yLjRNcAroN5nnuGzSAuWr8Z32ptPDPWEkcp8gne7dBEWwMWzgKGJfxD1zSUxxjjxBnaFzatE2HsbPD"
     },
     {
-      "id": "STALE_BROWSER_OUTCOME_AGREES_WITH_VALIDATOR_CAPTURE_SLOT_ERR",
-      "name": "STALE browser outcome agrees with validator capture (slot, err)",
+      "id": "REFRESHED_RECONSTRUCTED_WIRE_MATCHES_HELD_HASH",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "17dc384d27ebd6efa48b2840b24bf5a6a8911b1cb42ab433f019b2e1f9d2d33d"
     },
     {
-      "id": "STALE_LEDGER_STATUS",
-      "name": "STALE ledger status",
+      "id": "REFRESHED_HELD_HASH_UNCHANGED_AT_SUBMISSION",
       "passed": true,
-      "evidence": "{\"Err\":{\"InstructionError\":[0,{\"Custom\":12}]}}",
-      "kind": "informational-record",
-      "source": "record"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_SIMULATION_BEFORE_SIGNING_PASSED_ERR_NULL",
-      "name": "REFRESHED simulation before signing passed (err null)",
+      "id": "REFRESHED_EXACT_BYTE_EQUALITY",
       "passed": true,
-      "evidence": "units 81785",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_SINGLE_SIGNER_FEE_PAYER_PHANTOM",
-      "name": "REFRESHED single signer = fee payer = Phantom",
+      "id": "REFRESHED_WIRE_LENGTH",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "675"
     },
     {
-      "id": "REFRESHED_LEDGER_WIRE_SHA_256_HASH_TAKEN_WHEN_PHANTOM_RETURNED_BYTES",
-      "name": "REFRESHED ledger wire SHA-256 == hash taken when Phantom returned bytes",
+      "id": "REFRESHED_SIGNATURE_VERIFIES_UNDER_PHANTOM",
       "passed": true,
-      "evidence": "c10266d053aef4352a1a2041a363e75225b14853528676ea03c5a5b553de64ed",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "4ezDs511Z7yLjRNcAroN5nnuGzSAuWr8Z32ptPDPWEkcp8gne7dBEWwMWzgKGJfxD1zSUxxjjxBnaFzatE2HsbPD"
     },
     {
-      "id": "REFRESHED_HASH_BEFORE_HASH_AT_SUBMISSION_EXACT_EQUALITY",
-      "name": "REFRESHED hash before == hash at submission, exact equality",
+      "id": "REFRESHED_SINGLE_SIGNER_IS_FEE_PAYER_PHANTOM",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_LEDGER_WIRE_LENGTH_SIGNED_WIRE_LENGTH",
-      "name": "REFRESHED ledger wire length == signed wire length",
+      "id": "REFRESHED_GUARD_PAYLOAD_IS_ABI_V2_JUPITER",
       "passed": true,
-      "evidence": "675",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_LEDGER_RECENTBLOCKHASH_SIGNED_BLOCKHASH",
-      "name": "REFRESHED ledger recentBlockhash == signed blockhash",
+      "id": "REFRESHED_GUARD_PROTECTS_KOX",
       "passed": true,
-      "evidence": "FgkHPyAzkg1DwJwRLox18qRfoqFEeFszTdjvSvWN1Rgd",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_BLOCKHASH_VALID_AT_SUBMISSION",
-      "name": "REFRESHED blockhash valid at submission",
+      "id": "REFRESHED_GUARD_NAMES_ARMED_ACTIVATION",
       "passed": true,
-      "evidence": "height 2316 / lastValid 2448 (margin 132 blocks)",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "1790198291"
     },
     {
-      "id": "REFRESHED_INSTRUCTION_0_PROGRAM_IS_EQUITYGUARD",
-      "name": "REFRESHED instruction 0 program is EquityGuard",
+      "id": "REFRESHED_SUFFIX_COMMITMENT_RECOMPUTES",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "47307f46869eeef8363891643f25dff14a9565262bed541a17797fb047186de5"
     },
     {
-      "id": "REFRESHED_BUILT_AFTER_ACTIVATION",
-      "name": "REFRESHED built after activation",
+      "id": "REFRESHED_COORDINATOR_PROOF_FOR_THIS_PHASE",
       "passed": true,
-      "evidence": "1790160572 > 1790160566",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "ACTIVATED"
     },
     {
-      "id": "REFRESHED_IS_A_NEW_TRANSACTION_DIFFERENT_HASH_BLOCKHASH_SIGNATURE",
-      "name": "REFRESHED is a new transaction (different hash, blockhash, signature)",
+      "id": "REFRESHED_PRE_SIGN_CLOCK_MATCHES_ENCODED_PHASE",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "AT_OR_AFTER_ACTIVATION for ACTIVATED"
     },
     {
-      "id": "REFRESHED_ERR_NULL",
-      "name": "REFRESHED err null",
+      "id": "REFRESHED_SIGNED_RECEIPT_CLOCK_MATCHES_ENCODED_PHASE",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "AT_OR_AFTER_ACTIVATION for ACTIVATED"
+    },
+    {
+      "id": "REFRESHED_COORDINATOR_SIMULATION_SUCCEEDED",
+      "passed": true,
+      "evidence": "units 81785"
+    },
+    {
+      "id": "REFRESHED_SIGNED_MESSAGE_IS_THE_SIMULATED_MESSAGE",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "REFRESHED_COORDINATOR_VERIFIED_THE_SIGNATURE",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "REFRESHED_COORDINATOR_ATTESTED_THE_SUBMITTED_WIRE",
+      "passed": true,
+      "evidence": "17dc384d27ebd6efa48b2840b24bf5a6a8911b1cb42ab433f019b2e1f9d2d33d"
+    },
+    {
+      "id": "REFRESHED_DEPLOYMENT_REATTESTED_BEFORE_SIGN_AND_SUBMIT",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "REFRESHED_ENCODES_ACTIVATED",
+      "passed": true,
+      "evidence": ""
+    },
+    {
+      "id": "REFRESHED_SUCCEEDED",
+      "passed": true,
+      "evidence": ""
     },
     {
       "id": "REFRESHED_EQUITYGUARD_PASSED",
-      "name": "REFRESHED EquityGuard passed",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
       "id": "REFRESHED_JUPITER_EXECUTED",
-      "name": "REFRESHED Jupiter executed",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
       "id": "REFRESHED_WHIRLPOOL_EXECUTED",
-      "name": "REFRESHED Whirlpool executed",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_USDC_5_000_000_0_LEDGER",
-      "name": "REFRESHED USDC 5,000,000 -> 0 (ledger)",
+      "id": "REFRESHED_USDC_SPENT",
       "passed": true,
-      "evidence": "5000000 -> 0",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "5000000 -> 0"
     },
     {
-      "id": "REFRESHED_KOX_0_5_504_261_LEDGER",
-      "name": "REFRESHED KOx 0 -> 5,504,261 (ledger)",
+      "id": "REFRESHED_KOX_RECEIVED",
       "passed": true,
-      "evidence": "0 -> 5504261",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": "0 -> 5504261"
     },
     {
-      "id": "REFRESHED_SKIPPREFLIGHT_FALSE",
-      "name": "REFRESHED skipPreflight=false",
+      "id": "REFRESHED_PREFLIGHT_ENABLED",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_COMPUTE_UNITS_MATCH_LEDGER",
-      "name": "REFRESHED compute units match ledger",
+      "id": "LEGS_ARE_DISTINCT_AUTHORIZATIONS",
       "passed": true,
-      "evidence": "81785",
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_BROWSER_OUTCOME_AGREES_WITH_VALIDATOR_CAPTURE_SLOT_ERR",
-      "name": "REFRESHED browser outcome agrees with validator capture (slot, err)",
+      "id": "BOTH_LEGS_COMMIT_TO_THE_SAME_TRADE",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "captured validator record and browser proof"
+      "evidence": ""
     },
     {
-      "id": "REFRESHED_LEDGER_STATUS",
-      "name": "REFRESHED ledger status",
+      "id": "STALE_SIGNED_BEFORE_REFRESHED_BUILT",
       "passed": true,
-      "evidence": "{\"Ok\":null}",
-      "kind": "informational-record",
-      "source": "record"
+      "evidence": ""
     },
     {
-      "id": "CURRENT_PHANTOM_USDC_0",
-      "name": "current Phantom USDC = 0",
+      "id": "ALL_REFERENCES_RESOLVE",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "live validator at verification time"
+      "evidence": ""
     },
     {
-      "id": "CURRENT_PHANTOM_KOX_5504261_0_05504261",
-      "name": "current Phantom KOx = 5504261 (0.05504261)",
+      "id": "REVIEWED_ELF_MATCHES_ATTESTED",
       "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "live validator at verification time"
-    },
-    {
-      "id": "LOCAL_MINT_STILL_CARRIES_CAPTURED_MULTIPLIER_AND_NEWMULTIPLIER_BYTES",
-      "name": "local mint still carries captured multiplier and newMultiplier bytes",
-      "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "live validator at verification time"
-    },
-    {
-      "id": "LOCAL_MINT_EFFECTIVE_TIMESTAMP_LOCALT",
-      "name": "local mint effective timestamp == localT",
-      "passed": true,
-      "evidence": null,
-      "kind": "assertion",
-      "source": "live validator at verification time"
+      "evidence": ""
     }
-  ],
-  "preservationChecks": {
-    "note": "Performed while packaging (2026-09-22), separate from the 51 original checks; these re-verify integrity and do not re-decide any execution result.",
-    "items": [
-      {
-        "id": "COMPLETE_RUN_SELECTED",
-        "passed": true,
-        "evidence": "only run file containing both stale and refreshed outcomes and two captured validator records"
-      },
-      {
-        "id": "WIRE_RECONSTRUCTION_REPEATED",
-        "passed": true,
-        "evidence": "both reconstructed wires hash to the browser-recorded signed-wire SHA-256"
-      },
-      {
-        "id": "BROWSER_LEDGER_AGREEMENT",
-        "passed": true,
-        "evidence": "slot, compute units, and balances agree for both transactions"
-      },
-      {
-        "id": "IMPLEMENTATION_BINDING",
-        "passed": true,
-        "evidence": "The commit was created at 2026-09-22T22:09:31-07:00, after the run, from the unchanged working tree that was built and served. The served dist/app.js (built 21:53:02, before the ~22:05 run) is byte-identical to a fresh bundle of this commit's source; the served dist/index.html equals the committed web/index.html; every coordinator source file predates the coordinator process start (21:53:10)."
-      },
-      {
-        "id": "REFERENCED_HASHES_RECOMPUTED",
-        "passed": true,
-        "evidence": "all references in manifest.json recomputed; route fixture and binary match expected values"
-      },
-      {
-        "id": "HISTORICAL_BASELINE",
-        "passed": true,
-        "evidence": "24/24 baseline files unchanged"
-      }
-    ]
-  }
+  ]
 }

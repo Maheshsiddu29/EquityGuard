@@ -1,69 +1,37 @@
 {
-  "schemaVersion": 1,
-  "createdFrom": "final verified Phantom activation-crossing run",
-  "implementationCommit": "c8782d4337d80aaf9501ff488c92ab6a99b62172",
-  "claimBoundary": {
-    "realMarketEvidence": "Recorded Sep 15 KOx Solana mainnet economic-state transition.",
-    "routeEvidence": "Independently captured Sep 17 mainnet-derived Jupiter route.",
-    "liveExecution": "Local solana-test-validator reproduction using compiled EquityGuard, Jupiter and Whirlpool programs.",
-    "notClaimed": [
-      "mainnet EquityGuard execution",
-      "live mainnet KOx purchase",
-      "the local validator ran at the historical Sep 15 time",
-      "the Jupiter route was captured during the Sep 15 event",
-      "a post-run live validator re-query of the demo transactions succeeded"
-    ]
-  },
+  "schemaVersion": 2,
+  "createdFrom": "final remediated Phantom activation-crossing run",
+  "generatedBy": "scripts/evidence/build-final-demo.ts",
   "files": {
     "execution-proof.json": {
-      "sha256": "3c3f7c4cf03a164792ea210fcd98ab2875c69886cecfb3e9bc462f47905fbb3a"
+      "sha256": "57f05c07bd489110bf003aeb0126d0f04ca8ff934028ed7281f1327242c02584"
     },
     "verification-report.json": {
-      "sha256": "90c65033b8917889894f975a01bff5927e53f5365520ef0777c0b9419c0b52b9"
+      "sha256": "5ed13fa5c8f77622d44607c7cc00e7e8b146af533c7e24befea3fea83fe66eba"
     }
   },
   "sourceRun": {
-    "file": "tmp/phantom-activation/run-2026-09-23T050540556Z.json",
+    "file": "tmp/preserved-run/run-2026-09-23T153254821Z.json",
     "tracked": false,
-    "sha256": "422e7d60c4dadb9a105a41332376f2563e14e2cda81a362fbc5e61c5ac1fbfdf"
+    "sha256": "fa247eac79cc6324f00704a685d27fbb4ed6737a13137c7348cffec58c9cfc03"
   },
   "execution": {
-    "signedWireSha256": "31738b9650fdab19e6afa69176b48ccc1dc91131fea4c85557e4f30ca710c0ad",
+    "staleSignature": "5bd3FtVzHbdQeKwfVnKub5F36v3xUFbitPuWYKxBmpHYTZDKVTuWuUiMXwqktjFn6bzniS3WprcmEruAfazNrWh9",
+    "staleSignedWireSha256": "16ed55dc04ce25b241bb351a62ff6f8c178945925e9003867033a219f77fa559",
+    "refreshedSignature": "4ezDs511Z7yLjRNcAroN5nnuGzSAuWr8Z32ptPDPWEkcp8gne7dBEWwMWzgKGJfxD1zSUxxjjxBnaFzatE2HsbPD",
+    "refreshedSignedWireSha256": "17dc384d27ebd6efa48b2840b24bf5a6a8911b1cb42ab433f019b2e1f9d2d33d",
     "wireLengthBytes": 675,
-    "staleSignature": "4o2pHLDtwQ2wxjHab3KKd3kj6rAerH8cL4QPJwefN3LSrYCqieQAS3zFfw15QfpXuS2DCKrjHVJLe8EeA6VdYcSS",
-    "refreshedSignature": "4vVv699VnJgpaswDWY48wmW75KeYKRjVBNTg1zZ7LBJoA8VY7ZLpZTUNCckuTs1yaLh2ciJdx5nmP3EGFBiqgTEp",
-    "refreshedSignedWireSha256": "c10266d053aef4352a1a2041a363e75225b14853528676ea03c5a5b553de64ed"
+    "localT": "1790198291"
   },
-  "historicalEvidence": {
-    "sourceCaptureSha256": "f137feeda9b0340559f5a98cb7ec74fdd1741d515e5d231b3144f5a0f874eb06",
-    "eventWindowSha256": "d364d627e7f816bfaec549add64c2ba97c680483c571d1f28aea7967aa215abe",
-    "accountDataSha256": "3a5fdda06e4e678b6af829222021ea125a4b28e2c74d885d8e95cbcad8b6d876",
-    "note": "sourceCaptureSha256 and eventWindowSha256 are recorded in scripts/demo/fixtures/ko-corporate-action-2026-09.json and were recomputed from the raw captures in tmp/observation; accountDataSha256 is the SHA-256 of the pre-activation KOx account bytes in the committed fixture.",
-    "protectedFields": {
-      "multiplierHex": "73833748164bf03f",
-      "newMultiplierHex": "df525701685cf03f",
-      "effectiveTimestamp": "1789432200"
-    },
-    "observations": {
-      "pre": {
-        "slot": "447113427",
-        "blockTime": 1789432186
-      },
-      "post": {
-        "slot": "447113520",
-        "blockTime": 1789432216
-      }
-    }
-  },
-  "routeFixture": {
-    "path": "tmp/m9d-c1/route-fixture.json",
-    "tracked": false,
-    "sha256": "d5d76b2ccf222ea9f9a53e340a9cd76540a24e133966838168a726a428cc1914"
-  },
-  "equityGuardBinary": {
-    "path": "target/deploy/equity_guard.so",
-    "tracked": false,
-    "sha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46"
+  "deployment": {
+    "programId": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT",
+    "programDataAddress": "4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3",
+    "reviewedElfSha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46",
+    "deploymentSlot": "0",
+    "upgradeAuthority": "11111111111111111111111111111111",
+    "mutability": "NO_USABLE_AUTHORITY",
+    "identity": "REVIEWED_BINARY",
+    "digest": "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT|4Zc4TAEYNSXCGUkpD7y7CcEWDS8a9aQBDfYHFu55dPE3|d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46|11111111111111111111111111111111|NO_USABLE_AUTHORITY|REVIEWED_BINARY"
   },
   "references": [
     {
@@ -79,34 +47,10 @@
       "sha256": "e19c3cfe55992ca2b4257ee370060eea4147a682aa27c3d5653e589a107e70ea"
     },
     {
-      "path": "apps/reference/data/local-replay-2026-09-17.json",
-      "role": "earlier local replay record",
-      "tracked": true,
-      "sha256": "5ab94e96d9001e37bdf8886bde4f6f3fdbb7aff25671054a17236cb10d26f5c0"
-    },
-    {
       "path": "scripts/demo/fixtures/jupiter-liquidity-2026-09-15.json",
       "role": "Jupiter liquidity capture",
       "tracked": true,
       "sha256": "c76df1efd2b71d23dd05a30936ab8bc4d4369779f07d1e6b4a9a98a44224a4c5"
-    },
-    {
-      "path": "tmp/observation/ko-final-evidence-window.jsonl",
-      "role": "raw KOx event-window capture (eventWindowSha256)",
-      "tracked": false,
-      "sha256": "d364d627e7f816bfaec549add64c2ba97c680483c571d1f28aea7967aa215abe"
-    },
-    {
-      "path": "tmp/observation/2026-09-15T010424Z-equity-mints.jsonl",
-      "role": "raw chain snapshot capture (sourceCaptureSha256)",
-      "tracked": false,
-      "sha256": "f137feeda9b0340559f5a98cb7ec74fdd1741d515e5d231b3144f5a0f874eb06"
-    },
-    {
-      "path": "tmp/observation/2026-09-15T010432Z-KOx-multiplier.jsonl",
-      "role": "raw KOx API snapshot capture",
-      "tracked": false,
-      "sha256": "1f235714b4399bf192633cf20b6aaf5d9b91c79be3c819fe799f8f2691c3d241"
     },
     {
       "path": "tmp/m9d-c1/route-fixture.json",
@@ -127,11 +71,24 @@
       "sha256": "d7d59ccd9e96bb3eb3e16893aca638d8e5fdbfaf5032b4b39737ef16a41e4e46"
     }
   ],
-  "provenance": {
-    "marketEvidence": "Solana mainnet read-only KOx capture",
-    "routeEvidence": "mainnet-derived Jupiter route",
-    "execution": "local solana-test-validator",
-    "wallet": "Phantom signTransaction",
-    "mainnetEquityGuardExecution": false
+  "claimBoundary": {
+    "realMarketEvidence": "Recorded Sep 15 KOx Solana mainnet economic-state transition.",
+    "routeEvidence": "Independently captured Sep 17 mainnet-derived Jupiter route.",
+    "liveExecution": "Local solana-test-validator reproduction using compiled EquityGuard, Jupiter and Whirlpool programs.",
+    "notClaimed": [
+      "mainnet EquityGuard execution",
+      "live mainnet KOx purchase",
+      "the local validator ran at the historical Sep 15 time",
+      "the Jupiter route was captured during the Sep 15 event",
+      "a post-run live validator re-query of the demo transactions succeeded"
+    ]
+  },
+  "schemaNote": {
+    "supersededFields": [
+      "simulatedBeforeLocalT",
+      "receivedBeforeLocalT"
+    ],
+    "reason": "The run record still carries these phase-specific booleans as literal true. They were correct only for the PENDING leg; the ACTIVATED leg is attested at or after localT by construction, so on that leg the booleans contradict the record's own clock. They are ignored here. Every timing statement in this package is re-derived from the coordinator's recorded clock, localT and the activation phase decoded from the signed payload.",
+    "rawRunFileUnmodified": true
   }
 }
