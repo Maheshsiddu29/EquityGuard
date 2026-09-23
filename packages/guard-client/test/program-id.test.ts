@@ -31,11 +31,11 @@ test("no other source file hardcodes the program ID", () => {
     "packages/guard-client/src/program-id.ts",
     "packages/guard-client/test/program-id.test.ts",
     "programs/equity_guard/src/lib.rs",
-    // Pre-existing spellings under `apps`, which this scan did not reach until
-    // the coordinator's attestation module was caught duplicating the ID.
-    // Listed rather than silently skipped so what is left is visible; none is
-    // a new spelling, and nothing may be added to this list.
-    "apps/phantom-local-feasibility/src/rpc-failure.ts",
+    // Test fixtures under `apps` that spell the ID out on purpose: they pin the
+    // value independently, exactly as this file's own APPROVED_DEVNET_PROGRAM_ID
+    // does, so resolving them through the constant would make them tautological.
+    // Every non-test spelling has been resolved to the constant. Nothing may be
+    // added to this list.
     "apps/phantom-local-feasibility/test/buy-error.test.ts",
     "apps/phantom-local-feasibility/test/local-preparation.test.ts",
     "apps/phantom-local-feasibility/test/replay-model.test.ts",

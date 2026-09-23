@@ -1,7 +1,7 @@
-import { equityGuardErrorName } from "../../../packages/guard-client/src/index.ts";
+import { EQUITY_GUARD_DEVNET_PROGRAM_ID, equityGuardErrorName } from "../../../packages/guard-client/src/index.ts";
 
 const JUPITER_V6 = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
-const EQUITY_GUARD = "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT";
+const EQUITY_GUARD = EQUITY_GUARD_DEVNET_PROGRAM_ID;
 const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 const WHIRLPOOL = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
 
