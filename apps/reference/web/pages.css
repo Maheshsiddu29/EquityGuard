@@ -1,0 +1,59 @@
+/*
+ * Page-level composition for the landing and docs routes.
+ *
+ * Only layout that belongs to a specific page lives here; anything reusable
+ * belongs in the shared design system.
+ */
+
+.eg-accent {
+  color: var(--eg-primary);
+}
+
+/* ---- Landing hero ---- */
+
+.eg-hero {
+  display: grid;
+  gap: var(--eg-space-10);
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  align-items: center;
+}
+
+/* The column governs the headline measure; capping it again here is what
+ * pushed the display type onto five lines. */
+.eg-hero__copy {
+  gap: var(--eg-space-5);
+}
+
+.eg-hero__copy .eg-cluster {
+  margin-block-start: var(--eg-space-2);
+}
+
+.eg-hero__panel {
+  display: grid;
+  gap: var(--eg-space-5);
+  align-content: start;
+}
+
+.eg-hero__invariant {
+  max-width: none;
+  font-size: var(--eg-text-body-lg);
+  line-height: 1.5;
+  letter-spacing: var(--eg-tracking-body);
+}
+
+@media (max-width: 1024px) {
+  .eg-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--eg-space-10);
+  }
+
+  .eg-hero__copy {
+    max-width: var(--eg-measure);
+  }
+}
+
+@media (max-width: 480px) {
+  .eg-hero__copy .eg-cluster .eg-btn {
+    width: 100%;
+  }
+}

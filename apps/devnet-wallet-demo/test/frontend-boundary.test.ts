@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 
 const walletHtml = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const walletApp = readFileSync(new URL("../src/app.ts", import.meta.url), "utf8");
 const walletBuild = readFileSync(new URL("../build/build.ts", import.meta.url), "utf8");
 const walletServer = readFileSync(new URL("../build/serve.ts", import.meta.url), "utf8");
-const referenceHtml = readFileSync(new URL("../../reference/web/index.html", import.meta.url), "utf8");
+// The reference app serves three routes from separate fragments, so its copy
+// is checked across all of them rather than one file.
+const referenceWeb = new URL("../../reference/web/", import.meta.url);
+const referenceHtml = readdirSync(referenceWeb)
+  .filter((file) => file.endsWith(".html"))
+  .map((file) => readFileSync(new URL(file, referenceWeb), "utf8"))
+  .join("\n");
 const referenceApp = readFileSync(new URL("../../reference/src/app.ts", import.meta.url), "utf8");
 const referenceServer = readFileSync(new URL("../../reference/build/serve.ts", import.meta.url), "utf8");
 

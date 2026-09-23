@@ -1,66 +1,74 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>EquityGuard · Protected KOx Trade Replay</title>
-  <meta name="description" content="Replay an evidence-linked protected KOx purchase through EquityGuard, Jupiter, and Whirlpool.">
-  <link rel="stylesheet" href="styles.css">
-  <!--EG_REFERENCE_STATE-->
-  <script type="module" src="app.js"></script>
-</head>
-<body>
-  <header class="shell topbar">
-    <a class="brand" href="#top"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5.4c0 4.5-2.8 8-7 9.6-4.2-1.6-7-5.1-7-9.6V6z"/><path d="M8.5 12l2.2 2.2 4.8-5"/></svg></span><span>EquityGuard</span><span class="product-tag">Evidence replay</span></a>
-    <a class="button button-quiet" href="//127.0.0.1:4174/" data-live-devnet target="_blank" rel="noreferrer">View live on-chain proof ↗</a>
-  </header>
+<!--
+  / — landing.
 
-  <main id="top" class="shell replay-page">
-    <section class="intro">
-      <span class="eyebrow">One-click protected trade replay</span>
-      <h1>Watch EquityGuard catch a stale <span class="gradient-text">KOx order.</span></h1>
-      <p>Real recorded KOx state. An independently captured Jupiter route. Compiled programs executing locally.</p>
-    </section>
-
-    <section class="trade-layout">
-      <article class="trade-card card">
-        <div class="asset-row"><div class="stock-logo">KO</div><div><span id="asset-name">Coca-Cola</span><strong id="asset-symbol">KOx</strong></div><span class="side-pill">Buy</span></div>
-        <div class="amount-box"><span>You pay</span><strong id="pay-amount">5.00 USDC</strong></div>
-        <div class="swap-arrow">↓</div>
-        <div class="amount-box receive"><span>Estimated</span><strong id="receive-amount">0.05504261 KOx</strong><small>From the recorded Sep 17 route fixture</small></div>
-        <button id="run-trade" class="run-button">Run protected trade</button>
-        <p class="replay-note">Evidence replay · nothing is signed · no wallet, RPC, or network access</p>
-      </article>
-
-      <article id="trade-progress" class="progress-card card" aria-live="polite">
-        <div class="progress-head"><span>Protected execution</span><strong id="stage-live">Ready to replay</strong></div>
-        <ol class="stage-list">
-          <li data-stage><i></i><span>Preparing order</span></li>
-          <li data-stage><i></i><span>Checking market state</span></li>
-          <li data-stage><i></i><span>Attempting protected trade</span></li>
-          <li data-stage class="refresh-stage"><i></i><span>Order needs refresh</span><small>The asset changed after authorization. No tokens were exchanged.</small></li>
-          <li data-stage><i></i><span>Refreshing automatically</span></li>
-          <li data-stage><i></i><span>Protected trade completed</span></li>
-        </ol>
-        <div id="trade-result" class="trade-result" hidden><span>Completed</span><strong>0.05504261 KOx received</strong><p>The refreshed authorization passed, then Jupiter and Whirlpool executed.</p></div>
-      </article>
-    </section>
-
-    <details class="evidence-drawer card">
-      <summary><span>View what happened</span></summary>
-      <div class="evidence-grid">
-        <section><span class="layer">1 · Real market evidence</span><h2>Recorded Solana mainnet KOx state</h2><dl><div><dt>Prepared observation</dt><dd id="prepared-time"></dd></div><div><dt>Scheduled activation</dt><dd id="activation-time"></dd></div><div><dt>Post-activation observation</dt><dd id="post-time"></dd></div></dl><p>Account bytes were identical across the adjacent observations. Solana Clock changed the effective phase.</p></section>
-        <section><span class="layer">2 · Local execution proof</span><h2>Stale authorization rejected</h2><dl><div><dt>Environment</dt><dd>solana-test-validator</dd></div><div><dt>Authorization</dt><dd>Recorded pre-activation state</dd></div><div><dt>Protected action</dt><dd>Sep 17 mainnet-derived Jupiter route</dd></div><div><dt>EquityGuard</dt><dd id="stale-guard"></dd></div><div><dt>Jupiter</dt><dd id="stale-jupiter"></dd></div><div><dt>USDC movement</dt><dd id="stale-usdc"></dd></div><div><dt>KOx movement</dt><dd id="stale-kox"></dd></div></dl></section>
-        <section><span class="layer">3 · Refreshed execution</span><h2>Protected route completed</h2><dl><div><dt>Authorization</dt><dd>Recorded post-activation state</dd></div><div><dt>EquityGuard</dt><dd id="refresh-guard"></dd></div><div><dt>Jupiter</dt><dd id="refresh-jupiter"></dd></div><div><dt>Whirlpool</dt><dd id="refresh-whirlpool"></dd></div><div><dt>USDC</dt><dd id="refresh-usdc"></dd></div><div><dt>KOx</dt><dd id="refresh-kox"></dd></div></dl></section>
+  Shell milestone: page containers and the design-system primitives only.
+  Every block marked "Placeholder" is a container waiting for the landing
+  content milestone; the copy here is limited to what the repository already
+  states about the product.
+-->
+<section class="eg-section eg-section--first eg-container">
+  <div class="eg-hero">
+    <div class="eg-stack eg-hero__copy" data-reveal>
+      <span class="eg-eyebrow">Execution-time corporate-action safety</span>
+      <h1 class="eg-heading--display-xl">Slippage protection, but for corporate actions.</h1>
+      <p class="eg-intro">A tokenized equity's economic state can change between the quote, the signature and the moment the transaction lands. EquityGuard moves that check into execution time, in the same transaction as the trade.</p>
+      <div class="eg-cluster">
+        <a class="eg-btn eg-btn--primary" href="/demo">Run the protected trade<span class="eg-link__arrow" aria-hidden="true">→</span></a>
+        <a class="eg-btn eg-btn--secondary" href="/docs">Read the documentation</a>
       </div>
-      <div class="technical-strip"><div><span>Route captured</span><strong id="route-date"></strong></div><div><span>Venue</span><strong id="route-venue"></strong></div><div><span>Pool</span><code id="route-pool"></code></div><div><span>Guard program</span><code id="guard-program"></code></div><div><span>Reviewed ELF</span><code id="guard-hash"></code></div></div>
-      <p class="mainnet-boundary">Execution did not occur on Solana mainnet. The market state and route are independent mainnet-derived evidence; the guarded execution ran on local solana-test-validator.</p>
-    </details>
+    </div>
 
-    <section class="proof-callout"><div><span class="eyebrow">Separate on-chain evidence</span><h2>Want to sign the live devnet proof?</h2><p>The existing Phantom flow remains separate. It shows the reviewed EquityGuard deployment running on Solana devnet with a real wallet.</p></div><a class="button button-primary" href="//127.0.0.1:4174/" data-live-devnet target="_blank" rel="noreferrer">View live on-chain proof ↗</a></section>
-  </main>
+    <aside class="eg-card eg-card--hero eg-glass eg-glass--hero eg-hero__panel" data-reveal data-reveal-delay="90">
+      <span class="eg-eyebrow">The invariant</span>
+      <p class="eg-hero__invariant">A transaction constructed against economic state S must not execute successfully if the relevant protected economic state has changed to S′ before execution.</p>
+      <div class="eg-cluster">
+        <span class="eg-badge eg-badge--ok"><span class="eg-badge__glyph" aria-hidden="true">●</span>State unchanged · executes</span>
+        <span class="eg-badge eg-badge--blocked"><span class="eg-badge__glyph" aria-hidden="true">■</span>State changed · fails atomically</span>
+      </div>
+    </aside>
+  </div>
+</section>
 
-  <footer class="footer"><div class="shell footer-inner"><span>EquityGuard · evidence-linked reference integration</span><span>Not a mainnet purchase. No transaction is sent by this page.</span></div></footer>
-</body>
-</html>
+<section class="eg-section eg-container">
+  <div class="eg-section-head" data-reveal>
+    <span class="eg-eyebrow">How it works</span>
+    <h2>Three checks, one transaction.</h2>
+    <p class="eg-intro">Section container. The narrative, diagram and per-step detail arrive with the landing content milestone.</p>
+  </div>
+  <div class="eg-grid" data-reveal>
+    <article class="eg-card eg-card--interactive eg-stack">
+      <span class="eg-badge">Placeholder</span>
+      <h3 class="eg-card__title">Observe</h3>
+      <p class="eg-text-secondary eg-text-small">Container for the state-observation step.</p>
+    </article>
+    <article class="eg-card eg-card--interactive eg-stack">
+      <span class="eg-badge">Placeholder</span>
+      <h3 class="eg-card__title">Guard</h3>
+      <p class="eg-text-secondary eg-text-small">Container for the guard-instruction step.</p>
+    </article>
+    <article class="eg-card eg-card--interactive eg-stack">
+      <span class="eg-badge">Placeholder</span>
+      <h3 class="eg-card__title">Execute</h3>
+      <p class="eg-text-secondary eg-text-small">Container for the downstream-execution step.</p>
+    </article>
+  </div>
+</section>
+
+<section class="eg-section eg-container">
+  <div class="eg-grid eg-grid--2" data-reveal>
+    <div class="eg-diagram">
+      <span class="eg-eyebrow">Diagram frame</span>
+      <p class="eg-diagram__caption">Container for the transaction-composition diagram.</p>
+    </div>
+    <article class="eg-card eg-card--lg eg-card--technical eg-stack">
+      <span class="eg-eyebrow">Technical surface</span>
+      <pre class="eg-code"><code>ix[0]  EquityGuard  assert economic state
+ix[1]  Jupiter      protected route
+ix[2]  Whirlpool    settlement</code></pre>
+      <div class="eg-evidence">
+        <div class="eg-evidence-row"><span class="eg-evidence-row__label">Placeholder</span><span class="eg-evidence-row__value">evidence row</span></div>
+        <div class="eg-evidence-row"><span class="eg-evidence-row__label">Placeholder</span><span class="eg-evidence-row__value">evidence row</span></div>
+      </div>
+    </article>
+  </div>
+</section>

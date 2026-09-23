@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 import { ActivationPhase } from "@equityguard/guard-client";
@@ -61,7 +61,11 @@ test("frontend amounts and provenance come only from the structured replay", () 
 
 test("browser contains no scenario selector or hard-coded economic phase", () => {
   const app = readFileSync(new URL("../src/app.ts", import.meta.url), "utf8");
-  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  const web = new URL("../web/", import.meta.url);
+  const html = readdirSync(web)
+    .filter((file) => file.endsWith(".html"))
+    .map((file) => readFileSync(new URL(file, web), "utf8"))
+    .join("\n");
   for (const forbidden of [/data-scenario/, /ScenarioId/, /expectedPhase/, /ActivationPhase/, /multiplierHex/]) {
     assert.ok(!forbidden.test(`${app}\n${html}`), `browser contains ${forbidden}`);
   }

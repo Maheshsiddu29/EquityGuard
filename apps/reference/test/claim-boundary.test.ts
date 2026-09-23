@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { embedState } from "../build/build.ts";
+import { REPOSITORY_URL, renderPage } from "../build/page.ts";
 
 const APP = new URL("../", import.meta.url).pathname;
 const read = (rel: string) => readFileSync(join(APP, rel), "utf8");
@@ -53,7 +54,14 @@ test("the preview server listens on loopback only", () => {
   assert.deepEqual([...serve.matchAll(/\.listen\(([^)]*)\)/g)].map((m) => (m[1] as string).split(",")[1]?.trim()), ['"127.0.0.1"']);
 });
 
-const copy = [read("web/index.html"), read("src/app.ts"), read("build/derive-state.ts")].join("\n");
+/**
+ * User-visible copy now spans the page fragments and the shell that wraps
+ * them, so the disclosure scans read every one of them.
+ */
+const pageFragments = list("web").filter((path) => path.endsWith(".html"));
+const copy = [...pageFragments, "build/page.ts", "src/app.ts", "build/derive-state.ts"]
+  .map(read)
+  .join("\n");
 
 test("the copy keeps the required disclosures", () => {
   for (const phrase of [
@@ -86,6 +94,27 @@ test("the copy makes none of the out-of-bounds claims", () => {
     /same stale-phase payload was sent/i,
   ]) {
     assert.ok(!pattern.test(copy), `forbidden claim ${pattern}`);
+  }
+});
+
+test("the rendered pages link out to nothing but the repository", () => {
+  const rendered = pageFragments
+    .map((fragment) =>
+      renderPage({
+        route: "/",
+        title: "t",
+        description: "d",
+        main: read(fragment),
+        scripts: ["/site.js"],
+      }),
+    )
+    .join("\n");
+  const outbound = new Set([...rendered.matchAll(/https?:\/\/[^"'\s)]+/g)].map((match) => match[0]));
+  outbound.delete("http://www.w3.org/2000/svg");
+  assert.deepEqual([...outbound], [REPOSITORY_URL]);
+  // Anything else the shell points at stays on loopback.
+  for (const [, href] of rendered.matchAll(/href="(\/\/[^"]+)"/g)) {
+    assert.match(href as string, /^\/\/127\.0\.0\.1:\d+\//);
   }
 });
 

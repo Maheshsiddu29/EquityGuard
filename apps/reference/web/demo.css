@@ -1,0 +1,488 @@
+/*
+ * /demo — protected-trade replay.
+ *
+ * This is the previous replay layout carried onto the new design system: the
+ * structure, spacing relationships and interaction states are unchanged, and
+ * the rules that used to come from the old shared stylesheet (card, button,
+ * summary, badge) now resolve through design tokens. Redesigning this page is
+ * a later milestone; the only substantive change here is the palette.
+ */
+
+.replay-page {
+  padding-block-end: var(--eg-section-y);
+}
+
+.replay-page > .eg-section-head {
+  margin-block-end: var(--eg-space-12);
+}
+
+/* ---- Order card and progress card ---- */
+
+.trade-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.82fr) minmax(420px, 1.18fr);
+  gap: var(--eg-space-6);
+  align-items: stretch;
+}
+
+.trade-card,
+.progress-card {
+  padding: var(--eg-space-8);
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-hero);
+  background: var(--eg-surface);
+  box-shadow: var(--eg-shadow-md);
+}
+
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: var(--eg-space-4);
+  margin-block-end: var(--eg-space-8);
+}
+
+.asset-row > div:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+
+.asset-row span {
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+}
+
+.asset-row strong {
+  font-size: 1.375rem;
+  letter-spacing: var(--eg-tracking-heading);
+}
+
+/* Issuer mark for the traded asset, not a UI accent — it stays the asset's
+ * own colour so the row is scannable next to other tickers later. */
+.stock-logo {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--eg-radius-card);
+  background: #c8102e;
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.side-pill {
+  margin-inline-start: auto;
+}
+
+.amount-box {
+  padding: var(--eg-space-5);
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-card-lg);
+  background: #fbfcfe;
+}
+
+.amount-box span,
+.amount-box strong,
+.amount-box small {
+  display: block;
+}
+
+.amount-box span,
+.amount-box small {
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-small);
+}
+
+.amount-box strong {
+  margin-block: var(--eg-space-1);
+  font-size: 1.75rem;
+  letter-spacing: var(--eg-tracking-heading);
+}
+
+.amount-box.receive {
+  border-color: #d5e2fb;
+  background: var(--eg-blue-light);
+}
+
+.swap-arrow {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: -8px auto;
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-input);
+  background: var(--eg-surface);
+  color: var(--eg-primary);
+  font-weight: 800;
+}
+
+.run-button {
+  min-height: 52px;
+  margin-block-start: var(--eg-space-6);
+  border-radius: var(--eg-radius-card);
+}
+
+.replay-note {
+  max-width: none;
+  margin-block-start: var(--eg-space-3);
+  color: var(--eg-text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+/* ---- Stage list (technical surface) ---- */
+
+.progress-card {
+  border-color: var(--eg-technical-border);
+  background: var(--eg-technical);
+  color: var(--eg-technical-text);
+  box-shadow: var(--eg-shadow-lg);
+}
+
+.progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--eg-space-5);
+  padding-block-end: var(--eg-space-5);
+  border-block-end: 1px solid var(--eg-technical-border);
+}
+
+.progress-head span {
+  color: var(--eg-technical-muted);
+  font-size: var(--eg-text-eyebrow);
+  font-weight: var(--eg-weight-semibold);
+  letter-spacing: var(--eg-tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.progress-head strong {
+  text-align: end;
+}
+
+.stage-list {
+  display: grid;
+  gap: var(--eg-space-2);
+  margin-block-start: var(--eg-space-6);
+  list-style: none;
+}
+
+.stage-list li {
+  position: relative;
+  padding: var(--eg-space-3) var(--eg-space-4) var(--eg-space-3)
+    var(--eg-space-10);
+  border-radius: var(--eg-radius-card);
+  color: var(--eg-technical-muted);
+  transition:
+    background-color var(--eg-duration) var(--eg-ease-out),
+    color var(--eg-duration) var(--eg-ease-out);
+}
+
+.stage-list i {
+  position: absolute;
+  inset-block-start: 15px;
+  inset-inline-start: 15px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #3d465c;
+  border-radius: 50%;
+  transition: border-color var(--eg-duration) var(--eg-ease-out);
+}
+
+.stage-list span {
+  font-weight: var(--eg-weight-semibold);
+}
+
+.stage-list li.active {
+  background: rgba(79, 124, 255, 0.16);
+  color: #ffffff;
+}
+
+.stage-list li.active i {
+  border-color: var(--eg-secondary);
+  box-shadow: 0 0 0 5px rgba(79, 124, 255, 0.14);
+}
+
+.stage-list li.done {
+  color: #ccd4e4;
+}
+
+.stage-list li.done i {
+  border-color: var(--eg-success-bright);
+  background: var(--eg-success-bright);
+}
+
+/* The tick is the state; colour alone never carries it. */
+.stage-list li.done i::after {
+  content: "✓";
+  position: absolute;
+  inset: -4px;
+  display: grid;
+  place-items: center;
+  color: #06231c;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.stage-list small {
+  display: none;
+  margin-block-start: var(--eg-space-1);
+  color: #f0b3b3;
+  font-size: var(--eg-text-small);
+  line-height: 1.45;
+}
+
+.stage-list .refresh-stage.active {
+  background: rgba(200, 77, 77, 0.16);
+}
+
+.stage-list .refresh-stage.active i {
+  border-color: var(--eg-blocked-bright);
+  box-shadow: 0 0 0 5px rgba(200, 77, 77, 0.14);
+}
+
+.stage-list .refresh-stage.active small {
+  display: block;
+}
+
+.trade-result {
+  margin-block-start: var(--eg-space-5);
+  padding: var(--eg-space-5);
+  border-radius: var(--eg-radius-card);
+  background: var(--eg-success-bg);
+  color: #123029;
+}
+
+.trade-result span {
+  color: var(--eg-success-text);
+  font-size: var(--eg-text-eyebrow);
+  font-weight: var(--eg-weight-semibold);
+  letter-spacing: var(--eg-tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.trade-result strong {
+  display: block;
+  margin-block: var(--eg-space-1);
+  font-size: 1.3125rem;
+  letter-spacing: var(--eg-tracking-heading);
+}
+
+.trade-result p {
+  max-width: none;
+  color: #3d564e;
+  font-size: var(--eg-text-small);
+}
+
+/* ---- Evidence drawer ---- */
+
+.evidence-drawer {
+  margin-block-start: var(--eg-space-6);
+  border: 1px solid var(--eg-border);
+  border-radius: var(--eg-radius-card-lg);
+  background: var(--eg-surface);
+  box-shadow: var(--eg-shadow-xs);
+  overflow: hidden;
+}
+
+.evidence-drawer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--eg-space-6) var(--eg-space-8);
+  font-weight: var(--eg-weight-bold);
+  cursor: pointer;
+  list-style: none;
+}
+
+.evidence-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-arrow {
+  color: var(--eg-primary);
+  font-size: 1.5rem;
+  line-height: 1;
+  transition: transform var(--eg-duration) var(--eg-ease-out);
+}
+
+.evidence-drawer[open] .summary-arrow {
+  transform: rotate(45deg);
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-block-start: 1px solid var(--eg-border);
+}
+
+.evidence-grid section {
+  padding: var(--eg-space-8);
+}
+
+.evidence-grid section + section {
+  border-inline-start: 1px solid var(--eg-border);
+}
+
+.layer {
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+}
+
+.evidence-grid h2 {
+  margin-block: var(--eg-space-2) var(--eg-space-5);
+  font-size: 1.25rem;
+}
+
+.evidence-grid dl {
+  display: grid;
+  gap: var(--eg-space-2);
+}
+
+.evidence-grid dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--eg-space-4);
+  padding-block-end: var(--eg-space-2);
+  border-block-end: 1px solid var(--eg-border);
+}
+
+.evidence-grid dt {
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-technical);
+}
+
+.evidence-grid dd {
+  font-size: var(--eg-text-technical);
+  font-weight: var(--eg-weight-semibold);
+  text-align: end;
+}
+
+.evidence-grid p {
+  margin-block-start: var(--eg-space-4);
+  color: var(--eg-text-secondary);
+  font-size: var(--eg-text-technical);
+  line-height: 1.55;
+}
+
+.technical-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--eg-space-4);
+  padding: var(--eg-space-5) var(--eg-space-8);
+  border-block-start: 1px solid var(--eg-border);
+  background: var(--eg-bg);
+}
+
+.technical-strip span,
+.technical-strip strong,
+.technical-strip code {
+  display: block;
+}
+
+.technical-strip span {
+  margin-block-end: var(--eg-space-1);
+  color: var(--eg-text-secondary);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.technical-strip strong,
+.technical-strip code {
+  font-size: 0.6875rem;
+  overflow-wrap: anywhere;
+}
+
+/* The claim boundary is a disclosure, so it gets the blocked treatment and
+ * sits on the drawer's own edge rather than floating as a tip. */
+.mainnet-boundary {
+  max-width: none;
+  padding: var(--eg-space-5) var(--eg-space-8);
+  border-block-start: 1px solid #f0d2d2;
+  background: var(--eg-blocked-bg);
+  color: var(--eg-blocked-text);
+  font-size: var(--eg-text-technical);
+  font-weight: var(--eg-weight-medium);
+  line-height: 1.55;
+}
+
+/* ---- Devnet callout ---- */
+
+.proof-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--eg-space-8);
+  margin-block-start: var(--eg-space-16);
+  padding: var(--eg-space-10) var(--eg-space-10);
+  border: 1px solid #d5e2fb;
+  border-radius: var(--eg-radius-hero);
+  background: var(--eg-blue-light);
+}
+
+.proof-callout .eg-btn {
+  flex: none;
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 1024px) {
+  .trade-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .evidence-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .evidence-grid section + section {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--eg-border);
+  }
+
+  .technical-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .proof-callout {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .trade-card,
+  .progress-card {
+    padding: var(--eg-space-5);
+    border-radius: var(--eg-radius-card-lg);
+  }
+
+  .progress-head {
+    display: block;
+  }
+
+  .progress-head strong {
+    display: block;
+    margin-block-start: var(--eg-space-2);
+    text-align: start;
+  }
+
+  .evidence-drawer > summary,
+  .evidence-grid section,
+  .technical-strip,
+  .mainnet-boundary {
+    padding-inline: var(--eg-space-5);
+  }
+
+  .technical-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .proof-callout {
+    padding: var(--eg-space-6);
+  }
+}
