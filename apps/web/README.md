@@ -30,3 +30,9 @@ at commit `1581b9b8e5876f60e5eb844970747506980c4412`.
 Portfolio-specific copy, portraits, About/Projects/Contact sections, external
 portfolio imagery, Matter.js physics, dark-theme machinery, and the OGL WebGL
 shader were intentionally not carried into EquityGuard.
+
+The landing hero also adapts React Bits' TypeScript/CSS Scroll Expand component,
+reviewed at commit `b6666e9f3a03a062143ce409f3aac53e27fdfaa8`. The adaptation keeps
+the scroll-progress and reduced-motion model, replaces its media surface with
+EquityGuard's transaction narrative, and adds no package dependency. See
+`THIRD_PARTY_NOTICES.md` for the upstream license.

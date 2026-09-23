@@ -33,6 +33,7 @@ __pycache__/
 !/README.md
 !docs/public-web.md
 !apps/web/README.md
+!apps/web/THIRD_PARTY_NOTICES.md
 
 # Evidence is local by default
 evidence/**

@@ -22,6 +22,21 @@ is a deterministic presentation of canonical evidence. It must never attempt
 to connect to a visitor's localhost validator and must not be described as the
 separate Phantom-signed localhost proof environment.
 
+## Landing page
+
+The public `/` route is a six-part product narrative: a Scroll Expand
+authorization-to-execution hero, unchanged/changed-state comparison, three
+execution principles, repository-backed proof, transaction-stack integration,
+and a final demo/docs call to action. The page retains the rbp-portfolio-derived
+frame, navigation, Motion and Lenis providers, and reduced-motion handling.
+
+The landing proof section reports only the established repository totals:
+19,986 mainnet observations, 294,527 authorization-to-execution comparisons,
+7,029 of 7,029 stale cases blocked, 1,000,000 TypeScript/Rust differential
+cases, and zero disagreements. Its KOx lifecycle explicitly separates
+read-only recorded mainnet state from execution on the proven local validator;
+it does not claim that an EquityGuard transaction ran on mainnet.
+
 ## Vercel
 
 Use these project settings:

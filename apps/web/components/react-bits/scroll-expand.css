@@ -1,0 +1,82 @@
+.scroll-expand {
+  --scroll-expand-progress: 0;
+  position: relative;
+  width: 100%;
+}
+
+.scroll-expand__track {
+  position: relative;
+  width: 100%;
+}
+
+.scroll-expand__stage {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.scroll-expand__frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  clip-path: inset(18% 16% 18% 16% round 32px);
+  will-change: clip-path;
+}
+
+.scroll-expand__surface {
+  position: absolute;
+  inset: 0;
+  transform: scale(1.08);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.scroll-expand__hint {
+  position: absolute;
+  right: 0;
+  bottom: 1.2rem;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  margin: 0;
+  color: var(--eg-text-secondary);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+  will-change: opacity, transform;
+}
+
+.scroll-expand__hint span {
+  color: var(--eg-primary);
+  font-size: 0.9rem;
+}
+
+.scroll-expand--reduced .scroll-expand__track {
+  height: auto !important;
+}
+
+.scroll-expand--reduced .scroll-expand__stage {
+  position: relative;
+  height: min(760px, 82svh) !important;
+  min-height: 600px;
+}
+
+.scroll-expand--reduced .scroll-expand__hint {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .scroll-expand__frame {
+    clip-path: inset(16% 6% 16% 6% round 26px);
+  }
+
+  .scroll-expand--reduced .scroll-expand__stage {
+    height: 660px !important;
+    min-height: 660px;
+  }
+}
