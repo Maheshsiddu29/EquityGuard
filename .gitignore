@@ -31,6 +31,8 @@ __pycache__/
 # Local documentation / development notes: only the root README is public
 *.md
 !/README.md
+!docs/public-web.md
+!apps/web/README.md
 
 # Evidence is local by default
 evidence/**
