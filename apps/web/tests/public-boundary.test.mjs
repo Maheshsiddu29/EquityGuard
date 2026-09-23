@@ -131,3 +131,55 @@ test("the public routes share the dark surface system without a grid", async () 
   assert.match(visualSystem, /Manrope Variable/);
   assert.match(visualSystem, /--public-gradient-surface/);
 });
+
+test("the technical docs expose the complete implementation-led information architecture", async () => {
+  const pageSource = await readFile(new URL("docs/page.tsx", APP_URL), "utf8");
+  const diagramSource = await readFile(
+    new URL("docs/docs-diagrams.tsx", COMPONENT_URL),
+    "utf8"
+  );
+
+  for (const section of [
+    "overview",
+    "problem",
+    "how-it-works",
+    "architecture",
+    "transaction-model",
+    "economic-state-model",
+    "sdk",
+    "integrations",
+    "security",
+    "evidence",
+    "deployment",
+    "limitations",
+    "future-work",
+    "references",
+  ]) {
+    assert.match(pageSource, new RegExp(`\\[\"${section}\"`));
+    assert.match(pageSource, new RegExp(`id=\"${section}\"`));
+  }
+
+  for (const boundary of [
+    "No mainnet EquityGuard transaction",
+    "Strict route subset",
+    "No universal protection window",
+    "Upgrade-authority TOCTOU",
+    "No external audit",
+    "Packages are unpublished",
+    "Public demo is a replay",
+  ]) {
+    assert.match(pageSource, new RegExp(boundary));
+  }
+
+  assert.match(pageSource, /The trade you approved should be the trade that executes/);
+  assert.match(pageSource, /19,986/);
+  assert.match(pageSource, /294,527/);
+  assert.match(pageSource, /1,000,000/);
+  assert.match(pageSource, /@equityguard\/jupiter\/protect/);
+  assert.match(pageSource, /packages are private and unpublished/i);
+  assert.match(diagramSource, /SystemArchitectureDiagram/);
+  assert.match(diagramSource, /SequenceDiagram/);
+  assert.match(diagramSource, /TransactionDiagram/);
+  assert.match(diagramSource, /EconomicStateDiagram/);
+  assert.match(diagramSource, /RouterIntegrationDiagram/);
+});
