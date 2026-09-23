@@ -22,11 +22,19 @@ test("the public app exposes exactly the three requested page routes", async () 
 });
 
 test("the public demo states its replay boundary", async () => {
-  const source = await readFile(new URL("demo/page.tsx", APP_URL), "utf8");
+  const pageSource = await readFile(new URL("demo/page.tsx", APP_URL), "utf8");
+  const componentSource = await readFile(
+    new URL("demo/demo-experience.tsx", COMPONENT_URL),
+    "utf8"
+  );
 
-  assert.match(source, /canonical evidence-driven lifecycle/i);
-  assert.match(source, /does not connect to a visitor's localhost validator/i);
-  assert.match(source, /separate Phantom-signed proof environment/i);
+  assert.match(componentSource, /canonical evidence-driven lifecycle/i);
+  assert.match(componentSource, /does not connect to a\s+visitor.*localhost validator/i);
+  assert.match(componentSource, /separate Phantom-signed\s+proof environment/i);
+  assert.match(pageSource, /reference\/data\/kox-trade-replay\.json/);
+  assert.match(pageSource, /ActivationPhaseChanged/);
+  assert.match(pageSource, /0\.05504261/);
+  assert.doesNotMatch(componentSource, /fetch\(|sendTransaction|signTransaction/);
 });
 
 test("the landing page keeps the approved six-section narrative", async () => {
@@ -96,4 +104,30 @@ test("the revised landing uses one wave canvas and shared outcome structures", a
   assert.match(waveSource, /prefersReducedMotion/);
   assert.match(waveSource, /IntersectionObserver/);
   assert.match(waveSource, /visibilitychange/);
+});
+
+test("the public routes share the dark surface system without a grid", async () => {
+  const demoSource = await readFile(
+    new URL("demo/demo-experience.tsx", COMPONENT_URL),
+    "utf8"
+  );
+  const docsSource = await readFile(new URL("docs/page.tsx", APP_URL), "utf8");
+  const backdropSource = await readFile(
+    new URL("layout/page-backdrop.tsx", COMPONENT_URL),
+    "utf8"
+  );
+  const visualSystem = await readFile(
+    new URL("ui/public-visual-system.css", COMPONENT_URL),
+    "utf8"
+  );
+
+  assert.doesNotMatch(backdropSource, /grid/);
+  assert.match(demoSource, /PublicSurface/);
+  assert.match(demoSource, /AnimatedPublicPageAtmosphere/);
+  assert.match(demoSource, /Order needs review/);
+  assert.match(demoSource, /Protected trade replay completed/);
+  assert.match(docsSource, /PublicSurface/);
+  assert.match(docsSource, /PublicPageAtmosphere/);
+  assert.match(visualSystem, /Manrope Variable/);
+  assert.match(visualSystem, /--public-gradient-surface/);
 });

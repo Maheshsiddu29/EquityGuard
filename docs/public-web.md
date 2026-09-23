@@ -36,8 +36,19 @@ Bits Gradient Waves WebGL2 canvas provides the hero atmosphere; it uses a
 low-detail raymarch, is stopped by IntersectionObserver when offscreen, stops
 when the document is hidden, and is never initialized for reduced motion. A
 static CSS continuation reuses the wave palette in the final call to action,
-so the page does not mount a second animation. Other routes retain their
-existing presentation.
+so the page does not mount a second animation.
+
+The public demo derives its displayed values from the committed canonical KOx
+replay and presents four deterministic UI states: initial order, review after
+the stale attempt, updated order, and completed replay. This interaction is
+presentation-only: it performs no RPC request, wallet request, signature, or
+transaction submission. Technical logs and signatures remain available in the
+evidence drawer.
+
+All three public routes use the same dark surface family and Manrope UI
+typography. The demo has one calmer page-level Gradient Waves canvas, while the
+documentation route uses a static navy/cobalt atmosphere for reading comfort.
+No public route uses a background grid.
 
 The landing proof section reports only the established repository totals:
 19,986 mainnet observations, 294,527 authorization-to-execution comparisons,
