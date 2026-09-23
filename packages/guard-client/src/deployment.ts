@@ -116,10 +116,10 @@ export interface LoaderAccountView extends ProgramAccountView {
 }
 
 export type GuardIdentityCheck =
-  | { readonly ok: true }
+  | { readonly ok: true; readonly attestation: GuardDeploymentAttestation }
   | {
       readonly ok: false;
-      readonly reason: "MISSING" | "NOT_EXECUTABLE" | "UNEXPECTED_LOADER" | "PROGRAM_DATA_MISMATCH" | "BINARY_MISMATCH";
+      readonly reason: "MISSING" | "NOT_EXECUTABLE" | "UNEXPECTED_LOADER" | "PROGRAM_DATA_MISMATCH" | "BINARY_MISMATCH" | "MALFORMED_PROGRAM_DATA";
       readonly message: string;
     };
 
@@ -128,10 +128,134 @@ const LOADER_STATE_PROGRAM = 2;
 const LOADER_STATE_PROGRAM_DATA = 3;
 /** Tag (u32) and the ProgramData address. */
 const PROGRAM_ACCOUNT_LEN = 36;
-/** Tag (u32), deployment slot (u64), `Option<Pubkey>` upgrade authority (1 + 32). */
+/**
+ * `UpgradeableLoaderState::ProgramData` header, in bincode order:
+ * tag (`u32`), `slot` (`u64`), `Option<Pubkey>` upgrade authority
+ * (`u8` discriminant, then 32 bytes when `Some`).
+ *
+ * No canonical Solana deserializer for this state ships with the dependency
+ * set (`@solana/kit` has no loader-v3 codec and the repository adds no
+ * dependency for one), so the layout is spelled out here as named offsets and
+ * pinned by `deployment.test.ts` rather than left as bare literals.
+ */
+const PROGRAMDATA_SLOT_OFFSET = 4;
+const PROGRAMDATA_AUTHORITY_OPTION_OFFSET = 12;
+const PROGRAMDATA_AUTHORITY_OFFSET = 13;
 const PROGRAMDATA_HEADER_LEN = 45;
+/** Bincode encodes `Option` as a single 0 (`None`) or 1 (`Some`) byte. */
+const OPTION_NONE = 0;
+const OPTION_SOME = 1;
+/**
+ * The all-zero pubkey, which is also the System Program address. No signer
+ * exists for it, so an upgrade authority set to it can never authorize an
+ * upgrade. `solana-test-validator --upgradeable-program <id> <so> none`
+ * produces exactly this, rather than the canonical `Option::None`.
+ */
+const ZERO_AUTHORITY = "11111111111111111111111111111111";
 
 const u32At = (data: Uint8Array, offset: number) => (data.length >= offset + 4 ? new DataView(data.buffer, data.byteOffset + offset, 4).getUint32(0, true) : null);
+
+/**
+ * Whether a deployment can still be replaced.
+ *
+ * - `IMMUTABLE`: ProgramData holds `None` for the upgrade authority. The
+ *   executing bytes can never change. This is what
+ *   `solana program set-upgrade-authority --final` produces.
+ * - `NO_USABLE_AUTHORITY`: ProgramData holds `Some(11111111111111111111111111111111)`
+ *   — the all-zero pubkey, which is the System Program address. No signer
+ *   exists for it, so in practice the program cannot be upgraded, but this is
+ *   *not* the canonical immutable encoding and is deliberately not reported as
+ *   `IMMUTABLE`. `solana-test-validator --upgradeable-program … none` writes
+ *   this, so the local reproduction lands here.
+ * - `UPGRADEABLE`: ProgramData names a real upgrade authority. Whoever holds
+ *   that key can replace the program at any time, including after a user has
+ *   signed and while the transaction is in flight.
+ * - `UNKNOWN`: ProgramData was not read, so mutability was never established.
+ *
+ * Only `IMMUTABLE` means "provably cannot change". Nothing else may be
+ * presented as immutable.
+ */
+export type DeploymentMutability = "IMMUTABLE" | "NO_USABLE_AUTHORITY" | "UPGRADEABLE" | "UNKNOWN";
+
+/** The decoded `UpgradeableLoaderState::ProgramData` header. */
+export interface ProgramDataHeader {
+  /** Slot of the last deploy or upgrade. */
+  readonly deploymentSlot: bigint;
+  /** The upgrade authority, or `null` when the deployment is immutable. */
+  readonly upgradeAuthority: Address | null;
+  readonly mutability: Exclude<DeploymentMutability, "UNKNOWN">;
+}
+
+/**
+ * Decodes the ProgramData header, or `null` when `data` is not a well-formed
+ * one. Fails closed: a short account, a wrong state tag, or an `Option`
+ * discriminant that is neither 0 nor 1 all decode to `null` rather than to a
+ * guessed authority.
+ */
+export function decodeProgramDataHeader(data: Uint8Array): ProgramDataHeader | null {
+  if (data.length < PROGRAMDATA_HEADER_LEN || u32At(data, 0) !== LOADER_STATE_PROGRAM_DATA) return null;
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const deploymentSlot = view.getBigUint64(PROGRAMDATA_SLOT_OFFSET, true);
+  const option = data[PROGRAMDATA_AUTHORITY_OPTION_OFFSET];
+  if (option === OPTION_NONE) {
+    return { deploymentSlot, upgradeAuthority: null, mutability: "IMMUTABLE" };
+  }
+  if (option !== OPTION_SOME) return null;
+  const upgradeAuthority = getAddressDecoder().decode(data.subarray(PROGRAMDATA_AUTHORITY_OFFSET, PROGRAMDATA_HEADER_LEN));
+  return {
+    deploymentSlot,
+    upgradeAuthority,
+    // Reported distinctly rather than folded into either neighbour: it cannot
+    // be upgraded, but it is not the encoding that proves so.
+    mutability: upgradeAuthority === ZERO_AUTHORITY ? "NO_USABLE_AUTHORITY" : "UPGRADEABLE",
+  };
+}
+
+/**
+ * What a client proved about the program it built a guard against, at the slot
+ * it read. Carrying the authority and mutability is the point: a reviewed
+ * binary under a live upgrade authority is not the same security statement as
+ * a reviewed binary that can never change.
+ *
+ * This is a statement about one read. It does not bind the transaction to
+ * those bytes — see `reverifyGuardDeployment` in `@equityguard/jupiter/protect`.
+ */
+export interface GuardDeploymentAttestation {
+  readonly programId: Address;
+  /** The ProgramData account read, or `null` when none was read. */
+  readonly programDataAddress: Address | null;
+  /** SHA-256 of the reviewed ELF, when this is a reviewed deployment. */
+  readonly reviewedElfSha256: string | null;
+  /** Slot of the last deploy or upgrade, when ProgramData was read. */
+  readonly deploymentSlot: bigint | null;
+  readonly upgradeAuthority: Address | null;
+  readonly mutability: DeploymentMutability;
+  /** Whether the deployed bytes were verified, or trusted on the caller's word. */
+  readonly identity: "REVIEWED_BINARY" | "CALLER_TRUSTED";
+}
+
+/**
+ * The fields that must not change between building a guard and executing it.
+ *
+ * Deliberately excludes `deploymentSlot`, which is redundant once the ELF hash
+ * and authority are pinned, and would otherwise make an unrelated redeploy of
+ * identical bytes look like a substitution.
+ */
+export function deploymentAttestationDigest(attestation: GuardDeploymentAttestation): string {
+  return [
+    attestation.programId,
+    attestation.programDataAddress ?? "-",
+    attestation.reviewedElfSha256 ?? "-",
+    attestation.upgradeAuthority ?? "-",
+    attestation.mutability,
+    attestation.identity,
+  ].join("|");
+}
+
+/** Whether two attestations describe the same deployment. */
+export function sameGuardDeployment(a: GuardDeploymentAttestation, b: GuardDeploymentAttestation): boolean {
+  return deploymentAttestationDigest(a) === deploymentAttestationDigest(b);
+}
 
 /**
  * Whether the accounts at a reviewed deployment hold exactly the reviewed
@@ -149,7 +273,13 @@ export function verifyReviewedGuardDeployment(
   program: LoaderAccountView | null,
   programData: LoaderAccountView | null,
 ): GuardIdentityCheck {
-  if (!program?.executable) return checkGuardProgramAccount(deployment.programAddress, program);
+  if (!program?.executable) {
+    const availability = checkGuardProgramAccount(deployment.programAddress, program);
+    // Unreachable when the account is executable; narrows the shared type.
+    return availability.ok
+      ? { ok: false, reason: "MISSING", message: `no account exists at ${deployment.programAddress} on this cluster` }
+      : availability;
+  }
   const at = deployment.programAddress;
   if (program.owner !== BPF_LOADER_UPGRADEABLE_ADDRESS || program.data.length !== PROGRAM_ACCOUNT_LEN || u32At(program.data, 0) !== LOADER_STATE_PROGRAM) {
     return { ok: false, reason: "UNEXPECTED_LOADER", message: `${at} is not an upgradeable-loader Program account (owner ${program.owner})` };
@@ -169,5 +299,38 @@ export function verifyReviewedGuardDeployment(
   if (programData.data.subarray(end).some((byte) => byte !== 0)) {
     return { ok: false, reason: "BINARY_MISMATCH", message: `ProgramData ${deployment.programDataAddress} carries non-zero bytes beyond the reviewed ${deployment.elfLength}-byte ELF` };
   }
-  return { ok: true };
+  const header = decodeProgramDataHeader(programData.data);
+  if (!header) {
+    return { ok: false, reason: "MALFORMED_PROGRAM_DATA", message: `ProgramData ${deployment.programDataAddress} has an undecodable upgrade-authority header` };
+  }
+  return {
+    ok: true,
+    attestation: {
+      programId: at,
+      programDataAddress: deployment.programDataAddress,
+      reviewedElfSha256: deployment.elfSha256,
+      deploymentSlot: header.deploymentSlot,
+      upgradeAuthority: header.upgradeAuthority,
+      mutability: header.mutability,
+      identity: "REVIEWED_BINARY",
+    },
+  };
+}
+
+/**
+ * The attestation for a program this client did not review: it exists and is
+ * executable, and nothing more was established. Mutability is `UNKNOWN`
+ * because no ProgramData was read — reporting `IMMUTABLE` here would be a
+ * guess, and guessing in this direction is the dangerous direction.
+ */
+export function callerTrustedAttestation(programId: Address): GuardDeploymentAttestation {
+  return {
+    programId,
+    programDataAddress: null,
+    reviewedElfSha256: null,
+    deploymentSlot: null,
+    upgradeAuthority: null,
+    mutability: "UNKNOWN",
+    identity: "CALLER_TRUSTED",
+  };
 }

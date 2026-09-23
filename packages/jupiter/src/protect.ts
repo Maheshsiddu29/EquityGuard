@@ -48,6 +48,7 @@ import {
   ROUTE_V2_ACCOUNT,
   SET_COMPUTE_UNIT_LIMIT,
   USDC_MINT_ADDRESS,
+  callerTrustedAttestation,
   checkGuardOffline,
   checkGuardProgramAccount,
   checkGuardedJupiterTransaction,
@@ -61,9 +62,11 @@ import {
   hasScheduledChange,
   isValidWindowSecs,
   resolveProtectionAdapter,
+  sameGuardDeployment,
   verifyReviewedGuardDeployment,
   type AssertSafeExecutionRequest,
   type EquityGuardErrorName,
+  type GuardDeploymentAttestation,
   type GuardSnapshot,
   type JupiterAdapterKind,
   type JupiterTradeBinding,
@@ -155,6 +158,8 @@ export const EquityGuardFailureCode = {
   GUARD_BINARY_UNVERIFIED: "GUARD_BINARY_UNVERIFIED",
   /** The RPC serves a cluster this client has no deployment knowledge for. */
   UNSUPPORTED_CLUSTER: "UNSUPPORTED_CLUSTER",
+  /** The deployment changed between building the guard and re-reading it. */
+  GUARD_DEPLOYMENT_CHANGED: "GUARD_DEPLOYMENT_CHANGED",
   /** A known tokenized equity that presents no supported economic-state model. */
   NO_SUPPORTED_STATE_ADAPTER: "NO_SUPPORTED_STATE_ADAPTER",
   /** A known tokenized equity whose declared state model this client does not implement. */
@@ -197,6 +202,17 @@ export interface ProtectedSwap {
   readonly programAddress: Address;
   /** Whether that program's binary was verified or is trusted on the caller's word. */
   readonly deploymentIdentity: GuardDeploymentIdentity;
+  /**
+   * What was proven about the deployment at the slot it was read: the ELF
+   * hash for a reviewed deployment, the upgrade authority, and whether the
+   * program can still be replaced. A `REVIEWED_BINARY` under an
+   * `UPGRADEABLE` deployment is a weaker statement than the same binary under
+   * an `IMMUTABLE` one, and this field is what makes that difference legible.
+   *
+   * It is a statement about one read. Re-check it immediately before asking
+   * for a signature with {@link reverifyGuardDeployment}.
+   */
+  readonly deployment: GuardDeploymentAttestation;
   /** The cluster the RPC serves, from its genesis hash. */
   readonly cluster: SolanaCluster;
   /** The registry entry for the protected mint, when this client knows it. */
@@ -462,7 +478,13 @@ async function classify(build: BuildResponse, rpc: Rpc<GetMultipleAccountsApi>, 
 // ------------------------------------------------------- deployment binding
 
 type DeploymentResolution =
-  | { readonly ok: true; readonly programAddress: Address; readonly cluster: SolanaCluster; readonly identity: GuardDeploymentIdentity }
+  | {
+      readonly ok: true;
+      readonly programAddress: Address;
+      readonly cluster: SolanaCluster;
+      readonly identity: GuardDeploymentIdentity;
+      readonly attestation: GuardDeploymentAttestation;
+    }
   | { readonly ok: false; readonly code: EquityGuardFailureCode; readonly message: string };
 
 /**
@@ -510,17 +532,59 @@ async function resolveDeployment(
     const account = value[index];
     return account ? { executable: account.executable, owner: account.owner, data: base64(account.data) } : null;
   };
-  const check = reviewed ? verifyReviewedGuardDeployment(reviewed, view(0), view(1)) : checkGuardProgramAccount(programAddress, view(0));
-  if (!check.ok) {
-    const code =
-      check.reason === "MISSING"
-        ? EquityGuardFailureCode.GUARD_DEPLOYMENT_UNAVAILABLE
-        : check.reason === "NOT_EXECUTABLE"
-          ? EquityGuardFailureCode.GUARD_PROGRAM_NOT_EXECUTABLE
-          : EquityGuardFailureCode.GUARD_BINARY_UNVERIFIED;
-    return { ok: false, code, message: `${check.message} (${cluster})` };
+  // A reviewed address is attested from its ProgramData, which is what
+  // carries the ELF and the upgrade authority. Any other address is only
+  // proven to exist and be executable, so its mutability stays UNKNOWN.
+  let attestation: GuardDeploymentAttestation;
+  if (reviewed) {
+    const check = verifyReviewedGuardDeployment(reviewed, view(0), view(1));
+    if (!check.ok) return { ok: false, code: deploymentFailureCode(check.reason), message: `${check.message} (${cluster})` };
+    attestation = check.attestation;
+  } else {
+    const check = checkGuardProgramAccount(programAddress, view(0));
+    if (!check.ok) return { ok: false, code: deploymentFailureCode(check.reason), message: `${check.message} (${cluster})` };
+    attestation = callerTrustedAttestation(programAddress);
   }
-  return { ok: true, programAddress, cluster, identity: reviewed ? "REVIEWED_BINARY" : "CALLER_TRUSTED" };
+  return { ok: true, programAddress, cluster, identity: attestation.identity, attestation };
+}
+
+function deploymentFailureCode(reason: "MISSING" | "NOT_EXECUTABLE" | string): EquityGuardFailureCode {
+  if (reason === "MISSING") return EquityGuardFailureCode.GUARD_DEPLOYMENT_UNAVAILABLE;
+  if (reason === "NOT_EXECUTABLE") return EquityGuardFailureCode.GUARD_PROGRAM_NOT_EXECUTABLE;
+  return EquityGuardFailureCode.GUARD_BINARY_UNVERIFIED;
+}
+
+/**
+ * Re-reads the deployment a `PROTECTED` result was built against and reports
+ * whether it is still the same program.
+ *
+ * Read-only: it issues one `getMultipleAccounts` and touches neither the
+ * transaction nor the result. Call it immediately before requesting a wallet
+ * signature, and again immediately before submission — a reviewed binary
+ * verified at build time says nothing about the bytes that execute if the
+ * upgrade authority acted in between.
+ *
+ * On a mismatch, do not sign and do not submit. Rebuild.
+ */
+export async function reverifyGuardDeployment(
+  result: ProtectedSwap,
+  rpc: Rpc<GetMultipleAccountsApi & GetGenesisHashApi>,
+  commitment: Commitment = "confirmed",
+): Promise<DeploymentReverification> {
+  const current = await resolveDeployment(rpc, result.programAddress, commitment);
+  if (!current.ok) {
+    return { ok: false, code: current.code, message: current.message, expected: result.deployment, actual: null };
+  }
+  if (!sameGuardDeployment(result.deployment, current.attestation)) {
+    return {
+      ok: false,
+      code: EquityGuardFailureCode.GUARD_DEPLOYMENT_CHANGED,
+      message: `the EquityGuard deployment at ${result.programAddress} is no longer the one this transaction was built against`,
+      expected: result.deployment,
+      actual: current.attestation,
+    };
+  }
+  return { ok: true, attestation: current.attestation };
 }
 
 // -------------------------------------------------------------- entry points
@@ -660,6 +724,7 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
       adapterKind,
       programAddress: deployment.programAddress,
       deploymentIdentity: deployment.identity,
+      deployment: deployment.attestation,
       cluster: deployment.cluster,
       knownAsset,
       transaction: composed.wireBytes,
@@ -688,6 +753,19 @@ export async function protectJupiterSwap(input: ProtectJupiterSwapInput): Promis
  * detected exactly as it is on chain.
  */
 export type VerificationVerdict = EquityGuardErrorName | "UNRESOLVABLE_TRANSACTION" | "GUARD_INSTRUCTION_CHANGED" | null;
+
+/** The outcome of re-reading a deployment a protected transaction was built against. */
+export type DeploymentReverification =
+  | { readonly ok: true; readonly attestation: GuardDeploymentAttestation }
+  | {
+      readonly ok: false;
+      readonly code: EquityGuardFailureCode;
+      readonly message: string;
+      /** The attestation recorded when the transaction was built. */
+      readonly expected: GuardDeploymentAttestation;
+      /** What the deployment looks like now, or `null` when it no longer resolves. */
+      readonly actual: GuardDeploymentAttestation | null;
+    };
 
 export async function verifyProtectedSwap(result: ProtectedSwap, wireBytes: Uint8Array = result.transaction): Promise<VerificationVerdict> {
   let instructions;
@@ -743,6 +821,7 @@ const EXPLANATIONS: Readonly<Record<EquityGuardFailureCode, string>> = {
   GUARD_PROGRAM_NOT_EXECUTABLE: "The EquityGuard program address given for this cluster is not an executable program, so a guard instruction built against it would never run.",
   GUARD_BINARY_UNVERIFIED: "The program at the EquityGuard deployment address is not the reviewed EquityGuard binary, so a guard built against it proves nothing.",
   UNSUPPORTED_CLUSTER: "This RPC serves a cluster EquityGuard has no deployment knowledge for. Pass an explicit programAddress to build against a deployment you trust.",
+  GUARD_DEPLOYMENT_CHANGED: "The EquityGuard deployment changed after this transaction was built, so the program that would execute is not the one it was built against. Do not sign or submit it; rebuild.",
   NO_SUPPORTED_STATE_ADAPTER: "This is a known tokenized equity, but its mint no longer presents an economic-state model EquityGuard can assert, so its protection semantics cannot be established.",
   UNSUPPORTED_STATE_MODEL: "This is a known tokenized equity whose economic-state model this EquityGuard client does not implement.",
 };

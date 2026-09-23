@@ -29,12 +29,14 @@ import {
   SYSVAR_INSTRUCTIONS_ADDRESS,
   asCommittedInstruction,
   downstreamCommitment,
-  encodeAssertSafeExecutionV2,
   equityGuardErrorName,
   fetchGuardSnapshot,
   type AssertSafeExecutionRequest,
   type GuardSnapshot,
 } from "@equityguard/guard-client";
+import {
+  encodeAssertSafeExecutionV2,
+} from "@equityguard/guard-client/advanced";
 
 import { connectDevnet, readDevnetConfig, type DevnetContext } from "./config.ts";
 import { findAsset, loadDevnetState, requireGuardAbiV2Deployment, type TestAsset } from "./devnet-state.ts";

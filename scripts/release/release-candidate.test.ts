@@ -95,6 +95,7 @@ const PROTECT_EXPORTS = [
   "USDC_MINT_ADDRESS",
   "explainEquityGuardError",
   "protectJupiterSwap",
+  "reverifyGuardDeployment",
   "supportsJupiterSwap",
   "verifyProtectedSwap",
 ];

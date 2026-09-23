@@ -19,18 +19,20 @@ import {
   JUPITER_SUFFIX_COMMITMENT_DOMAIN,
   JUPITER_V6_PROGRAM_ADDRESS,
   ROUTE_V2_DISCRIMINATOR_HEX,
-  buildGuardedJupiterTrade,
   checkGuardedJupiterTransaction,
   checkJupiterSuffix,
   decodeRouteV2Prefix,
   downstreamCommitment,
-  getAssertSafeExecutionV2Instruction,
   jupiterSuffixCommitment,
   minimumOutFromQuote,
   sysvarView,
   type AssertSafeExecutionRequest,
   type JupiterAdapterKind,
 } from "../src/index.ts";
+import {
+  buildGuardedJupiterTrade,
+  getAssertSafeExecutionV2Instruction,
+} from "../src/advanced.ts";
 import { fromHex, hex, readDecodedMints, readGolden } from "./fixtures.ts";
 
 interface RecordedInstruction {

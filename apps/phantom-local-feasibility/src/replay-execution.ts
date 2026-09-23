@@ -28,7 +28,8 @@ import {
   type JupiterAdapterKind,
 } from "../../../packages/guard-client/src/index.ts";
 import { parseBuildResponse, type BuildResponse } from "../../../packages/jupiter/src/build-client.ts";
-import { composeGuardedJupiterTrade, resolveWireTransaction } from "../../../packages/jupiter/src/compose.ts";
+import { composeGuardedJupiterTrade } from "../../../packages/jupiter/src/advanced.ts";
+import { resolveWireTransaction } from "../../../packages/jupiter/src/compose.ts";
 import type { PhantomProvider } from "../../devnet-wallet-demo/src/wallet.ts";
 import type { BuyStage } from "./buy-error.ts";
 import {

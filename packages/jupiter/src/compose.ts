@@ -49,7 +49,6 @@ import {
   SET_COMPUTE_UNIT_LIMIT,
   SET_COMPUTE_UNIT_PRICE,
   USDC_MINT_ADDRESS,
-  buildGuardedJupiterTrade,
   decodeRouteV2Prefix,
   jupiterTradeBindingOf,
   minimumOutFromQuote,
@@ -60,6 +59,9 @@ import {
   type JupiterAdapterKind,
   type JupiterTradeBinding,
 } from "@equityguard/guard-client";
+import {
+  buildGuardedJupiterTrade,
+} from "@equityguard/guard-client/advanced";
 
 import type { ApiInstruction, BuildResponse } from "./build-client.ts";
 

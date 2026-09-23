@@ -44,19 +44,21 @@ import {
   TOKEN_2022_PROGRAM_ADDRESS as TOKEN_2022_PROGRAM_ID,
   USDC_MINT_ADDRESS,
   asCommittedInstruction,
-  buildGuardedJupiterTrade,
   canonicalAta,
   checkGuardedJupiterTransaction,
   downstreamCommitment,
   equityGuardErrorName,
   expectationFromSnapshot,
   fetchGuardSnapshot,
-  getAssertSafeExecutionV2Instruction,
   jupiterSuffixCommitment,
   sysvarView,
   type AssertSafeExecutionRequest,
   type JupiterAdapterKind,
 } from "@equityguard/guard-client";
+import {
+  buildGuardedJupiterTrade,
+  getAssertSafeExecutionV2Instruction,
+} from "@equityguard/guard-client/advanced";
 
 import { connectDevnet, readDevnetConfig, type DevnetContext } from "./config.ts";
 import { findAsset, loadDevnetState, requireGuardAbiV2Deployment } from "./devnet-state.ts";

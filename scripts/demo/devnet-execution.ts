@@ -30,12 +30,14 @@ import {
 import {
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
   bytesEqual,
-  buildGuardedTransferChecked,
   equityGuardErrorName,
   fetchGuardSnapshot,
   type GuardedTransferChecked,
   type ProtectedState,
 } from "@equityguard/guard-client";
+import {
+  buildGuardedTransferChecked,
+} from "@equityguard/guard-client/advanced";
 import {
   RepresentationState,
   StateSource,

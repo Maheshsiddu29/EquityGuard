@@ -22,12 +22,14 @@ import {
   DownstreamAdapterKind,
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
   USDC_MINT_ADDRESS,
-  buildGuardedJupiterTrade,
   canonicalAta,
   jupiterTradeBindingOf,
   minimumOutFromQuote,
   type JupiterTradeBinding,
 } from "@equityguard/guard-client";
+import {
+  buildGuardedJupiterTrade,
+} from "@equityguard/guard-client/advanced";
 
 import {
   ExecutionPlanError,

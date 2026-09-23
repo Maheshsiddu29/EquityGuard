@@ -84,10 +84,11 @@ test("K: the entry point exposes exactly the intended API", () => {
     "USDC_MINT_ADDRESS",
     "explainEquityGuardError",
     "protectJupiterSwap",
+    "reverifyGuardDeployment",
     "supportsJupiterSwap",
     "verifyProtectedSwap",
   ]);
-  for (const name of ["protectJupiterSwap", "supportsJupiterSwap", "verifyProtectedSwap", "explainEquityGuardError"] as const) {
+  for (const name of ["protectJupiterSwap", "supportsJupiterSwap", "verifyProtectedSwap", "explainEquityGuardError", "reverifyGuardDeployment"] as const) {
     assert.equal(typeof protect[name], "function", name);
   }
 });
@@ -95,6 +96,8 @@ test("K: the entry point exposes exactly the intended API", () => {
 test("K: the package declares the entry point as a subpath export", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { exports: Record<string, string> };
   assert.equal(manifest.exports["./protect"], "./src/protect.ts");
+  // EG-A-01: the trusted-builder surface is a separate, named subpath.
+  assert.equal(manifest.exports["./advanced"], "./src/advanced.ts");
 });
 
 test("L: the core helper needs no environment or secret configuration", async () => {

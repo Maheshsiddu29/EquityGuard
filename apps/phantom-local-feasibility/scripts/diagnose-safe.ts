@@ -22,7 +22,8 @@ import {
   jupiterSuffixCommitment,
 } from "../../../packages/guard-client/src/index.ts";
 import { parseBuildResponse } from "../../../packages/jupiter/src/build-client.ts";
-import { composeGuardedJupiterTrade, resolveWireTransaction } from "../../../packages/jupiter/src/compose.ts";
+import { composeGuardedJupiterTrade } from "../../../packages/jupiter/src/advanced.ts";
+import { resolveWireTransaction } from "../../../packages/jupiter/src/compose.ts";
 import { LOCAL_RPC_URL, assertLocalRpcUrl } from "../src/feasibility.ts";
 import {
   KOX_MINT,

@@ -44,7 +44,8 @@ import {
   type JupiterAdapterKind,
 } from "../../packages/guard-client/src/index.ts";
 import { parseBuildResponse, type BuildResponse } from "../../packages/jupiter/src/build-client.ts";
-import { composeGuardedJupiterTrade, resolveWireTransaction } from "../../packages/jupiter/src/compose.ts";
+import { composeGuardedJupiterTrade } from "../../packages/jupiter/src/advanced.ts";
+import { resolveWireTransaction } from "../../packages/jupiter/src/compose.ts";
 import { toJson } from "../devnet/evidence.ts";
 import { expectationView, loadKoxTradeEvidence, sha256File } from "../demo/kox-trade-evidence.ts";
 

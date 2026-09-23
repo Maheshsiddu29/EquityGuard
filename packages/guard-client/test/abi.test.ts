@@ -15,14 +15,16 @@ import {
   SYSVAR_INSTRUCTIONS_ADDRESS,
   TOKEN_2022_PROGRAM_ADDRESS,
   asCommittedInstruction,
-  buildGuardedTransferChecked,
   downstreamCommitment,
-  encodeAssertSafeExecutionV2,
   equityGuardErrorName,
   isDownstreamAdapterKind,
-  getAssertSafeExecutionV2Instruction,
   type AssertSafeExecutionV2Request,
 } from "../src/index.ts";
+import {
+  buildGuardedTransferChecked,
+  encodeAssertSafeExecutionV2,
+  getAssertSafeExecutionV2Instruction,
+} from "../src/advanced.ts";
 import { fromHex, hex, readGolden, type GoldenVector } from "./fixtures.ts";
 
 const golden = readGolden();

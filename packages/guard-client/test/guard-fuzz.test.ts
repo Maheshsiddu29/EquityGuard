@@ -24,9 +24,11 @@ import {
   decodeProtectedState,
   downstreamCommitment,
   downstreamCommitmentPreimage,
-  encodeAssertSafeExecutionV2,
   isValidStoredMultiplier,
 } from "../src/index.ts";
+import {
+  encodeAssertSafeExecutionV2,
+} from "../src/advanced.ts";
 import type { Address } from "@solana/kit";
 import { MirrorRejection, decodeAssertSafeExecutionV2 } from "./guard-mirror.ts";
 

@@ -23,19 +23,18 @@ import {
   type AssertSafeExecutionRequest,
   type JupiterAdapterKind,
 } from "@equityguard/guard-client";
-
 import {
   COMPUTE_BUDGET_PROGRAM_ADDRESS,
   CompositionError,
   MAX_TRANSACTION_BYTES,
   UnsupportedJupiterBuildError,
-  composeGuardedJupiterTrade,
   getSetComputeUnitLimitInstruction,
   parseBuildResponse,
   resolveWireTransaction,
   type ApiInstruction,
   type BuildResponse,
 } from "../src/index.ts";
+import { composeGuardedJupiterTrade } from "../src/advanced.ts";
 
 const PROGRAM = EQUITY_GUARD_DEVNET_PROGRAM_ID;
 const LIMIT = 400_000;

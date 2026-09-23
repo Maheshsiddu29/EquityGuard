@@ -27,7 +27,8 @@ import {
   type JupiterAdapterKind,
 } from "../../packages/guard-client/src/index.ts";
 import { JupiterApiError, fetchBuild, readJupiterApiKey } from "../../packages/jupiter/src/build-client.ts";
-import { UnsupportedJupiterBuildError, composeGuardedJupiterTrade, resolveWireTransaction } from "../../packages/jupiter/src/compose.ts";
+import { composeGuardedJupiterTrade } from "../../packages/jupiter/src/advanced.ts";
+import { UnsupportedJupiterBuildError, resolveWireTransaction } from "../../packages/jupiter/src/compose.ts";
 import { findRepresentationBySymbol } from "../../packages/representation-state/src/registry.ts";
 import { toJson } from "../devnet/evidence.ts";
 

@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./advanced": "./src/advanced.ts"
   },
   "dependencies": {
     "@solana/kit": "8.3.0"

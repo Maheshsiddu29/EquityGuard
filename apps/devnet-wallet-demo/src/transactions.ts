@@ -2,13 +2,15 @@ import { createSolanaRpc, type Address, type Instruction } from "@solana/kit";
 import {
   fetchGuardSnapshot,
   expectationFromSnapshot,
-  buildGuardedTransferChecked,
   EQUITY_GUARD_DEVNET_PROGRAM_ID,
   type GuardSnapshot,
   type AssertSafeExecutionRequest,
   type GuardedTransferChecked,
   type ProtectionWindow,
 } from "@equityguard/guard-client";
+import {
+  buildGuardedTransferChecked,
+} from "@equityguard/guard-client/advanced";
 
 export const DEFAULT_PROTECTION_WINDOW: ProtectionWindow = { beforeSecs: 900, afterSecs: 300 };
 

@@ -12,6 +12,9 @@ import {
   EQUITY_GUARD_DEVNET_DEPLOYMENT,
   explainEquityGuardError,
   protectJupiterSwap,
+  reverifyGuardDeployment,
+  verifyProtectedSwap,
+  type ProtectedSwap,
   type ProtectJupiterSwapResult,
 } from "../src/protect.ts";
 import {
@@ -215,4 +218,127 @@ test("a caller-supplied deployment is reported as CALLER_TRUSTED, never as revie
   assert.equal(result.status, "PROTECTED");
   assert.equal(result.status === "PROTECTED" && result.deploymentIdentity, "CALLER_TRUSTED");
   assert.match(explainEquityGuardError({ status: "ERROR", code: "GUARD_BINARY_UNVERIFIED", message: "m", protectedMint: KOX_MINT, guardError: null, details: [] }), /not the reviewed EquityGuard binary/);
+});
+
+// ------------------------------- EG-A-02: mutability, and re-attestation before signing
+
+const DEVNET_UPGRADE_AUTHORITY = "JArGaWxrddR7J1XYjsoEU5XCuHffra3gASBjfVK4BuNT";
+
+async function protectedResult(): Promise<ProtectedSwap> {
+  const result = await protect({});
+  assert.equal(result.status, "PROTECTED", "message" in result ? result.message : result.status);
+  if (result.status !== "PROTECTED") throw new Error("unreachable");
+  return result;
+}
+
+/** An RPC whose deployment differs from the one the result was built against. */
+function rpcWith(options: { readonly guardProgram?: FakeAccount | null; readonly guardProgramData?: FakeAccount | null }) {
+  return fakeRpc({
+    accounts: koxAccounts,
+    unixTimestamp: SETTLED_TIMESTAMP,
+    ...(options.guardProgram === undefined ? {} : { guardProgram: options.guardProgram }),
+    ...(options.guardProgramData === undefined ? {} : { guardProgramData: options.guardProgramData }),
+  }).rpc;
+}
+
+test("EG-A-02: a reviewed deployment reports its upgrade authority, not just its hash", async () => {
+  const result = await protectedResult();
+  assert.deepEqual(result.deployment, {
+    programId: GUARD_PROGRAM,
+    programDataAddress: REVIEWED_DEVNET.programDataAddress,
+    reviewedElfSha256: REVIEWED_DEVNET.elfSha256,
+    deploymentSlot: 499_547_040n,
+    upgradeAuthority: DEVNET_UPGRADE_AUTHORITY,
+    mutability: "UPGRADEABLE",
+    identity: "REVIEWED_BINARY",
+  });
+  // The devnet deployment is reviewed AND replaceable. Never call it immutable.
+  assert.notEqual(result.deployment.mutability, "IMMUTABLE");
+  assert.equal(result.deploymentIdentity, "REVIEWED_BINARY");
+});
+
+test("EG-A-02: a caller-trusted deployment is never reported as immutable", async () => {
+  const other = distinctAddress(7);
+  const result = await protect({
+    programAddress: other,
+    accounts: { ...koxAccounts, [other]: executableProgramAccount() },
+  });
+  assert.equal(result.status, "PROTECTED");
+  if (result.status !== "PROTECTED") throw new Error("unreachable");
+  assert.equal(result.deployment.identity, "CALLER_TRUSTED");
+  assert.equal(result.deployment.mutability, "UNKNOWN");
+  assert.equal(result.deployment.reviewedElfSha256, null);
+});
+
+test("EG-A-02: re-verification passes while the deployment is unchanged", async () => {
+  const result = await protectedResult();
+  const verdict = await reverifyGuardDeployment(result, rpcWith({}));
+  assert.equal(verdict.ok, true);
+  assert.deepEqual(verdict.ok === true && verdict.attestation, result.deployment);
+});
+
+test("EG-A-02: a program upgraded after the build is refused before signing", async () => {
+  const result = await protectedResult();
+  // The upgrade authority acted: same address, same loader, different bytes.
+  const upgraded = reviewedProgramDataAccount((data) => {
+    data[45] = (data[45] ?? 0) ^ 0xff;
+  });
+  const verdict = await reverifyGuardDeployment(result, rpcWith({ guardProgramData: upgraded }));
+  assert.equal(verdict.ok, false);
+  if (verdict.ok) throw new Error("unreachable");
+  assert.equal(verdict.code, "GUARD_BINARY_UNVERIFIED");
+  assert.deepEqual(verdict.expected, result.deployment);
+  assert.equal(verdict.actual, null);
+});
+
+test("EG-A-02: freezing the upgrade authority is itself a change, and is reported", async () => {
+  const result = await protectedResult();
+  // Same reviewed ELF, authority set to None: a different security statement.
+  const frozen = reviewedProgramDataAccount((data) => {
+    data[12] = 0;
+    data.fill(0, 13, 45);
+  });
+  const verdict = await reverifyGuardDeployment(result, rpcWith({ guardProgramData: frozen }));
+  assert.equal(verdict.ok, false);
+  if (verdict.ok) throw new Error("unreachable");
+  assert.equal(verdict.code, "GUARD_DEPLOYMENT_CHANGED");
+  assert.equal(verdict.expected.mutability, "UPGRADEABLE");
+  assert.equal(verdict.actual?.mutability, "IMMUTABLE");
+  assert.equal(verdict.actual?.reviewedElfSha256, REVIEWED_DEVNET.elfSha256, "the bytes did not change; the authority did");
+  assert.match(explainEquityGuardError({ ...result, status: "ERROR", code: verdict.code, message: verdict.message, guardError: null, details: [] } as never), /Do not sign or submit it/);
+});
+
+test("EG-A-02: a deployment that vanished or stopped executing is refused", async () => {
+  const result = await protectedResult();
+  for (const [label, rpc] of [
+    ["missing", rpcWith({ guardProgram: null })],
+    ["not executable", rpcWith({ guardProgram: nonExecutableAccount() })],
+  ] as const) {
+    const verdict = await reverifyGuardDeployment(result, rpc);
+    assert.equal(verdict.ok, false, label);
+    assert.equal(verdict.ok === false && verdict.actual, null, label);
+  }
+});
+
+test("EG-A-02: re-verification is read-only and rebuilds nothing", async () => {
+  const result = await protectedResult();
+  const before = {
+    transaction: Uint8Array.from(result.transaction),
+    base64: result.transactionBase64,
+    commitment: result.binding.suffixCommitmentHex,
+    deployment: { ...result.deployment },
+  };
+  const { rpc, reads } = fakeRpc({ accounts: koxAccounts, unixTimestamp: SETTLED_TIMESTAMP });
+  await reverifyGuardDeployment(result, rpc);
+
+  // The signed-bytes guarantee depends on this: a deployment recheck must
+  // never touch the transaction it is checking.
+  assert.deepEqual(Uint8Array.from(result.transaction), before.transaction);
+  assert.equal(result.transactionBase64, before.base64);
+  assert.equal(result.binding.suffixCommitmentHex, before.commitment);
+  assert.deepEqual({ ...result.deployment }, before.deployment);
+  // Exactly one account read: the Program and its ProgramData, in one call.
+  assert.deepEqual(reads, [[GUARD_PROGRAM, REVIEWED_DEVNET.programDataAddress]]);
+  // And the transaction still verifies unchanged.
+  assert.equal(await verifyProtectedSwap(result), null);
 });

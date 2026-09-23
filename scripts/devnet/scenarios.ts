@@ -15,7 +15,6 @@ import {
   getTransferCheckedInstruction,
 } from "@solana-program/token-2022";
 import {
-  buildGuardedTransferChecked,
   bytesEqual,
   expectationFromSnapshot,
   fetchGuardSnapshot,
@@ -23,6 +22,9 @@ import {
   type GuardSnapshot,
   type ProtectionWindow,
 } from "@equityguard/guard-client";
+import {
+  buildGuardedTransferChecked,
+} from "@equityguard/guard-client/advanced";
 
 import type { DevnetContext } from "./config.ts";
 import type { TestAsset } from "./devnet-state.ts";
