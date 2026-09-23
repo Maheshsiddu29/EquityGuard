@@ -42,6 +42,11 @@ import {
   type Address,
 } from "@solana/kit";
 
+import {
+  EQUITY_GUARD_DEVNET_PROGRAM_ID,
+  JUPITER_V6_PROGRAM_ADDRESS,
+} from "../../../packages/guard-client/src/index.ts";
+
 /** ABI v2 payload offsets (`programs/equity_guard/src/instruction.rs`). */
 const GUARD_DATA_LEN = 99;
 const GUARD_VERSION_V2 = 2;
@@ -55,8 +60,8 @@ const JUPITER_SELL_USDC = 3;
 /** The grammar adapter kinds 2/3 admit after the guard. */
 const SUFFIX_LENGTHS = [3, 4];
 
-export const EQUITY_GUARD_PROGRAM = "EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT";
-export const JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+export const EQUITY_GUARD_PROGRAM = EQUITY_GUARD_DEVNET_PROGRAM_ID;
+export const JUPITER_PROGRAM = JUPITER_V6_PROGRAM_ADDRESS;
 export const WHIRLPOOL_PROGRAM = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
 export const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
 
