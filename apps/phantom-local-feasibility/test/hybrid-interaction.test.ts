@@ -8,6 +8,7 @@ import * as errors from "../src/buy-error.ts";
 import * as feasibility from "../src/feasibility.ts";
 import * as funding from "../src/local-funding.ts";
 import * as demoView from "../src/demo-view.ts";
+import * as stageStatus from "../src/stage-status.ts";
 
 test("stale completion and review never sign again; only explicit confirmation starts the second attempt", async () => {
   const calls: string[] = [];
@@ -22,7 +23,7 @@ test("stale completion and review never sign again; only explicit confirmation s
       connectPhantomWallet: async () => { calls.push("connect"); return { provider: {}, publicKey: funding.EXPECTED_PHANTOM }; },
     },
     "./buy-error.ts": errors, "./feasibility.ts": feasibility, "./local-funding.ts": funding,
-    "./trader-flow.ts": trader, "./demo-view.ts": demoView,
+    "./trader-flow.ts": trader, "./demo-view.ts": demoView, "./stage-status.ts": stageStatus,
     "./reproduction-view.ts": { reproductionMessage: () => "Verified result from adapter" },
     "./replay-execution.ts": { loadReplayData: async () => ({}) },
     "./local-activation.ts": {

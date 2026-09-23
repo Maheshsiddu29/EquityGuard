@@ -38,6 +38,7 @@ import {
   assertLocalRpcUrl,
   signedTransactionBytes,
 } from "./feasibility.ts";
+import { fixtureUrl } from "./local-host.ts";
 import {
   ReplaySimulationError,
   decodeLocalRpcFailure,
@@ -149,8 +150,8 @@ export interface ReplayOutcome {
 
 export async function loadReplayData(): Promise<ReplayData> {
   const [fixtureResponse, sealedResponse] = await Promise.all([
-    fetch("./route-fixture.json", { cache: "no-store" }),
-    fetch("./sealed-authorizations.json", { cache: "no-store" }),
+    fetch(fixtureUrl("route-fixture.json"), { cache: "no-store" }),
+    fetch(fixtureUrl("sealed-authorizations.json"), { cache: "no-store" }),
   ]);
   if (!fixtureResponse.ok || !sealedResponse.ok) throw new Error("Local replay fixture files are unavailable");
   const fixture = await fixtureResponse.json() as RouteFixture;

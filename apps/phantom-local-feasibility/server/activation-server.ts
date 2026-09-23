@@ -17,6 +17,7 @@ import { DeploymentAttestationError, attestGuardDeployment, reattestGuardDeploym
 import { activationDelay, localActivation } from "../src/activation-proof.ts";
 import { KOX_MINT } from "../src/replay-model.ts";
 import { LOCAL_RPC_URL, assertLocalRpcUrl } from "../src/feasibility.ts";
+import { isLocalDemoOrigin } from "./local-origin.ts";
 
 const root = resolve(new URL("../../../", import.meta.url).pathname);
 const source = resolve(root, "tmp/m9d-c1");
@@ -184,7 +185,7 @@ function requireArmed(): bigint {
   return BigInt(armed.localT);
 }
 
-const localOrigin = (origin: string | undefined) => origin === "http://127.0.0.1:4175" || origin === "http://localhost:4175";
+const localOrigin = isLocalDemoOrigin;
 async function body(req: import("node:http").IncomingMessage): Promise<string> {
   let text = "";
   for await (const chunk of req) {
@@ -226,6 +227,24 @@ async function recordEvidence(payload: string) {
 
 createServer(async (req, res) => {
   try {
+    // A cross-origin local host (apps/web on loopback) needs these headers to
+    // read any response at all. They are emitted only for an allowlisted
+    // loopback origin, so they widen nothing beyond the allowlist above.
+    const origin = req.headers.origin;
+    if (localOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin as string);
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") {
+      if (!localOrigin(origin)) { res.writeHead(403); res.end(); return; }
+      res.writeHead(204, {
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type",
+        "Access-Control-Max-Age": "600",
+      });
+      res.end();
+      return;
+    }
     if (req.url === "/api/status") {
       res.setHeader("Content-Type", "application/json");
       res.end(json({ ready: true, armed, provenance, deployment: deployment.attestation, deploymentDigest: deployment.digest }));

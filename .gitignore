@@ -20,6 +20,10 @@ apps/reference/dist/
 apps/devnet-wallet-demo/dist/
 apps/phantom-local-feasibility/dist/
 
+# Live-demo adapter bundle: built locally from the proven Phantom flow,
+# never part of a public deployment.
+apps/web/public/live-demo/
+
 # Python fixture generators
 __pycache__/
 

@@ -3,6 +3,7 @@ import { fetchGuardSnapshot, ActivationPhase, EQUITY_GUARD_DEVNET_PROGRAM_ID } f
 import type { PhantomProvider } from "../../devnet-wallet-demo/src/wallet.ts";
 import type { BuyStage } from "./buy-error.ts";
 import { LOCAL_RPC_URL, assertLocalRpcUrl } from "./feasibility.ts";
+import { coordinatorUrl } from "./local-host.ts";
 import { EXPECTED_PHANTOM } from "./local-funding.ts";
 import { KOX_MINT } from "./replay-model.ts";
 import {
@@ -19,7 +20,7 @@ const rpc = () => createSolanaRpc(assertLocalRpcUrl(LOCAL_RPC_URL).href);
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 export async function armLocalActivation(): Promise<bigint> {
   assertLocalRpcUrl(location.origin);
-  const response = await fetch("/api/arm", { method: "POST" });
+  const response = await fetch(coordinatorUrl("/api/arm"), { method: "POST" });
   const result = await response.json() as { localT?: string; error?: string };
   if (!response.ok || !result.localT) throw new Error(result.error ?? "Local activation setup failed");
   return BigInt(result.localT);
@@ -28,13 +29,13 @@ const serialize = (value: unknown) => JSON.stringify(value, (_key, inner: unknow
 /** Hands the verified proof to the local coordinator, which re-reads each signature from the validator. */
 export async function recordEvidence(proof: { stale: unknown; refreshed: unknown }): Promise<void> {
   assertLocalRpcUrl(location.origin);
-  const response = await fetch("/api/evidence", { method: "POST", headers: { "content-type": "application/json" }, body: serialize(proof) });
+  const response = await fetch(coordinatorUrl("/api/evidence"), { method: "POST", headers: { "content-type": "application/json" }, body: serialize(proof) });
   if (!response.ok) throw new Error("Local evidence could not be recorded");
 }
 /** POSTs to the local coordinator and fails loudly on any refusal. */
 async function coordinator<T>(path: string, payload: unknown): Promise<T> {
   assertLocalRpcUrl(location.origin);
-  const response = await fetch(path, {
+  const response = await fetch(coordinatorUrl(path), {
     method: "POST", headers: { "content-type": "application/json" }, body: serialize(payload),
   });
   const result = await response.json() as T & { error?: string; code?: string };

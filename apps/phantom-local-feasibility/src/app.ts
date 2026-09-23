@@ -6,6 +6,7 @@ import { loadReplayData, type ReplayData } from "./replay-execution.ts";
 import { armLocalActivation, recordEvidence, runLocalActivation, type LocalActivationProof } from "./local-activation.ts";
 import { traderFacingError, protectionTechnicalDetails } from "./trader-flow.ts";
 import { reproductionMessage } from "./reproduction-view.ts";
+import { stageStatus } from "./stage-status.ts";
 import {
   beginAttempt,
   beginRefreshedLeg,
@@ -78,23 +79,7 @@ function stage(value: BuyStage, clock?: { unixTimestamp: bigint }): void {
   failureStage = value;
   if (value === "SIGN_REQUEST") walletRequested = true;
   if (value === "SUBMISSION") submitted = true;
-  const status: Partial<Record<BuyStage, string>> = {
-    ENVIRONMENT_CHECK: "Preparing local reproduction…",
-    TRANSACTION_BUILD: "Building authorization from local state…",
-    PRE_SIGN_SIMULATION: "Checking the complete trade before signing…",
-    SIGN_REQUEST: "Pre-sign simulation passed. Approve in Phantom.",
-    SIGNED_BYTES_RETURNED: "Phantom returned signed bytes. Verifying signing time…",
-    BLOCKHASH_VALIDATION: "Checking the original blockhash and exact signed bytes…",
-    SUBMISSION: "Submitting to the local validator…",
-    CONFIRMATION: "Waiting for local confirmation…",
-    BALANCE_VERIFICATION: "Verifying execution and token balances…",
-  };
-  const message = value === "WAITING_FOR_ACTIVATION" && clock && localT !== null
-    ? (localT - clock.unixTimestamp > 0n
-      ? "Authorization signed ✓\nTransaction held\nEconomic state changes in: " + (localT - clock.unixTimestamp) + "…"
-      : "State changed\nSubmitting the exact signed transaction once the validator Clock is past local T.")
-    : status[value] ?? "Connecting Phantom…";
-  view = withNotice(view, view.attempt, message);
+  view = withNotice(view, view.attempt, stageStatus(value, clock, localT));
   render();
 }
 /** Evidence capture is a side record; it never changes what the run displayed. */
