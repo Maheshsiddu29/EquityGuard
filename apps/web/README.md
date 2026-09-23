@@ -41,3 +41,9 @@ requested. See `THIRD_PARTY_NOTICES.md` for the upstream license.
 
 Manrope is self-hosted through `@fontsource-variable/manrope`; no font or image
 asset is requested from a third-party origin at runtime.
+
+The landing, deterministic demo, and documentation routes share the same dark
+navy/cobalt surface tokens and Manrope UI typography. The landing and demo each
+mount at most one page-level Gradient Waves canvas; documentation uses a static
+CSS atmosphere. Cards and technical panels use static gradient surfaces rather
+than additional canvases.

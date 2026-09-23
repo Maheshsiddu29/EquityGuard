@@ -68,8 +68,8 @@ void main() {
   vec3 position = camera + distanceTravelled * direction;
   float fog = clamp(15.0 / max(distanceTravelled, 0.001), 0.0, 1.0);
   vec3 body = mix(uWaveColor, uCrestColor, clamp(position.z * 0.08 + 0.5, 0.0, 1.0));
-  vec3 color = clamp(mix(uHorizonColor, body, fog) * 0.92, 0.0, 1.0);
-  float alpha = clamp(fog, 0.0, 1.0) * 0.9;
+  vec3 color = clamp(mix(uHorizonColor, body, fog) * 1.08, 0.0, 1.0);
+  float alpha = clamp(fog, 0.0, 1.0);
   fragColor = vec4(color * alpha, alpha);
 }
 `;
@@ -104,9 +104,9 @@ type GradientWavesProps = {
  */
 export function GradientWaves({
   className = "",
-  horizonColor = "#081126",
-  waveColor = "#17398f",
-  crestColor = "#4f7cff",
+  horizonColor = "#07142e",
+  waveColor = "#2450c9",
+  crestColor = "#789cff",
 }: GradientWavesProps): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const prefersReducedMotion = useReducedMotion();

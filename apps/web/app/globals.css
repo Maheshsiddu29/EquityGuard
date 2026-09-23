@@ -2,42 +2,42 @@
 @import "../components/react-bits/scroll-expand.css";
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  --eg-bg: #f6f8fb;
-  --eg-surface: #ffffff;
-  --eg-text: #0b1739;
-  --eg-text-secondary: #5f6c83;
-  --eg-primary: #1f4fd6;
-  --eg-secondary: #4f7cff;
-  --eg-blue-light: #eaf1ff;
-  --eg-border: #e3e9f2;
-  --eg-success: #14866d;
-  --eg-success-bg: #eaf7f2;
-  --eg-blocked: #c84d4d;
-  --eg-blocked-bg: #fbecec;
+  --eg-bg: #050914;
+  --eg-surface: #0a1223;
+  --eg-text: #f7f9ff;
+  --eg-text-secondary: #a9b4c7;
+  --eg-primary: #5f88ff;
+  --eg-secondary: #7b9cff;
+  --eg-blue-light: rgba(79, 124, 255, 0.13);
+  --eg-border: rgba(210, 224, 255, 0.13);
+  --eg-success: #5f88ff;
+  --eg-success-bg: rgba(79, 124, 255, 0.1);
+  --eg-blocked: #7b8ba8;
+  --eg-blocked-bg: rgba(123, 139, 168, 0.1);
   --eg-technical: #0e1424;
 
-  --eg-success-text: #11705c;
-  --eg-blocked-text: #b23e3e;
+  --eg-success-text: #dce5ff;
+  --eg-blocked-text: #d7deeb;
   --eg-technical-text: #e7ecf6;
   --eg-technical-muted: #97a3bd;
-  --eg-grid: rgba(31, 79, 214, 0.055);
-  --eg-primary-soft: rgba(31, 79, 214, 0.08);
-  --eg-primary-ring: rgba(31, 79, 214, 0.38);
-  --eg-text-soft: rgba(11, 23, 57, 0.06);
+  --eg-grid: transparent;
+  --eg-primary-soft: rgba(79, 124, 255, 0.1);
+  --eg-primary-ring: rgba(111, 150, 255, 0.72);
+  --eg-text-soft: rgba(247, 249, 255, 0.07);
 
-  --eg-glass-nav: rgba(255, 255, 255, 0.72);
-  --eg-glass-nav-fallback: rgba(255, 255, 255, 0.96);
-  --eg-glass-hero: rgba(255, 255, 255, 0.62);
-  --eg-glass-hero-fallback: rgba(255, 255, 255, 0.94);
-  --eg-glass-dark: rgba(14, 20, 36, 0.88);
-  --eg-glass-dark-fallback: rgba(14, 20, 36, 0.98);
+  --eg-glass-nav: rgba(8, 15, 32, 0.66);
+  --eg-glass-nav-fallback: rgba(8, 15, 32, 0.96);
+  --eg-glass-hero: rgba(10, 18, 35, 0.7);
+  --eg-glass-hero-fallback: rgba(10, 18, 35, 0.96);
+  --eg-glass-dark: rgba(8, 14, 28, 0.82);
+  --eg-glass-dark-fallback: rgba(8, 14, 28, 0.98);
 
-  --eg-shadow-xs: 0 1px 2px rgba(11, 23, 57, 0.04);
-  --eg-shadow-sm: 0 5px 18px rgba(11, 23, 57, 0.055);
-  --eg-shadow-md: 0 16px 44px rgba(11, 23, 57, 0.08);
-  --eg-shadow-nav: 0 8px 30px rgba(11, 23, 57, 0.07);
+  --eg-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --eg-shadow-sm: 0 8px 28px rgba(0, 0, 0, 0.2);
+  --eg-shadow-md: 0 20px 60px rgba(0, 0, 0, 0.26);
+  --eg-shadow-nav: 0 16px 50px rgba(0, 0, 0, 0.3);
 
   --eg-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
   --eg-ease-spring: cubic-bezier(0.34, 1.16, 0.64, 1);
@@ -52,7 +52,7 @@
 @theme inline {
   --color-background: var(--eg-bg);
   --color-foreground: var(--eg-text);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: "Manrope Variable", var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -87,7 +87,7 @@ body {
   overflow-x: hidden;
   background: var(--eg-bg);
   color: var(--eg-text);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: "Manrope Variable", var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -108,8 +108,8 @@ button {
 }
 
 ::selection {
-  background: var(--eg-blue-light);
-  color: var(--eg-text);
+  background: rgba(95, 136, 255, 0.32);
+  color: #ffffff;
 }
 
 .page-container {
@@ -158,19 +158,13 @@ button {
   transform: translateX(-50%);
   border-radius: 50%;
   background:
-    radial-gradient(circle at 36% 52%, rgba(79, 124, 255, 0.17), transparent 34%),
-    radial-gradient(circle at 68% 40%, rgba(31, 79, 214, 0.1), transparent 37%);
-  filter: blur(10px);
+    radial-gradient(circle at 36% 52%, rgba(79, 124, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 68% 40%, rgba(31, 79, 214, 0.14), transparent 37%);
+  filter: blur(18px);
 }
 
 .page-backdrop__grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--eg-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--eg-grid) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.34), transparent 62%);
+  display: none;
 }
 
 .site-frame {

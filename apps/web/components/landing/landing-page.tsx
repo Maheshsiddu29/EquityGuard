@@ -77,7 +77,7 @@ export function LandingPage(): ReactNode {
         <div className="outcome-comparison">
           {OUTCOMES.map((outcome) => (
             <article
-              className="outcome-lane"
+              className="outcome-lane public-surface public-surface--gradient"
               data-outcome={outcome.kind}
               key={outcome.kind}
             >
@@ -118,7 +118,10 @@ export function LandingPage(): ReactNode {
 
         <div className="principle-grid">
           {PRINCIPLES.map((principle) => (
-            <article className="principle-card" key={principle.title}>
+            <article
+              className="principle-card public-surface public-surface--gradient"
+              key={principle.title}
+            >
               <span>{principle.index}</span>
               <h3>{principle.title}</h3>
               <p>{principle.copy}</p>
@@ -131,7 +134,7 @@ export function LandingPage(): ReactNode {
         className="landing-section proof-section page-container"
         labelledBy="proof-title"
       >
-        <div className="proof-panel">
+        <div className="proof-panel public-surface public-surface--technical">
           <div className="proof-panel__heading">
             <div>
               <p className="eyebrow">Real proof</p>
@@ -199,7 +202,10 @@ export function LandingPage(): ReactNode {
           </Link>
         </div>
 
-        <div className="stack-diagram" aria-label="EquityGuard execution stack">
+        <div
+          className="stack-diagram public-surface public-surface--glass"
+          aria-label="EquityGuard execution stack"
+        >
           <div className="stack-diagram__node">Trading app</div>
           <span className="stack-diagram__arrow" aria-hidden="true">↓</span>
           <div className="stack-diagram__node">Router / Jupiter</div>
@@ -226,7 +232,7 @@ export function LandingPage(): ReactNode {
         className="landing-section final-cta-section page-container"
         labelledBy="final-cta-title"
       >
-        <div className="final-cta">
+        <div className="final-cta public-surface public-surface--gradient">
           <div className="final-cta__waves" aria-hidden="true" />
           <div className="final-cta__content">
             <p className="eyebrow">Protect the moment of execution</p>

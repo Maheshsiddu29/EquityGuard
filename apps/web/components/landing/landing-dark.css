@@ -741,7 +741,7 @@ body:has(.landing-main) .menu-toggle i {
   }
 
   .outcome-trade strong {
-    font-size: clamp(1.35rem, 7vw, 2rem);
+    font-size: clamp(1.25rem, 6.3vw, 1.85rem);
   }
 
   .principle-card {

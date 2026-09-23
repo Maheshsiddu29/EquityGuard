@@ -10,6 +10,7 @@ import "@fontsource-variable/manrope";
 import "./globals.css";
 import "../components/react-bits/gradient-waves.css";
 import "../components/landing/landing-dark.css";
+import "../components/ui/public-visual-system.css";
 
 const geistSans = localFont({
   src: "../../shared/design-system/fonts/geist-sans-latin.woff2",
@@ -28,7 +29,7 @@ const geistMono = localFont({
 export const metadata: Metadata = baseMetadata;
 
 export const viewport: Viewport = {
-  themeColor: "#F6F8FB",
+  themeColor: "#050914",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
