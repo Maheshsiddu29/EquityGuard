@@ -29,7 +29,7 @@ import {
 import { KOX_MINT } from "../src/replay-model.ts";
 
 const ROOT = new URL("../../../", import.meta.url).pathname;
-const DIR = join(ROOT, "tmp/m9d-c1");
+const DIR = process.env.EQUITYGUARD_REPLAY_DIR ?? join(ROOT, "tmp/m9d-c1");
 const PHANTOM_ACCOUNTS = join(DIR, "phantom-accounts");
 const LOCAL_ACCOUNTS = join(DIR, "local-accounts");
 const POLL_MS = 500;
@@ -122,7 +122,7 @@ async function airdropIfNeeded(): Promise<bigint> {
   const before = await rpc.getBalance(EXPECTED_PHANTOM, { commitment: "confirmed" }).send();
   if (before.value >= 10_000_000n) return before.value;
   const local = rpc as typeof rpc & {
-    requestAirdrop(address: ReturnType<typeof address>, amount: ReturnType<typeof lamports>): { send(): Promise<string> };
+    requestAirdrop(recipient: ReturnType<typeof address>, amount: ReturnType<typeof lamports>): { send(): Promise<string> };
   };
   await local.requestAirdrop(EXPECTED_PHANTOM, lamports(1_000_000_000n)).send();
   for (let attempt = 0; attempt < POLL_LIMIT; attempt += 1) {

@@ -11,15 +11,15 @@ import {
 import type { ReplayOutcome } from "../src/replay-execution.ts";
 import { assertReplayApproval } from "../src/replay-model.ts";
 import {
+  RECORDED_REFRESHED_PROOF,
+  RECORDED_STALE_PROOF,
   TRADER_BUY_KIND,
-  TRADER_CONFIRM_KIND,
   TRADER_INITIAL_STEP,
   isSignatureCancelled,
-  refreshedSuccessAllowed,
-  refreshedSuccessMessage,
-  staleReviewAllowed,
-  staleReviewMessage,
-  technicalEvidence,
+  liveSafeAllowed,
+  liveSafeMessage,
+  protectionStory,
+  protectionTechnicalDetails,
   traderFacingError,
 } from "../src/trader-flow.ts";
 
@@ -51,73 +51,112 @@ function outcome(overrides: Partial<ReplayOutcome> & Pick<ReplayOutcome, "kind">
   return { ...base, ...overrides };
 }
 
-test("Buy initiates the sealed pre-activation authorization and cannot pick a scenario", () => {
+test("live reproduction uses current local state and exposes no scenario selector", () => {
   const app = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/app.ts"), "utf8");
+  const local = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/local-activation.ts"), "utf8");
   const html = readFileSync(join(ROOT, "apps/phantom-local-feasibility/web/index.html"), "utf8");
-  const execution = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/replay-execution.ts"), "utf8");
-  assert.equal(TRADER_BUY_KIND, "STALE");
-  assert.equal(TRADER_INITIAL_STEP, "READY_STALE");
-  assert.match(app, /replayStep: TRADER_INITIAL_STEP/);
-  assert.match(app, /submit\(TRADER_BUY_KIND\)/);
-  assert.match(app, /prepared\.authorizationSource !== STALE_AUTHORIZATION_SOURCE/);
-  assert.match(execution, /kind === "STALE" \? data\.stale : data\.refreshed/);
-  assert.match(execution, /staleSource: sealed\.stale\.source/);
-  assert.doesNotMatch(html, /<select|scenario|Sign stale|Sign SAFE|SAFE result|STALE result|REFRESHED result|No tokens were exchanged|Purchase completed on Solana mainnet|Mainnet trade completed/);
-  assert.doesNotMatch(app, /submit\("SAFE"\)|runReplay\("SAFE"\)|runReplay\("STALE"\)/);
+  assert.match(app, /PHANTOM_NOT_DETECTED/);
+  assert.match(local, /fetchGuardSnapshot/);
+  assert.match(local, /expected: current.state, expectedPhase: current.phase/);
+  assert.match(html, /Local execution reproduction/);
+  assert.match(html, /not the historical Sep 15 timestamp/);
+  assert.doesNotMatch(html, /<select|Sign SAFE|Sign stale|SAFE result|STALE result|REFRESHED result/);
 });
 
-test("stale review copy requires a landed EquityGuard rejection and zero token movement", () => {
-  const landed = outcome({ kind: "STALE" });
-  assert.match(staleReviewMessage(landed) ?? "", /No tokens were exchanged/);
-  assert.equal(staleReviewMessage({ ...landed, signature: "" }), null);
-  assert.equal(staleReviewMessage({ ...landed, slot: 0n }), null);
-  assert.equal(staleReviewMessage({ ...landed, jupiterInvoked: true }), null);
-  assert.equal(staleReviewMessage({ ...landed, whirlpoolInvoked: true }), null);
-  assert.equal(staleReviewMessage({ ...landed, failedInstruction: 4, customCode: 6024, guardErrorName: null }), null);
-  assert.equal(staleReviewMessage({ ...landed, after: { usdc: 4_999_999n, kox: 0n } }), null);
-  assert.equal(staleReviewMessage({ ...landed, after: { usdc: 5_000_000n, kox: 1n } }), null);
-  assert.equal(staleReviewAllowed({ ...landed, error: null }), false);
-});
-
-test("updated order is a separate approval and success requires Jupiter and Whirlpool", () => {
-  assert.throws(() => assertReplayApproval("READY_STALE", TRADER_CONFIRM_KIND), /separate approval/);
-  assert.doesNotThrow(() => assertReplayApproval("STALE_REJECTED", TRADER_CONFIRM_KIND));
-  const refreshed = outcome({ kind: "REFRESHED" });
-  const message = refreshedSuccessMessage(refreshed);
-  assert.match(message ?? "", /Protected trade replay completed/);
-  assert.match(message ?? "", /0\.05504261 KOx/);
+test("live SAFE success requires preflight, Jupiter, Whirlpool, and the exact deltas", () => {
+  const landed = outcome({ kind: "SAFE" });
+  const message = liveSafeMessage(landed);
+  assert.match(message ?? "", /Protected trade executed/);
+  assert.match(message ?? "", /5\.00 USDC → 0\.05504261 KOx/);
+  assert.match(message ?? "", /Local execution replay/);
   assert.doesNotMatch(message ?? "", /mainnet/i);
-  assert.equal(refreshedSuccessAllowed({ ...refreshed, jupiterInvoked: false }), false);
-  assert.equal(refreshedSuccessAllowed({ ...refreshed, whirlpoolInvoked: false }), false);
-  assert.equal(refreshedSuccessAllowed({ ...refreshed, skipPreflight: true }), false);
-  assert.equal(refreshedSuccessAllowed({ ...refreshed, after: { usdc: 0n, kox: 5_504_260n } }), false);
-  const app = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/app.ts"), "utf8");
-  assert.match(app, /kind === TRADER_CONFIRM_KIND && state\.approvals < 1/);
-  assert.match(app, /updated-terms"\)\.hidden = false/);
-  assert.doesNotMatch(app, /Phantom approvals so far/);
+  assert.equal(liveSafeAllowed({ ...landed, skipPreflight: true }), false);
+  assert.equal(liveSafeAllowed({ ...landed, jupiterInvoked: false }), false);
+  assert.equal(liveSafeAllowed({ ...landed, whirlpoolInvoked: false }), false);
+  assert.equal(liveSafeAllowed({ ...landed, guardInvoked: false }), false);
+  assert.equal(liveSafeAllowed({ ...landed, after: { usdc: 0n, kox: 5_504_260n } }), false);
+  assert.equal(liveSafeAllowed({ ...landed, authorizationSource: STALE_AUTHORIZATION_SOURCE }), false);
+  assert.doesNotThrow(() => assertReplayApproval("READY_SAFE", "SAFE"));
+  assert.throws(() => assertReplayApproval("READY_SAFE", "STALE"), /separate approval/);
 });
 
-test("technical evidence uses the proved local attempts and does not count extra approvals", () => {
-  const text = technicalEvidence(outcome({ kind: "STALE" }), outcome({ kind: "REFRESHED" }));
-  assert.ok(text);
-  assert.match(text ?? "", /Sep 15 · 00:29:46 UTC/);
-  assert.match(text ?? "", /Rejected at ix0/);
-  assert.match(text ?? "", /ActivationPhaseChanged/);
-  assert.match(text ?? "", /Second Phantom approval:\nYes/);
-  assert.match(text ?? "", /USDC:\n-5\.00/);
-  assert.match(text ?? "", /KOx:\n\+0\.05504261/);
-  assert.match(text ?? "", /not a mainnet EquityGuard transaction/);
-  assert.doesNotMatch(text ?? "", /approvals so far/i);
-  assert.equal(technicalEvidence(outcome({ kind: "STALE", jupiterInvoked: true }), outcome({ kind: "REFRESHED" })), null);
+test("protection story quotes the recorded executions and does not relabel the live Buy", () => {
+  const recorded = JSON.parse(readFileSync(join(ROOT, "apps/reference/data/kox-trade-replay.json"), "utf8")) as {
+    staleExecution: {
+      authorizationSource: string;
+      invoked: readonly string[];
+      deltas: { usdc: string; kox: string };
+      outcome: { signature: string; failedInstruction: number; customCode: number; guardErrorName: string; logs: readonly string[] };
+    };
+    refreshedExecution: {
+      authorizationSource: string;
+      invoked: readonly string[];
+      deltas: { usdc: string; kox: string };
+      outcome: { signature: string; succeeded: boolean; err: null; logs: readonly string[] };
+    };
+  };
+  assert.equal(recorded.staleExecution.authorizationSource, RECORDED_STALE_PROOF.authorizationSource);
+  assert.equal(recorded.staleExecution.outcome.signature, RECORDED_STALE_PROOF.signature);
+  assert.equal(recorded.staleExecution.outcome.failedInstruction, RECORDED_STALE_PROOF.failedInstruction);
+  assert.equal(recorded.staleExecution.outcome.customCode, RECORDED_STALE_PROOF.customCode);
+  assert.equal(recorded.staleExecution.outcome.guardErrorName, RECORDED_STALE_PROOF.guardErrorName);
+  assert.equal(recorded.staleExecution.deltas.usdc, RECORDED_STALE_PROOF.usdcDelta);
+  assert.equal(recorded.staleExecution.deltas.kox, RECORDED_STALE_PROOF.koxDelta);
+  assert.equal(recorded.staleExecution.invoked.some((program) => program.startsWith("JUP6")), RECORDED_STALE_PROOF.jupiterInvoked);
+  assert.equal(recorded.staleExecution.invoked.some((program) => program.startsWith("whirLb")), RECORDED_STALE_PROOF.whirlpoolInvoked);
+  assert.equal(recorded.refreshedExecution.authorizationSource, RECORDED_REFRESHED_PROOF.authorizationSource);
+  assert.equal(recorded.refreshedExecution.outcome.signature, RECORDED_REFRESHED_PROOF.signature);
+  assert.equal(recorded.refreshedExecution.outcome.succeeded, RECORDED_REFRESHED_PROOF.guardPassed);
+  assert.equal(recorded.refreshedExecution.outcome.err, null);
+  assert.equal(recorded.refreshedExecution.deltas.usdc, RECORDED_REFRESHED_PROOF.usdcDelta);
+  assert.equal(recorded.refreshedExecution.deltas.kox, RECORDED_REFRESHED_PROOF.koxDelta);
+  assert.equal(recorded.refreshedExecution.invoked.some((program) => program.startsWith("JUP6")), RECORDED_REFRESHED_PROOF.jupiterInvoked);
+  assert.equal(recorded.refreshedExecution.invoked.some((program) => program.startsWith("whirLb")), RECORDED_REFRESHED_PROOF.whirlpoolInvoked);
+  assert.ok(recorded.staleExecution.outcome.logs.some((line) => line.includes("ActivationPhaseChanged")));
+  assert.ok(recorded.refreshedExecution.outcome.logs.some((line) => line.includes("EquityGuard: safe")));
+  assert.ok(recorded.refreshedExecution.outcome.logs.some((line) => line.includes("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 invoke")));
+  assert.ok(recorded.refreshedExecution.outcome.logs.some((line) => line.includes("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc invoke")));
+
+  const text = protectionStory();
+  for (const copy of [
+    "Stale authorization blocked", "Previously verified local execution evidence",
+    "Separate from the live Buy above", "EquityGuard: Rejected before protected execution",
+    "Jupiter: Not invoked", "Whirlpool: Not invoked", "USDC movement: 0", "KOx movement: 0",
+    "Updated authorization executed", "Previously recorded recovery execution",
+    "EquityGuard: Passed", "Jupiter: Executed", "Whirlpool: Executed",
+    "USDC: -5.00", "KOx: +0.05504261", "Sep 15 00:29:46 UTC", "00:30:00 UTC", "00:30:16 UTC",
+    "not a Solana mainnet EquityGuard transaction", "did not cross the Sep 15 event",
+    "independently captured mainnet-derived evidence",
+  ]) assert.ok(text.includes(copy), copy);
+  const technical = JSON.parse(protectionTechnicalDetails());
+  assert.deepEqual(technical.stale, recorded.staleExecution);
+  assert.deepEqual(technical.refreshed, recorded.refreshedExecution);
+  assert.doesNotMatch(text, /ActivationPhaseChanged|3tR4WJV/);
+  const app = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/app.ts"), "utf8");
+  assert.match(app, /text\("recorded-details", protectionTechnicalDetails\(\)\)/);
+
 });
 
 test("trader-facing errors stay plain and keep the raw failure for technical details", () => {
-  assert.equal(traderFacingError("buy", new FeasibilityError("PHANTOM_NOT_DETECTED", "Phantom was not detected.")).headline, "Phantom not detected");
-  assert.equal(traderFacingError("buy", { code: 4001, message: "User rejected the request." }).headline, "Signature request cancelled");
+  assert.equal(
+    traderFacingError("buy", new FeasibilityError("PHANTOM_NOT_DETECTED", "Phantom was not detected."), "PHANTOM_CONNECT").headline,
+    "Connect Phantom to continue.",
+  );
+  assert.equal(
+    traderFacingError("buy", { code: 4001, message: "User rejected the request." }, "SIGN_REQUEST").headline,
+    "Signature request cancelled.",
+  );
   assert.equal(isSignatureCancelled(new FeasibilityError("USER_REJECTED", "The user rejected the Phantom signature request.")), true);
-  assert.equal(traderFacingError("buy", new FeasibilityError("LOCAL_RPC_REFUSED", "Refusing a public Solana cluster genesis hash")).headline, "Local replay environment unavailable");
-  assert.equal(traderFacingError("buy", new Error("route changed")).headline, "Order could not be submitted");
-  assert.equal(traderFacingError("confirm", new Error("route changed")).headline, "Updated order could not be confirmed");
+  assert.equal(
+    traderFacingError("buy", new FeasibilityError("LOCAL_RPC_REFUSED", "Refusing a public Solana cluster genesis hash"), "ENVIRONMENT_CHECK").headline,
+    "Local replay environment is not ready.",
+  );
+  assert.equal(traderFacingError("buy", new Error("route changed"), "SUBMISSION").headline, "The order could not be submitted.");
+  assert.equal(traderFacingError("confirm", new Error("route changed"), "CONFIRMATION").headline, "The transaction could not be confirmed.");
+  const signing = traderFacingError("buy", new Error("Unexpected error"), "SIGN_REQUEST");
+  assert.equal(signing.headline, "The signature request could not be completed.");
+  assert.match(signing.technical, /Stage: SIGN_REQUEST/);
+  assert.notEqual(signing.technical, "Unexpected error");
 });
 
 test("trader integration does not retarget execution, route, or localhost policy", () => {
@@ -128,5 +167,21 @@ test("trader integration does not retarget execution, route, or localhost policy
   assert.match(execution, /outcome\.after\.usdc !== outcome\.before\.usdc - EXPECTED_IN_AMOUNT/);
   assert.match(execution, /ActivationPhaseChanged/);
   assert.doesNotMatch(trader, /composeGuardedJupiterTrade|sendTransaction\(/);
-  assert.equal(TRADER_CONFIRM_KIND, "REFRESHED");
+  assert.equal(TRADER_BUY_KIND, "SAFE");
+});
+
+ test("consumed fixture gives reset guidance and keeps stage details", () => {
+  const error = traderFacingError("buy", new Error("Phantom USDC is 0, expected 5000000. Reseed the local fixture."), "TRANSACTION_BUILD");
+  assert.match(error.headline, /^Demo environment needs reset/);
+  assert.match(error.technical, /Stage: TRANSACTION_BUILD/);
+  assert.match(error.technical, /5000000/);
+});
+
+test("live success rejects missing confirmation, errors, and nonbaseline balances", () => {
+  const landed = outcome({ kind: "SAFE" });
+  for (const bad of [
+    { slot: 0n }, { signature: "" }, { error: { InstructionError: [0, { Custom: 12 }] } },
+    { before: { usdc: 10_000_000n, kox: 0n }, after: { usdc: 5_000_000n, kox: 5_504_261n } },
+    { feePayer: "another-payer" },
+  ]) assert.equal(liveSafeAllowed({ ...landed, ...bad }), false);
 });

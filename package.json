@@ -19,7 +19,7 @@
     "wallet-demo:serve": "node apps/devnet-wallet-demo/build/serve.ts",
     "feasibility:build": "node apps/phantom-local-feasibility/build/build.ts",
     "feasibility:serve": "node apps/phantom-local-feasibility/build/serve.ts",
-    "feasibility:prepare": "node apps/phantom-local-feasibility/scripts/prepare-local.ts --reset-validator",
+    "feasibility:prepare": "node apps/phantom-local-feasibility/scripts/prepare-activation.ts",
     "devnet": "node scripts/devnet/cli.ts",
     "devnet:guard-v2-proof": "node scripts/devnet/guard-v2-live-proof.ts",
     "observation:decode": "node scripts/observation/decode-capture.ts",

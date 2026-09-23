@@ -30,6 +30,7 @@ import {
 import { parseBuildResponse, type BuildResponse } from "../../../packages/jupiter/src/build-client.ts";
 import { composeGuardedJupiterTrade, resolveWireTransaction } from "../../../packages/jupiter/src/compose.ts";
 import type { PhantomProvider } from "../../devnet-wallet-demo/src/wallet.ts";
+import type { BuyStage } from "./buy-error.ts";
 import {
   FeasibilityError,
   LOCAL_RPC_URL,
@@ -340,11 +341,12 @@ export async function prepareReplay(
   };
 }
 
-function encodeForPhantom(transaction: Transaction): string {
+export function encodeForPhantom(transaction: Transaction): string {
   return getBase58Decoder().decode(getTransactionEncoder().encode(transaction));
 }
 
-function exactPhantomSignature(unsigned: Transaction, response: unknown): {
+export function exactPhantomSignature(unsigned: Transaction, response: unknown): {
+  readonly bytes: Uint8Array;
   readonly signed: Transaction;
   readonly signature: Signature;
 } {
@@ -356,7 +358,7 @@ function exactPhantomSignature(unsigned: Transaction, response: unknown): {
       "Phantom changed the guarded Jupiter message; refusing because EquityGuard must remain instruction 0.",
     );
   }
-  return { signed, signature: getSignatureFromTransaction(signed) };
+  return { bytes: Uint8Array.from(bytes), signed, signature: getSignatureFromTransaction(signed) };
 }
 
 async function tokenBalance(rpc: ReturnType<typeof createSolanaRpc>, account: Address): Promise<bigint> {
@@ -367,7 +369,7 @@ async function tokenBalance(rpc: ReturnType<typeof createSolanaRpc>, account: Ad
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(64, true);
 }
 
-async function balances(
+export async function balances(
   rpc: ReturnType<typeof createSolanaRpc>,
   prepared: PreparedReplay,
 ): Promise<TokenBalances> {
@@ -453,21 +455,23 @@ export async function signSubmitAndConfirmReplay(
   provider: PhantomProvider,
   prepared: PreparedReplay,
   rpcUrl: string = LOCAL_RPC_URL,
-  onStage?: (stage: string) => void,
+  onStage?: (stage: BuyStage) => void,
 ): Promise<ReplayOutcome> {
+  onStage?.("ENVIRONMENT_CHECK");
   await verifyLocalReplayValidator(rpcUrl);
   const rpc = createSolanaRpc(assertLocalRpcUrl(rpcUrl).href);
   await ensureLocalFeeFunds(rpc, prepared.requiredSigner);
   const before = await balances(rpc, prepared);
-  onStage?.("Requesting a new Phantom approval");
+  onStage?.("SIGN_REQUEST");
   const response = await provider.request({
     method: "signTransaction",
     params: { message: encodeForPhantom(prepared.unsigned) },
   });
+  onStage?.("SIGNED_BYTES_RETURNED");
   const { signed, signature } = exactPhantomSignature(prepared.unsigned, response);
   const wire = getBase64EncodedWireTransaction(signed);
   assertLocalRpcUrl(rpcUrl);
-  onStage?.("Simulating the exact Phantom-signed transaction on localhost");
+  onStage?.("SIMULATION");
   const simulation = await simulateExactSignedTransaction(rpcUrl, wire, prepared.programs);
   const skipPreflight = skipPreflightAllowed(prepared.kind);
   if (prepared.skipPreflight !== skipPreflight) throw new Error("prepared skipPreflight does not match policy");
@@ -479,12 +483,11 @@ export async function signSubmitAndConfirmReplay(
         data: { err: null, logs: [] },
       }, "simulation", prepared.programs));
     }
-    onStage?.("Local simulation rejected at EquityGuard ix0 (ActivationPhaseChanged). Submitting the failing transaction to localhost.");
   } else if (simulation) {
     throw new ReplaySimulationError(simulation);
   }
   if (skipPreflight && prepared.kind !== "STALE") throw new Error("skipPreflight is allowed only for the stale rejection");
-  onStage?.("Submitting signed bytes to localhost");
+  onStage?.("SUBMISSION");
   let submitted: Signature;
   try {
     submitted = await rpc.sendTransaction(wire, {
@@ -497,7 +500,17 @@ export async function signSubmitAndConfirmReplay(
   }
   if (submitted !== signature) throw new Error("Local RPC returned a different signature");
 
-  onStage?.("Waiting for actual local confirmation");
+  return confirmReplay(prepared, signature, before, simulation, rpcUrl, onStage);
+}
+
+export async function confirmReplay(
+  prepared: PreparedReplay, signature: Signature, before: TokenBalances,
+  simulation: LocalSimulationFailure | null, rpcUrl: string = LOCAL_RPC_URL,
+  onStage?: (stage: BuyStage) => void,
+): Promise<ReplayOutcome> {
+  const rpc = createSolanaRpc(assertLocalRpcUrl(rpcUrl).href);
+  const skipPreflight = skipPreflightAllowed(prepared.kind);
+  onStage?.("CONFIRMATION");
   let transaction: Awaited<ReturnType<ReturnType<typeof rpc.getTransaction>["send"]>> | null = null;
   for (let attempt = 0; attempt < POLL_LIMIT; attempt += 1) {
     transaction = await rpc.getTransaction(signature, {
@@ -511,6 +524,11 @@ export async function signSubmitAndConfirmReplay(
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
   if (!transaction) throw new Error("Local guarded replay did not confirm");
+  onStage?.("BALANCE_VERIFICATION");
+  if (!transaction.meta) throw new Error("Confirmed transaction metadata is missing");
+  if (transaction.transaction.message.header.numRequiredSignatures !== 1 ||
+      transaction.transaction.message.accountKeys[0] !== prepared.requiredSigner ||
+      transaction.transaction.signatures[0] !== signature) throw new Error("Confirmed signer/fee payer/signature mismatch");
   const after = await balances(rpc, prepared);
   const error = transaction.meta?.err ?? null;
   const failure = customFailure(error);

@@ -1,57 +1,20 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>EquityGuard · KOx</title>
-  <link rel="stylesheet" href="styles.css">
-  <script type="module" src="app.js"></script>
-</head>
-<body>
-  <main class="shell experiment">
-    <section class="card panel" id="order">
-      <span class="eyebrow">Coca-Cola</span>
-      <h1>KOx</h1>
-      <p class="lede">Buy</p>
-      <dl>
-        <div><dt>You pay</dt><dd>5.00 USDC</dd></div>
-        <div><dt>Estimated</dt><dd>0.05504261 KOx</dd></div>
-      </dl>
-      <div class="actions">
-        <button id="buy" class="button button-primary">Buy</button>
-      </div>
-      <p class="warning">Local execution replay</p>
-      <p id="notice" class="status" hidden></p>
-    </section>
-
-    <section class="card panel" id="review" hidden>
-      <p id="review-body" class="status"></p>
-      <div class="actions">
-        <button id="review-order" class="button button-secondary">Review updated order</button>
-      </div>
-      <div id="updated-terms" hidden>
-        <h3>Updated order</h3>
-        <p>You pay<br>5.00 USDC</p>
-        <p>Estimated<br>0.05504261 KOx</p>
-        <div class="actions">
-          <button id="confirm-order" class="button button-primary">Confirm updated order</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="card panel" id="done" hidden>
-      <p id="done-copy" class="status"></p>
-      <details id="proof-drawer">
-        <summary>View what happened</summary>
-        <pre id="proof-body"></pre>
-      </details>
-    </section>
-
-    <details id="technical-drawer" hidden>
-      <summary>View technical details</summary>
-      <pre id="technical-body"></pre>
-    </details>
-  </main>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>EquityGuard · KOx</title>
+<link rel="stylesheet" href="styles.css"><script type="module" src="app.js"></script></head>
+<body><main class="shell experiment">
+<section class="card panel" id="order"><span class="eyebrow">Coca-Cola</span><h1>KOx</h1>
+<dl><div><dt>You pay</dt><dd>5.00 USDC</dd></div><div><dt>Estimated</dt><dd>0.05504261 KOx</dd></div></dl>
+<div class="actions"><button id="buy" class="button button-primary">Start protected trade</button></div>
+<p class="warning">Local execution reproduction</p><p id="notice" class="status" hidden></p></section>
+<section id="review" class="card panel" hidden><p id="review-body" class="status"></p>
+<button id="review-order" class="button button-secondary">Review updated order</button></section>
+<section id="updated-terms" class="card panel" hidden><h2>Order updated</h2><p>5.00 USDC → 0.05504261 KOx</p>
+<button id="confirm-order" class="button button-primary">Confirm updated trade</button></section>
+<section id="done" class="card panel" hidden><p id="done-copy" class="status"></p></section>
+<details id="technical-drawer" hidden><summary>View execution proof</summary><pre id="technical-body"></pre></details>
+<p>Local execution reproduction using compiled EquityGuard, Jupiter and Whirlpool programs with mainnet-derived KOx and route state.</p>
+<p>Market evidence comes from the recorded Sep 15 KOx Solana mainnet state transition. The local activation timestamp is derived from the validator Clock, not the historical Sep 15 timestamp. The route was independently captured on Sep 17.</p>
+<p class="warning">Side note: a wallet can warn when a transaction is already invalid at signing time. EquityGuard’s role is execution-time enforcement when state changes after signing.</p>
+<details><summary>Recorded market and earlier replay evidence (separate from this run)</summary><pre id="recorded-details"></pre></details>
+</main></body></html>

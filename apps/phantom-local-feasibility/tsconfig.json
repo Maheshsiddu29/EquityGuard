@@ -1,10 +1,16 @@
 {
   "compilerOptions": {
     "target": "es2023",
-    "lib": ["es2023", "dom", "dom.iterable"],
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -14,7 +20,16 @@
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "build/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "build/**/*.ts",
+    "test/**/*.ts",
+    "server/**/*.ts",
+    "scripts/prepare-activation.ts",
+    "scripts/prepare-local.ts",
+    "scripts/measure-blockhash.ts"
+  ]
 }

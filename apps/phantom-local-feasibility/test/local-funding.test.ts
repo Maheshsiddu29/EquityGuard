@@ -90,11 +90,10 @@ test("deterministic baseline rejects leftover KOx or empty USDC", () => {
 test("browser does not silently resubmit after stale rejection", () => {
   const app = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/app.ts"), "utf8");
   const html = readFileSync(join(ROOT, "apps/phantom-local-feasibility/web/index.html"), "utf8");
-  assert.match(html, /Confirm updated order/);
-  assert.match(app, /reviewUpdatedOrder/);
-  assert.match(app, /confirm-order"\)\.addEventListener\("click", \(\) => void confirmUpdatedOrder\(\)\)/);
-  assert.doesNotMatch(app, /reviewUpdatedOrder[\s\S]*submit\(TRADER_CONFIRM_KIND\)/);
-  assert.doesNotMatch(html, /Sign SAFE local trade|Sign stale local trade|SAFE result|STALE result|REFRESHED result/);
+  assert.match(html, /Confirm updated trade/);
+  assert.match(app, /if \(!stale \|\| busy \|\| refreshed\) return/);
+  assert.doesNotMatch(app, /submit\("STALE"\)|submit\("REFRESHED"\)/);
+  assert.doesNotMatch(html, /Sign SAFE local trade|Sign stale local trade|SAFE result|STALE result|REFRESHED result|Confirm updated order/);
 });
 
 test("no mainnet or devnet submission path exists in the experiment", () => {

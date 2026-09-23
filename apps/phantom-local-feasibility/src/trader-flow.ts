@@ -1,3 +1,5 @@
+import recorded from "../../reference/data/kox-trade-replay.json" with { type: "json" };
+import { type BuyStage, formatTechnicalDetails } from "./buy-error.ts";
 import { FeasibilityError } from "./feasibility.ts";
 import {
   EXPECTED_IN_AMOUNT,
@@ -8,53 +10,60 @@ import {
   formatUsdc,
 } from "./local-funding.ts";
 import type { ReplayOutcome } from "./replay-execution.ts";
-import { formatFailureHeadline, type LocalSimulationFailure } from "./rpc-failure.ts";
 
-/** Buy always uses the sealed pre-activation authorization. It is not a scenario picker. */
-export const TRADER_BUY_KIND = "STALE" as const;
-/** Confirm always uses the sealed post-activation authorization, after a separate click. */
-export const TRADER_CONFIRM_KIND = "REFRESHED" as const;
+/** Buy uses the sealed post-activation authorization and normal preflight. */
+export const TRADER_BUY_KIND = "SAFE" as const;
 
-export const TRADER_INITIAL_STEP = "READY_STALE" as const;
+export const TRADER_INITIAL_STEP = "READY_SAFE" as const;
 
-const NO_TOKENS = "No tokens were exchanged.";
+/**
+ * Recorded local executions from apps/reference/data/kox-trade-replay.json.
+ * These are not the Phantom signature from the current Buy click.
+ */
+const stale = recorded.staleExecution;
+const refreshed = recorded.refreshedExecution;
+const wasInvoked = (programs: readonly string[], prefix: string) => programs.some((program) => program.startsWith(prefix));
+export const RECORDED_STALE_PROOF = {
+  authorizationSource: stale.authorizationSource,
+  signature: stale.outcome.signature,
+  failedInstruction: stale.outcome.failedInstruction,
+  customCode: stale.outcome.customCode,
+  guardErrorName: stale.outcome.guardErrorName,
+  jupiterInvoked: wasInvoked(stale.invoked, "JUP6"),
+  whirlpoolInvoked: wasInvoked(stale.invoked, "whirLb"),
+  usdcDelta: stale.deltas.usdc,
+  koxDelta: stale.deltas.kox,
+};
+export const RECORDED_REFRESHED_PROOF = {
+  authorizationSource: refreshed.authorizationSource,
+  signature: refreshed.outcome.signature,
+  guardPassed: refreshed.outcome.succeeded && refreshed.outcome.err === null,
+  jupiterInvoked: wasInvoked(refreshed.invoked, "JUP6"),
+  whirlpoolInvoked: wasInvoked(refreshed.invoked, "whirLb"),
+  usdcDelta: refreshed.deltas.usdc,
+  koxDelta: refreshed.deltas.kox,
+};
 
-export function tokensUnchanged(outcome: Pick<ReplayOutcome, "before" | "after">): boolean {
-  return outcome.before.usdc === outcome.after.usdc && outcome.before.kox === outcome.after.kox;
+export function protectionTechnicalDetails(): string {
+  return JSON.stringify({
+    source: "apps/reference/data/kox-trade-replay.json",
+    recordedAt: recorded.recordedAt,
+    recordedTrader: recorded.localExecution.taker,
+    stale: recorded.staleExecution,
+    refreshed: recorded.refreshedExecution,
+    marketEvidence: recorded.marketEvidence,
+    routeEvidence: recorded.routeEvidence,
+  }, null, 2);
 }
 
-/** True only for a landed local failure, not a simulation-only result. */
-export function staleReviewAllowed(outcome: ReplayOutcome): boolean {
+export function liveSafeAllowed(outcome: ReplayOutcome): boolean {
   return outcome.kind === TRADER_BUY_KIND
-    && outcome.authorizationSource === STALE_AUTHORIZATION_SOURCE
-    && outcome.signature.length > 0
-    && outcome.slot > 0n
-    && outcome.error !== null
-    && outcome.guardInvoked
-    && outcome.failedInstruction === 0
-    && outcome.customCode === 12
-    && outcome.guardErrorName === "ActivationPhaseChanged"
-    && !outcome.jupiterInvoked
-    && !outcome.whirlpoolInvoked
-    && tokensUnchanged(outcome);
-}
-
-export function staleReviewMessage(outcome: ReplayOutcome): string | null {
-  if (!staleReviewAllowed(outcome) || !tokensUnchanged(outcome)) return null;
-  return [
-    "Order needs review",
-    "",
-    "The asset changed while your order was being processed.",
-    "",
-    NO_TOKENS,
-  ].join("\n");
-}
-
-export function refreshedSuccessAllowed(outcome: ReplayOutcome): boolean {
-  return outcome.kind === TRADER_CONFIRM_KIND
     && outcome.authorizationSource === REFRESHED_AUTHORIZATION_SOURCE
     && outcome.signature.length > 0
     && outcome.slot > 0n
+    && outcome.before.usdc === EXPECTED_IN_AMOUNT
+    && outcome.before.kox === 0n
+    && outcome.signer === outcome.feePayer
     && outcome.error === null
     && !outcome.skipPreflight
     && outcome.guardInvoked
@@ -62,100 +71,54 @@ export function refreshedSuccessAllowed(outcome: ReplayOutcome): boolean {
     && outcome.whirlpoolInvoked
     && outcome.after.usdc === outcome.before.usdc - EXPECTED_IN_AMOUNT
     && outcome.after.kox === outcome.before.kox + EXPECTED_OUT_AMOUNT
+    && formatUsdc(EXPECTED_IN_AMOUNT) === "5.00"
     && formatKox(outcome.after.kox - outcome.before.kox) === "0.05504261";
 }
 
-export function refreshedSuccessMessage(outcome: ReplayOutcome): string | null {
-  if (!refreshedSuccessAllowed(outcome)) return null;
+export function liveSafeMessage(outcome: ReplayOutcome): string | null {
+  if (!liveSafeAllowed(outcome)) return null;
   return [
-    "Protected trade replay completed",
+    "Protected trade executed locally",
     "",
-    "5.00 USDC",
-    "→",
-    "0.05504261 KOx",
+    "5.00 USDC → 0.05504261 KOx",
     "",
     "Local execution replay",
   ].join("\n");
 }
 
-export function technicalEvidence(stale: ReplayOutcome, refreshed: ReplayOutcome): string | null {
-  if (!staleReviewAllowed(stale) || !refreshedSuccessAllowed(refreshed)) return null;
-  const usdcSpent = formatUsdc(refreshed.before.usdc - refreshed.after.usdc);
-  const koxReceived = formatKox(refreshed.after.kox - refreshed.before.kox);
+/** Previously verified local executions. This text is not the Buy signature. */
+export function protectionStory(): string {
+  const refreshedUsdc = formatUsdc(BigInt(RECORDED_REFRESHED_PROOF.usdcDelta));
+  const refreshedKox = formatKox(BigInt(RECORDED_REFRESHED_PROOF.koxDelta));
+  const time = (seconds: number) => new Date(seconds * 1000).toISOString().slice(11, 19) + " UTC";
   return [
-    "REAL MARKET EVIDENCE",
+    "Stale authorization blocked",
+    "Previously verified local execution evidence. Separate from the live Buy above.",
+    "The asset state changed after authorization.",
+    "EquityGuard rejected the transaction before the protected swap executed.",
     "",
-    "KOx authorization:",
-    "Sep 15 · 00:29:46 UTC",
+    "EquityGuard: Rejected before protected execution",
+    "Jupiter: " + (RECORDED_STALE_PROOF.jupiterInvoked ? "Invoked" : "Not invoked"),
+    "Whirlpool: " + (RECORDED_STALE_PROOF.whirlpoolInvoked ? "Invoked" : "Not invoked"),
+    "USDC movement: " + RECORDED_STALE_PROOF.usdcDelta,
+    "KOx movement: " + RECORDED_STALE_PROOF.koxDelta,
     "",
-    "Activation:",
-    "00:30:00 UTC",
+    "Updated authorization executed",
+    "Previously recorded recovery execution. Separate from the live Buy above.",
+    "EquityGuard: " + (RECORDED_REFRESHED_PROOF.guardPassed ? "Passed" : "Failed"),
+    "Jupiter: " + (RECORDED_REFRESHED_PROOF.jupiterInvoked ? "Executed" : "Not invoked"),
+    "Whirlpool: " + (RECORDED_REFRESHED_PROOF.whirlpoolInvoked ? "Executed" : "Not invoked"),
+    "USDC: " + refreshedUsdc,
+    "KOx: +" + refreshedKox,
     "",
-    "Post-state:",
-    "00:30:16 UTC",
-    "",
-    "Source:",
-    "recorded Solana mainnet KOx state",
-    "",
-    "SIGNED STALE ATTEMPT",
-    "",
-    "Signer:",
-    "Phantom",
-    "",
-    "Execution:",
-    "local solana-test-validator",
-    "",
-    "EquityGuard:",
-    "Rejected at ix0",
-    "",
-    "Reason:",
-    "ActivationPhaseChanged",
-    "",
-    "Jupiter:",
-    "Not invoked",
-    "",
-    "Whirlpool:",
-    "Not invoked",
-    "",
-    "USDC:",
-    "0 movement",
-    "",
-    "KOx:",
-    "0 movement",
-    "",
-    "SIGNED UPDATED ATTEMPT",
-    "",
-    "Second Phantom approval:",
-    "Yes",
-    "",
-    "EquityGuard:",
-    "Passed",
-    "",
-    "Jupiter:",
-    "Executed",
-    "",
-    "Whirlpool:",
-    "Executed",
-    "",
-    "USDC:",
-    `-${usdcSpent}`,
-    "",
-    "KOx:",
-    `+${koxReceived}`,
-    "",
-    "PROVENANCE",
-    "",
-    "Economic-state source:",
-    "recorded Sep 15 Solana mainnet",
-    "",
-    "Route source:",
-    "independently captured Sep 17 mainnet-derived Jupiter route",
-    "",
-    "Execution:",
-    "local solana-test-validator",
-    "",
-    "Hard boundary:",
-    "not a mainnet EquityGuard transaction",
+    "Recorded KOx Solana mainnet economic-state transition",
+    "Authorization observation: Sep 15 " + time(recorded.marketEvidence.preparedObservation.blockTime),
+    "Scheduled activation: " + time(Number(recorded.marketEvidence.scheduledActivation)),
+    "Post-state observation: " + time(recorded.marketEvidence.postActivationObservation.blockTime),
+    "The live Buy above is a separate local execution.",
+    "It did not cross the Sep 15 event.",
+    "It is not a Solana mainnet EquityGuard transaction.",
+    "The Jupiter route is independently captured mainnet-derived evidence.",
   ].join("\n");
 }
 
@@ -186,15 +149,35 @@ function isEnvironmentUnavailable(error: unknown): boolean {
   return /local (?:replay |validator|rpc)|reseed|baseline|genesis hash/i.test(errorMessage(error));
 }
 
-export function traderFacingError(action: "buy" | "confirm", error: unknown): { readonly headline: string; readonly technical: string } {
-  const technical = error instanceof Error && "failure" in error
-    ? `${formatFailureHeadline((error as { readonly failure: LocalSimulationFailure }).failure, action === "buy" ? "Buy" : "Updated order")}\n${((error as { readonly failure: LocalSimulationFailure }).failure.logs).join("\n")}`
-    : errorMessage(error);
-  if (isPhantomMissing(error)) return { headline: "Phantom not detected", technical };
-  if (isSignatureCancelled(error)) return { headline: "Signature request cancelled", technical };
-  if (isEnvironmentUnavailable(error)) return { headline: "Local replay environment unavailable", technical };
-  return {
-    headline: action === "buy" ? "Order could not be submitted" : "Updated order could not be confirmed",
-    technical,
-  };
+const STAGE_HEADLINE: Record<BuyStage, string> = {
+  ENVIRONMENT_CHECK: "Local replay environment is not ready.",
+  PHANTOM_CONNECT: "Connect Phantom to continue.",
+  TRANSACTION_BUILD: "The protected order could not be prepared.",
+  SIGN_REQUEST: "The signature request could not be completed.",
+  SIGNED_BYTES_RETURNED: "The signed transaction could not be read.",
+  PRE_SIGN_SIMULATION: "The order was not valid before signing. Reset the local reproduction.",
+  WAITING_FOR_ACTIVATION: "The local state change could not be verified.",
+  BLOCKHASH_VALIDATION: "The signed transaction expired. It was not rebuilt or resubmitted.",
+  SIMULATION: "The protected order could not be validated.",
+  SUBMISSION: "The order could not be submitted.",
+  CONFIRMATION: "The transaction could not be confirmed.",
+  BALANCE_VERIFICATION: "The transaction finished, but the result could not be verified.",
+};
+
+export function traderFacingError(
+  action: "buy" | "confirm",
+  error: unknown,
+  stage: BuyStage,
+  development = false,
+): { readonly headline: string; readonly technical: string } {
+  const technical = formatTechnicalDetails(error, stage, development);
+  if (isSignatureCancelled(error)) return { headline: "Signature request cancelled.", technical };
+  if (isPhantomMissing(error) || stage === "PHANTOM_CONNECT") return { headline: "Connect Phantom to continue.", technical };
+  if (/reseed|baseline|Phantom (?:USDC|KOx) is/i.test(errorMessage(error))) {
+    return { headline: "Demo environment needs reset\nReset the local replay environment before starting another trade.", technical };
+  }
+  if (isEnvironmentUnavailable(error) || stage === "ENVIRONMENT_CHECK") {
+    return { headline: "Local replay environment is not ready.", technical };
+  }
+  return { headline: STAGE_HEADLINE[stage], technical };
 }
