@@ -7,9 +7,12 @@ import {
   StatusLabel,
 } from "@/components/ui/public-ui";
 import { AnimatedPublicPageAtmosphere } from "@/components/ui/animated-public-page-atmosphere";
+import { useLiveDemo } from "@/components/demo/use-live-demo";
+import { CANONICAL, type LiveStaleResult, type LiveUpdatedResult } from "@/lib/live-demo";
 import { useReducedMotion } from "@/lib/motion";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import "./live-demo.css";
 
 type ExecutionProof = {
   signature: string;
@@ -48,10 +51,17 @@ export type DemoEvidence = {
 
 type DemoStage = "initial" | "review" | "updated" | "completed";
 
-const STAGE_COPY: Record<
-  DemoStage,
-  { label: string; icon: string; title: string; body: string; note?: string; action: string }
-> = {
+/** What the single trade card renders, whichever mode produced it. */
+type CardCopy = {
+  label: string;
+  icon: string;
+  title: string;
+  body: string;
+  note?: string;
+  action: string;
+};
+
+const STAGE_COPY: Record<DemoStage, CardCopy> = {
   initial: {
     label: "Initial order",
     icon: "01",
@@ -115,12 +125,79 @@ function TechnicalValue({ label, value }: { label: string; value: string }): Rea
   );
 }
 
+/**
+ * The live run's own record, shown beside the canonical evidence rather than
+ * mixed into it: these values came from this machine's proof environment in
+ * the last few seconds, and are labelled as such.
+ */
+function LiveRunEvidence({
+  stale,
+  updated,
+}: {
+  stale: LiveStaleResult | null;
+  updated: LiveUpdatedResult | null;
+}): ReactNode {
+  const wallet = updated?.walletPublicKey ?? stale?.walletPublicKey ?? null;
+  return (
+    <section>
+      <SectionLabel>This live run</SectionLabel>
+      <h2>Local protected execution, this session</h2>
+      <dl className="evidence-list">
+        <div>
+          <dt>Environment</dt>
+          <dd>{CANONICAL.environment}</dd>
+        </div>
+        {wallet ? <TechnicalValue label="Phantom wallet" value={wallet} /> : null}
+        {stale ? (
+          <>
+            <div><dt>Stale · EquityGuard</dt><dd>{stale.guard} · {stale.guardErrorName}</dd></div>
+            <div><dt>Stale · Jupiter</dt><dd>{stale.jupiterInvoked ? "INVOKED" : "NOT INVOKED"}</dd></div>
+            <div><dt>Stale · Whirlpool</dt><dd>{stale.whirlpoolInvoked ? "INVOKED" : "NOT INVOKED"}</dd></div>
+            <div><dt>Stale · raw token delta</dt><dd>{stale.usdcDelta} USDC · {stale.koxDelta} KOx</dd></div>
+            <div><dt>Stale · slot</dt><dd>{stale.slot}</dd></div>
+            <TechnicalValue label="Stale signature" value={stale.signature} />
+          </>
+        ) : null}
+        {updated ? (
+          <>
+            <div><dt>Updated · EquityGuard</dt><dd>{updated.guard}</dd></div>
+            <div><dt>Updated · Jupiter</dt><dd>{updated.jupiterInvoked ? "EXECUTED" : "NOT INVOKED"}</dd></div>
+            <div><dt>Updated · Whirlpool</dt><dd>{updated.whirlpoolInvoked ? "EXECUTED" : "NOT INVOKED"}</dd></div>
+            <div><dt>Updated · raw token delta</dt><dd>−{updated.usdcSpentRaw} USDC · +{updated.koxReceivedRaw} KOx</dd></div>
+            <div><dt>Updated · display delta</dt><dd>{updated.usdcDisplay} USDC → {updated.koxDisplay} KOx</dd></div>
+            <div><dt>Updated · slot</dt><dd>{updated.slot}</dd></div>
+            <TechnicalValue label="Updated signature" value={updated.signature} />
+          </>
+        ) : null}
+      </dl>
+      <div className="demo-proof__technical">
+        {stale ? (
+          <details>
+            <summary>Live stale attempt — raw proof</summary>
+            <pre>{JSON.stringify(stale.proof, null, 2)}</pre>
+          </details>
+        ) : null}
+        {updated ? (
+          <details>
+            <summary>Live updated attempt — raw proof</summary>
+            <pre>{JSON.stringify(updated.proof, null, 2)}</pre>
+          </details>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactNode {
   const [stage, setStage] = useState<DemoStage>("initial");
   const [busy, setBusy] = useState(false);
+  // Null means "whatever this machine supports"; a value is the operator's own
+  // explicit choice, which is why it is never overwritten by a later effect.
+  const [modeChoice, setModeChoice] = useState<"replay" | "live" | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
   const prefersReducedMotion = useReducedMotion();
-  const copy = STAGE_COPY[stage];
+  const live = useLiveDemo();
 
   useEffect(
     () => () => {
@@ -129,7 +206,15 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
     []
   );
 
-  function advance(): void {
+  // When the operator has deliberately enabled the local live demo, start in
+  // it: one fewer thing to remember during a presentation. The selector below
+  // still lets them move back to the replay on purpose.
+  const mode = modeChoice ?? (live.available ? "live" : "replay");
+  const isLive = mode === "live" && live.available;
+  const panels = live.panels;
+  const liveFailure = panels.failure;
+
+  const advance = useCallback((): void => {
     if (busy) return;
     if (stage === "review") {
       setStage("updated");
@@ -149,21 +234,148 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
       },
       prefersReducedMotion ? 0 : 620
     );
+  }, [busy, prefersReducedMotion, stage]);
+
+  const liveCopy = ((): CardCopy => {
+    if (liveFailure) {
+      const missing = [
+        liveFailure.walletRequested ? null : "No wallet signature was requested.",
+        liveFailure.submitted ? null : "No transaction was submitted.",
+      ].filter((line): line is string => line !== null);
+      return {
+        label: "Live demo stopped",
+        icon: "✕",
+        title: liveFailure.cancelled ? "Signature request cancelled." : liveFailure.headline,
+        body: missing.join(" ") || `Stopped at ${liveFailure.stage}.`,
+        note: "This is a live-mode failure. It has not been replaced by the deterministic replay.",
+        action: "Start over",
+      };
+    }
+    if (panels.busy) {
+      return {
+        label: "Live execution",
+        icon: "··",
+        title: "Working…",
+        body: panels.message ?? "Connecting Phantom…",
+        action: "Working…",
+      };
+    }
+    if (panels.updated) {
+      return {
+        label: "Completed",
+        icon: "✓",
+        title: "Protected trade replay completed",
+        body: "Local protected execution. Two Phantom approvals, one rejected authorization, one executed trade.",
+        note: `${panels.updated.usdcDisplay} USDC → ${panels.updated.koxDisplay} KOx`,
+        action: "View what happened",
+      };
+    }
+    if (panels.showUpdatedTerms) {
+      return {
+        label: "Updated order",
+        icon: "02",
+        title: "Updated order",
+        body: "The economic state has been refreshed. Confirming requests a second Phantom approval for a newly built authorization.",
+        note: `${CANONICAL.usdcIn} USDC → ${CANONICAL.koxOut} KOx`,
+        action: "Confirm updated order",
+      };
+    }
+    if (panels.showReviewCta) {
+      return {
+        label: "Order needs review",
+        icon: "!",
+        title: "Order needs review",
+        body: "The asset changed while your order was being processed.",
+        note: "No tokens were exchanged.",
+        action: "Review updated order",
+      };
+    }
+    return {
+      label: "Initial order",
+      icon: "01",
+      title: "Protected order ready",
+      body: "Buy sends a protected authorization built from local state to the local proof environment. Phantom will ask you to approve it.",
+      action: "Buy",
+    };
+  })();
+
+  const copy = isLive ? liveCopy : STAGE_COPY[stage];
+  const working = isLive ? panels.busy : busy;
+
+  function act(): void {
+    if (!isLive) {
+      advance();
+      return;
+    }
+    if (liveFailure) {
+      live.reset();
+      setDrawerOpen(false);
+      return;
+    }
+    if (panels.updated) {
+      setDrawerOpen(true);
+      return;
+    }
+    if (panels.showUpdatedTerms) {
+      live.confirm();
+      return;
+    }
+    if (panels.showReviewCta) {
+      live.review();
+      return;
+    }
+    live.buy();
   }
+
+  const amounts = isLive && panels.updated
+    ? { input: `${panels.updated.usdcDisplay} USDC`, output: `${panels.updated.koxDisplay} KOx` }
+    : evidence.order;
 
   return (
     <main id="main-content" className="route-main unified-route demo-route">
       <AnimatedPublicPageAtmosphere className="demo-route__atmosphere" />
       <section className="page-container demo-page" aria-labelledby="demo-title">
         <header className="route-heading demo-page__heading">
-          <SectionLabel>Public demo · deterministic replay</SectionLabel>
+          <SectionLabel>
+            {isLive ? "Local demo · live Phantom proof" : "Public demo · deterministic replay"}
+          </SectionLabel>
           <h1 id="demo-title">See a stale trade stop before settlement.</h1>
-          <p>
-            Replay the canonical evidence-driven lifecycle from recorded market
-            state and protected local execution evidence. It does not connect to a
-            visitor&apos;s localhost validator or replace the separate Phantom-signed
-            proof environment.
-          </p>
+          {isLive ? (
+            <p>
+              This machine is running the local proof environment. Buy builds a real
+              protected authorization, Phantom signs it, and the local validator
+              executes it. Recorded Solana mainnet economic state supplies the market
+              evidence; the protected execution itself happens in the local proof
+              environment, not on Solana mainnet.
+            </p>
+          ) : (
+            <p>
+              Replay the canonical evidence-driven lifecycle from recorded market
+              state and protected local execution evidence. It does not connect to a
+              visitor&apos;s localhost validator or replace the separate Phantom-signed
+              proof environment.
+            </p>
+          )}
+          {live.available ? (
+            <div className="demo-mode-switch" role="group" aria-label="Demo mode">
+              <button
+                type="button"
+                className={`demo-mode-switch__option focus-ring${mode === "replay" ? " is-selected" : ""}`}
+                aria-pressed={mode === "replay"}
+                onClick={() => setModeChoice("replay")}
+              >
+                Interactive replay
+              </button>
+              <button
+                type="button"
+                className={`demo-mode-switch__option focus-ring${mode === "live" ? " is-selected" : ""}`}
+                aria-pressed={mode === "live"}
+                onClick={() => setModeChoice("live")}
+              >
+                Live Phantom proof
+              </button>
+            </div>
+          ) : null}
         </header>
 
         <PublicSurface as="article" tone="gradient" className="demo-trade-card">
@@ -178,29 +390,35 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
             <StatusLabel icon={copy.icon}>{copy.label}</StatusLabel>
           </div>
 
-          <div className="demo-trade-card__amounts" aria-label={`${evidence.order.input} to ${evidence.order.output}`}>
+          {isLive ? (
+            <p className="demo-live-indicator">
+              <span aria-hidden="true">◆</span> Phantom · Local protected execution
+            </p>
+          ) : null}
+
+          <div className="demo-trade-card__amounts" aria-label={`${amounts.input} to ${amounts.output}`}>
             <div>
               <span>You pay</span>
-              <strong>{evidence.order.input}</strong>
+              <strong>{amounts.input}</strong>
             </div>
             <span className="demo-trade-card__arrow" aria-hidden="true">→</span>
             <div>
-              <span>Estimated</span>
-              <strong>{evidence.order.output}</strong>
+              <span>{isLive && panels.updated ? "Received" : "Estimated"}</span>
+              <strong>{amounts.output}</strong>
             </div>
           </div>
 
-          <div className="demo-trade-card__state" aria-live="polite" aria-busy={busy}>
+          <div className="demo-trade-card__state" aria-live="polite" aria-busy={working}>
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
-                key={stage}
+                key={isLive ? `live-${copy.label}-${copy.title}` : stage}
                 initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
                 transition={{ duration: prefersReducedMotion ? 0.01 : 0.24 }}
               >
-                <MonoLabel>{busy ? "REPLAYING EVIDENCE" : copy.label}</MonoLabel>
-                <h2>{busy ? "Checking protected state…" : copy.title}</h2>
+                <MonoLabel>{!isLive && busy ? "REPLAYING EVIDENCE" : copy.label}</MonoLabel>
+                <h2>{!isLive && busy ? "Checking protected state…" : copy.title}</h2>
                 <p>{copy.body}</p>
                 {copy.note ? <strong>{copy.note}</strong> : null}
               </motion.div>
@@ -210,24 +428,41 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
           <button
             type="button"
             className="button button--primary demo-trade-card__action focus-ring"
-            disabled={busy}
-            onClick={advance}
+            disabled={working}
+            onClick={act}
           >
-            {busy ? "Replaying…" : copy.action}
-            {!busy ? <span aria-hidden="true">→</span> : null}
+            {working ? (isLive ? "Working…" : "Replaying…") : copy.action}
+            {!working ? <span aria-hidden="true">→</span> : null}
           </button>
+
+          {isLive && liveFailure ? (
+            <details className="demo-live-failure">
+              <summary className="focus-ring">Technical details</summary>
+              <pre>{liveFailure.technical}</pre>
+            </details>
+          ) : null}
+
           <p className="demo-boundary-note">
-            Evidence replay only · nothing is signed · no transaction is submitted
+            {isLive
+              ? "Local proof environment · your Phantom wallet signs · not a Solana mainnet transaction"
+              : "Evidence replay only · nothing is signed · no transaction is submitted"}
           </p>
         </PublicSurface>
 
         <PublicSurface as="section" tone="technical" className="demo-proof" aria-label="Replay evidence">
-          <details className="demo-proof__drawer">
+          <details
+            className="demo-proof__drawer"
+            open={drawerOpen}
+            onToggle={(event) => setDrawerOpen((event.currentTarget as HTMLDetailsElement).open)}
+          >
             <summary className="focus-ring">
               <span>View replay evidence</span>
               <span aria-hidden="true">+</span>
             </summary>
             <div className="demo-proof__content">
+              {isLive && (panels.stale || panels.updated) ? (
+                <LiveRunEvidence stale={panels.stale} updated={panels.updated} />
+              ) : null}
               <section>
                 <SectionLabel>Real market evidence</SectionLabel>
                 <h2>Recorded Solana mainnet KOx state</h2>

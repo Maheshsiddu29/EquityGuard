@@ -1,0 +1,95 @@
+/*
+ * Live-mode additions to the existing demo card.
+ *
+ * Restrained on purpose: the same near-black navy, white, muted and cobalt
+ * tokens as the rest of the public system. State semantics are carried by
+ * copy and by a small mark, never by a large green or red block.
+ */
+
+.demo-mode-switch {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-top: 1.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--public-border);
+  border-radius: 999px;
+  background: rgba(8, 14, 28, 0.6);
+}
+
+.demo-mode-switch__option {
+  padding: 0.42rem 0.95rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--public-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.demo-mode-switch__option:hover {
+  color: var(--public-muted-strong);
+}
+
+.demo-mode-switch__option.is-selected {
+  background: rgba(95, 136, 255, 0.16);
+  color: var(--public-text);
+  box-shadow: inset 0 0 0 1px var(--public-border-strong);
+}
+
+.demo-live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.9rem 0 0;
+  color: var(--public-muted-strong);
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.demo-live-indicator span {
+  color: var(--public-cobalt);
+  font-size: 0.6rem;
+}
+
+.demo-live-failure {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--public-border);
+  padding-top: 0.75rem;
+}
+
+.demo-live-failure summary {
+  color: var(--public-muted);
+  font-size: 0.76rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.demo-live-failure summary::-webkit-details-marker {
+  display: none;
+}
+
+.demo-live-failure summary:hover {
+  color: var(--public-muted-strong);
+}
+
+.demo-live-failure pre {
+  max-height: 16rem;
+  margin: 0.6rem 0 0;
+  overflow: auto;
+  color: var(--public-muted);
+  font-size: 0.7rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-mode-switch__option {
+    transition: none;
+  }
+}
