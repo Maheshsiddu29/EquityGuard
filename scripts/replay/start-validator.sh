@@ -7,7 +7,8 @@
 #     from mainnet programdata by capture-route.ts (upgradeable)
 #   - ATA and Memo bytes dumped from mainnet (BPFLoader2, loaded non-upgradeable)
 #   - every mainnet account the route references (accounts/)
-#   - the one fabricated local user account (local-accounts/)
+#   - the fabricated local user account (local-accounts/)
+#   - Phantom's fabricated USDC ATA when tmp/m9d-c1/phantom-accounts exists
 #
 # --warp-slot moves past the lookup table's last_extended_slot so its
 # addresses are active. --clone-feature-set copies mainnet's feature gates, so
@@ -21,6 +22,10 @@ DIR="${1:-tmp/m9d-c1}"
 : "${EQUITYGUARD_MAINNET_RPC_URL:?EQUITYGUARD_MAINNET_RPC_URL is required for --clone-feature-set}"
 WARP_SLOT="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).accountsReadSlot)' "$DIR/route-fixture.json")"
 P="$DIR/programs"
+PHANTOM_ACCOUNTS=()
+if [ -d "$DIR/phantom-accounts" ]; then
+  PHANTOM_ACCOUNTS+=(--account-dir "$DIR/phantom-accounts")
+fi
 
 exec solana-test-validator \
   --reset \
@@ -37,4 +42,5 @@ exec solana-test-validator \
   --bpf-program ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL "$P/ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL.so" \
   --bpf-program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr "$P/MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr.so" \
   --account-dir "$DIR/accounts" \
-  --account-dir "$DIR/local-accounts"
+  --account-dir "$DIR/local-accounts" \
+  "${PHANTOM_ACCOUNTS[@]}"

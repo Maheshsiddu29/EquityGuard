@@ -14,8 +14,9 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { address, getAddressEncoder } from "@solana/kit";
+import { address, getAddressEncoder, type Address } from "@solana/kit";
 
 import { LEGACY_TOKEN_PROGRAM_ADDRESS, USDC_MINT_ADDRESS, canonicalAta } from "../../packages/guard-client/src/index.ts";
 import { toJson } from "../devnet/evidence.ts";
@@ -32,10 +33,21 @@ const arg = (name: string, fallback?: string) => {
   return value;
 };
 
-async function main(): Promise<void> {
-  const taker = address(arg("--taker"));
-  const amount = BigInt(arg("--usdc-raw"));
-  const outDir = arg("--out", "tmp/m9d-c1/local-accounts");
+export interface FabricatedUsdcAta {
+  readonly taker: Address;
+  readonly ata: Address;
+  readonly amount: bigint;
+  readonly path: string;
+  readonly tokenProgram: typeof LEGACY_TOKEN_PROGRAM_ADDRESS;
+  readonly mint: typeof USDC_MINT_ADDRESS;
+}
+
+export async function writeFabricatedUsdcAta(
+  taker: Address,
+  amount: bigint,
+  outDir: string,
+): Promise<FabricatedUsdcAta> {
+  if (amount < 0n) throw new Error("USDC raw amount must be non-negative");
   const ata = await canonicalAta(taker, USDC_MINT_ADDRESS, LEGACY_TOKEN_PROGRAM_ADDRESS);
 
   // spl_token::state::Account: mint, owner, amount, delegate (COption), state,
@@ -64,10 +76,20 @@ async function main(): Promise<void> {
       },
     }),
   );
-  console.log(`LOCAL-ONLY USDC ATA ${ata} for ${taker}: ${amount} raw -> ${path}`);
+  return { taker, ata, amount, path, tokenProgram: LEGACY_TOKEN_PROGRAM_ADDRESS, mint: USDC_MINT_ADDRESS };
 }
 
-main().catch((error: unknown) => {
-  console.error(`[local-user-accounts] ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+async function main(): Promise<void> {
+  const taker = address(arg("--taker"));
+  const amount = BigInt(arg("--usdc-raw"));
+  const outDir = arg("--out", "tmp/m9d-c1/local-accounts");
+  const written = await writeFabricatedUsdcAta(taker, amount, outDir);
+  console.log(`LOCAL-ONLY USDC ATA ${written.ata} for ${written.taker}: ${written.amount} raw -> ${written.path}`);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((error: unknown) => {
+    console.error(`[local-user-accounts] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}
