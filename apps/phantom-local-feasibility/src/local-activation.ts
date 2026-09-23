@@ -1,15 +1,20 @@
 import { createSolanaRpc, type Signature } from "@solana/kit";
-import { fetchGuardSnapshot, ActivationPhase, JUPITER_V6_PROGRAM_ADDRESS, EQUITY_GUARD_DEVNET_PROGRAM_ID } from "../../../packages/guard-client/src/index.ts";
+import { fetchGuardSnapshot, ActivationPhase, EQUITY_GUARD_DEVNET_PROGRAM_ID } from "../../../packages/guard-client/src/index.ts";
 import type { PhantomProvider } from "../../devnet-wallet-demo/src/wallet.ts";
 import type { BuyStage } from "./buy-error.ts";
 import { LOCAL_RPC_URL, assertLocalRpcUrl } from "./feasibility.ts";
 import { EXPECTED_PHANTOM } from "./local-funding.ts";
 import { KOX_MINT } from "./replay-model.ts";
-import { executeAcrossActivation, LOCAL_ACTIVATION_SOURCE } from "./activation-proof.ts";
+import {
+  executeAcrossActivation,
+  LOCAL_ACTIVATION_SOURCE,
+  type DeploymentAttestation,
+  type PreSignAttestation,
+  type SignedAuthorizationAttestation,
+} from "./activation-proof.ts";
 import { prepareReplay, balances, exactPhantomSignature, encodeForPhantom, confirmReplay, type ReplayData, type PreparedReplay, type TokenBalances } from "./replay-execution.ts";
 import { decodeLocalRpcFailure, ReplaySimulationError, invoked } from "./rpc-failure.ts";
 
-const WHIRLPOOL = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
 const rpc = () => createSolanaRpc(assertLocalRpcUrl(LOCAL_RPC_URL).href);
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 export async function armLocalActivation(): Promise<bigint> {
@@ -26,23 +31,42 @@ export async function recordEvidence(proof: { stale: unknown; refreshed: unknown
   const response = await fetch("/api/evidence", { method: "POST", headers: { "content-type": "application/json" }, body: serialize(proof) });
   if (!response.ok) throw new Error("Local evidence could not be recorded");
 }
-async function simulate(prepared: PreparedReplay) {
-  const response = await fetch(assertLocalRpcUrl(LOCAL_RPC_URL), {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "simulateTransaction", params: [base64(prepared.wireBytes), {
-      encoding: "base64", sigVerify: false, replaceRecentBlockhash: false, commitment: "confirmed",
-    }] }),
+/** POSTs to the local coordinator and fails loudly on any refusal. */
+async function coordinator<T>(path: string, payload: unknown): Promise<T> {
+  assertLocalRpcUrl(location.origin);
+  const response = await fetch(path, {
+    method: "POST", headers: { "content-type": "application/json" }, body: serialize(payload),
   });
-  const result = await response.json() as { error?: unknown; result?: { context: unknown; value: { err: unknown; logs: string[] | null; unitsConsumed?: number } } };
-  if (result.error || !result.result || result.result.value.err !== null) {
-    throw new ReplaySimulationError(decodeLocalRpcFailure(result.error ?? { data: result.result?.value }, "simulation", prepared.programs));
+  const result = await response.json() as T & { error?: string; code?: string };
+  if (!response.ok || result.error) {
+    throw new Error(result.error ?? `Local coordinator refused ${path}`);
   }
-  const logs = result.result.value.logs ?? [];
-  if (!logs.includes("Program " + EQUITY_GUARD_DEVNET_PROGRAM_ID + " success") ||
-      !logs.includes("Program " + JUPITER_V6_PROGRAM_ADDRESS + " success") ||
-      !logs.includes("Program " + WHIRLPOOL + " success")) throw new Error("Pre-sign simulation did not prove all programs succeeded");
-  return result.result;
+  return result;
 }
+
+/**
+ * EG-A-03: the coordinator simulates the exact unsigned message itself, reads
+ * its own Clock, and refuses unless the complete guard + Jupiter + Whirlpool
+ * path succeeded before localT. The browser asserts nothing here.
+ */
+async function attestPreSignSimulation(prepared: PreparedReplay): Promise<PreSignAttestation & { logs: readonly string[]; computeUnits: number | null }> {
+  return coordinator("/api/pre-sign-simulation", { unsignedWireBase64: base64(prepared.wireBytes) });
+}
+
+/**
+ * EG-A-03: hands the exact Phantom-signed bytes to the coordinator, which
+ * verifies the signature, requires the message to equal the simulated one, and
+ * dates the receipt against its own Clock.
+ */
+async function attestSignedAuthorization(proofId: string, signed: Uint8Array): Promise<SignedAuthorizationAttestation> {
+  return coordinator("/api/signed-authorization", { proofId, signedWireBase64: base64(signed) });
+}
+
+/** EG-A-02: re-reads the guard deployment. Never touches the transaction. */
+async function attestDeployment(stage: DeploymentAttestation["stage"]): Promise<DeploymentAttestation> {
+  return coordinator("/api/deployment-attestation", { stage });
+}
+
 export async function runLocalActivation(
   data: ReplayData, provider: PhantomProvider, localT: bigint, stale: boolean,
   stage: (stage: BuyStage, clock?: { unixTimestamp: bigint; slot: bigint }) => void,
@@ -69,7 +93,9 @@ export async function runLocalActivation(
       before = await balances(rpc(), prepared);
       return prepared;
     },
-    simulate,
+    attestPreSignSimulation,
+    attestSignedAuthorization,
+    attestDeployment,
     sign: async (prepared) => {
       const returned = await provider.request({ method: "signTransaction", params: { message: encodeForPhantom(prepared.unsigned) } });
       stage("SIGNED_BYTES_RETURNED");

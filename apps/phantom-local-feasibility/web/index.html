@@ -9,9 +9,10 @@
 <p class="warning">Local execution reproduction</p><p id="notice" class="status" hidden></p></section>
 <section id="review" class="card panel" hidden><p id="review-body" class="status"></p>
 <button id="review-order" class="button button-secondary">Review updated order</button></section>
-<section id="updated-terms" class="card panel" hidden><h2>Order updated</h2><p>5.00 USDC → 0.05504261 KOx</p>
-<button id="confirm-order" class="button button-primary">Confirm updated trade</button></section>
+<section id="updated-terms" class="card panel" hidden><h2>Authorization updated</h2><p>Same order, re-authorized against the asset’s new economic state.</p><p>5.00 USDC → 0.05504261 KOx</p>
+<button id="confirm-order" class="button button-primary">Confirm updated authorization</button></section>
 <section id="done" class="card panel" hidden><p id="done-copy" class="status"></p></section>
+<section id="leg-failure" class="card panel" hidden><p id="leg-failure-body" class="status"></p></section>
 <details id="technical-drawer" hidden><summary>View execution proof</summary><pre id="technical-body"></pre></details>
 <p>Local execution reproduction using compiled EquityGuard, Jupiter and Whirlpool programs with mainnet-derived KOx and route state.</p>
 <p>Market evidence comes from the recorded Sep 15 KOx Solana mainnet state transition. The local activation timestamp is derived from the validator Clock, not the historical Sep 15 timestamp. The route was independently captured on Sep 17.</p>

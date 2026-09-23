@@ -5,16 +5,38 @@ import { createHash } from "node:crypto";
 import { address } from "@solana/kit";
 import { decodeProtectedState, TOKEN_2022_PROGRAM_ADDRESS } from "../../../packages/guard-client/src/index.ts";
 import { deriveLocalMint } from "../server/local-mint.ts";
-import { activationDelay, localActivation, equalBytes, executeAcrossActivation, type ActivationDependencies } from "../src/activation-proof.ts";
+import { activationDelay, localActivation, equalBytes, executeAcrossActivation, type ActivationDependencies, type PhaseTiming } from "../src/activation-proof.ts";
+
+const WIRE_SHA = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+/** These orchestration tests all drive the stale leg. */
+const PENDING_TIMING: PhaseTiming = {
+  encodedPhase: "PENDING",
+  clockRelationToLocalT: "BEFORE_ACTIVATION",
+  requiredRelationToLocalT: "BEFORE_ACTIVATION",
+  clockMatchesExpectedPhase: true,
+};
 
 function harness(times = [90n, 91n, 92n, 99n, 100n]) {
   const events: string[] = [];
   const wire = new Uint8Array([1, 9, 8, 7]);
   let submitted: Uint8Array | undefined;
+  const messageSha256 = "message-sha";
   const deps: ActivationDependencies<{ hash: string }, string> = {
     build: async () => { events.push("build"); return { hash: "original" }; },
-    simulate: async () => { events.push("simulate"); return { err: null, logs: ["simulation passed"] }; },
+    attestPreSignSimulation: async () => {
+      events.push("simulate");
+      return { proofId: "presign-1", messageSha256, timing: PENDING_TIMING, source: "LOCAL_COORDINATOR" };
+    },
     sign: async () => { events.push("sign"); return wire; },
+    attestSignedAuthorization: async (proofId, signed) => {
+      events.push("receipt:" + proofId);
+      return {
+        proofId, messageSha256, signedWireSha256: WIRE_SHA(signed),
+        messageMatchesSimulated: true, timing: PENDING_TIMING, signatureVerified: true,
+        source: "LOCAL_COORDINATOR",
+      };
+    },
+    attestDeployment: async (stage) => { events.push("deployment:" + stage); return { stage, digest: "guard-digest", matched: true }; },
     clock: async () => ({ unixTimestamp: times.shift() ?? 101n, slot: 1n }),
     lifetime: async p => { events.push("validity:" + p.hash); return { valid: true, height: 10n, lastValidBlockHeight: 100n }; },
     submit: async (_p, bytes, skip) => { events.push("submit:" + skip); submitted = bytes; return "confirmed"; },
@@ -43,7 +65,7 @@ test("passing pre-sign simulation precedes signing; one unchanged wire is submit
   assert.equal(proof.signedWireHashAtSubmission, createHash("sha256").update(h.wire).digest("hex"));
 });
 test("failed pre-sign simulation never invokes Phantom or submission", async () => {
-  const h = harness(); const deps = { ...h.deps, simulate: async () => { throw new Error("ActivationPhaseChanged"); } };
+  const h = harness(); const deps = { ...h.deps, attestPreSignSimulation: async () => { throw new Error("ActivationPhaseChanged"); } };
   await assert.rejects(executeAcrossActivation(deps, 100n, true), /ActivationPhaseChanged/);
   assert.ok(!h.events.includes("sign")); assert.equal(h.submitted(), undefined);
 });

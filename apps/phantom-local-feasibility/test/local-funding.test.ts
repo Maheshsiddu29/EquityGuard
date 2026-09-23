@@ -90,8 +90,16 @@ test("deterministic baseline rejects leftover KOx or empty USDC", () => {
 test("browser does not silently resubmit after stale rejection", () => {
   const app = readFileSync(join(ROOT, "apps/phantom-local-feasibility/src/app.ts"), "utf8");
   const html = readFileSync(join(ROOT, "apps/phantom-local-feasibility/web/index.html"), "utf8");
-  assert.match(html, /Confirm updated trade/);
-  assert.match(app, /if \(!stale \|\| busy \|\| refreshed\) return/);
+  // EG-A-12: the second step is an explicit, separately worded confirmation.
+  // It re-authorizes; it does not requote, and the copy must not imply it did.
+  assert.match(html, /Confirm updated authorization/);
+  assert.match(html, /Authorization updated/);
+  assert.doesNotMatch(html, /Order updated/);
+  // The refreshed leg starts only from an explicit confirmation that the
+  // view model currently permits; there is no path that re-enters it after a
+  // success or a failure without resetting the reproduction.
+  assert.match(app, /if \(!panels\(view\)\.updatedTerms\) return;/);
+  assert.match(app, /view = beginAttempt\(view\);/);
   assert.doesNotMatch(app, /submit\("STALE"\)|submit\("REFRESHED"\)/);
   assert.doesNotMatch(html, /Sign SAFE local trade|Sign stale local trade|SAFE result|STALE result|REFRESHED result|Confirm updated order/);
 });

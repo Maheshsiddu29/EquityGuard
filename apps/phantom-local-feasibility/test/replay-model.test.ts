@@ -7,7 +7,7 @@ import { address } from "@solana/kit";
 
 import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "../../../packages/guard-client/src/index.ts";
 import { parseBuildResponse } from "../../../packages/jupiter/src/build-client.ts";
-import { composeGuardedJupiterTrade } from "../../../packages/jupiter/src/compose.ts";
+import { composeGuardedJupiterTrade } from "../../../packages/jupiter/src/advanced.ts";
 import { assertOutcome, type ReplayOutcome } from "../src/replay-execution.ts";
 import {
   KOX_MINT,

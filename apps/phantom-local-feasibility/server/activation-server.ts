@@ -12,6 +12,8 @@ import {
 import { getUpdateMultiplierScaledUiMintInstruction } from "@solana-program/token-2022";
 import { fetchGuardSnapshot, decodeProtectedState, TOKEN_2022_PROGRAM_ADDRESS } from "../../../packages/guard-client/src/index.ts";
 import { deriveLocalMint } from "./local-mint.ts";
+import { AttestationError, CoordinatorAttestations } from "./attestation.ts";
+import { DeploymentAttestationError, attestGuardDeployment, reattestGuardDeployment, type AccountReader } from "./deployment-attestation.ts";
 import { activationDelay, localActivation } from "../src/activation-proof.ts";
 import { KOX_MINT } from "../src/replay-model.ts";
 import { LOCAL_RPC_URL, assertLocalRpcUrl } from "../src/feasibility.ts";
@@ -57,7 +59,64 @@ await new Promise<void>((resolveDone, reject) => {
   child.on("error", reject);
   child.on("exit", (code) => code === 0 ? resolveDone() : reject(new Error("Local fixture preparation failed")));
 });
-let armed: unknown = null;
+/**
+ * EG-A-02: the deployment the coordinator attested at startup. Every later
+ * read must match this digest, or the flow refuses rather than signing or
+ * submitting against a program that changed underneath it.
+ */
+const readLoaderAccounts: AccountReader = async (addresses) => {
+  const response = await rpc.getMultipleAccounts(addresses as Parameters<typeof rpc.getMultipleAccounts>[0], { encoding: "base64", commitment: "confirmed" }).send();
+  return {
+    contextSlot: response.context.slot,
+    accounts: response.value.map((account) => account === null
+      ? null
+      : { executable: account.executable, owner: account.owner, data: Uint8Array.from(Buffer.from(account.data[0], "base64")) }),
+  };
+};
+const deployment = await attestGuardDeployment(readLoaderAccounts);
+console.log(`EquityGuard deployment attested: ${deployment.attestation.identity}, ${deployment.attestation.mutability}`);
+
+/**
+ * EG-A-03: the coordinator's own pre-sign simulation and signed-byte receipt.
+ * Both read the validator Clock here, not in the browser.
+ */
+const attestations = new CoordinatorAttestations({
+  protectedMint: KOX_MINT,
+  clock: async () => (await fetchGuardSnapshot(rpc, KOX_MINT)).clock,
+  simulate: async (wireBase64) => {
+    const response = await fetch(assertLocalRpcUrl(LOCAL_RPC_URL), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "simulateTransaction", params: [wireBase64, {
+        encoding: "base64", sigVerify: false, replaceRecentBlockhash: false, commitment: "confirmed",
+      }] }),
+    });
+    const body = await response.json() as {
+      error?: { message?: string };
+      result?: { context?: { slot?: number | string }; value?: { err?: unknown; logs?: string[] | null; unitsConsumed?: number } };
+    };
+    if (body.error || !body.result?.value) throw new Error(body.error?.message ?? "local simulateTransaction returned no result");
+    const slot = body.result.context?.slot;
+    return {
+      err: body.result.value.err ?? null,
+      logs: body.result.value.logs ?? [],
+      unitsConsumed: body.result.value.unitsConsumed ?? null,
+      contextSlot: slot === undefined ? null : BigInt(slot),
+    };
+  },
+});
+
+interface ArmedActivation {
+  readonly localT: string;
+  readonly configuredDelay: number;
+  readonly clock: unknown;
+  readonly confirmedClock: unknown;
+  readonly setupSignature: string;
+  readonly setupAuthority: string;
+  readonly deployment: unknown;
+  readonly deploymentDigest: string;
+  readonly environment: string;
+}
+let armed: ArmedActivation | null = null;
 let arming = false;
 async function arm() {
   if (armed || arming) throw new Error("Activation already scheduled; reset before a new reproduction");
@@ -88,12 +147,43 @@ async function arm() {
       !Buffer.from(after.state.newMultiplier).equals(Buffer.from(originalState.newMultiplier))) {
     throw new Error("Setup changed captured multiplier bytes; reproduction refused");
   }
-  armed = { localT, configuredDelay: delay, clock: snapshot.clock, confirmedClock: after.clock,
+  armed = { localT: localT.toString(), configuredDelay: delay, clock: snapshot.clock, confirmedClock: after.clock,
     setupSignature: getSignatureFromTransaction(signed), setupAuthority: setup.address,
+    deployment: deployment.attestation, deploymentDigest: deployment.digest,
     environment: "LOCAL_EXECUTION_REPRODUCTION" };
   await writeFile(resolve(dir, "activation.json"), json(armed));
   return armed;
 }
+/**
+ * Records why the coordinator said no, so a failed run can be diagnosed from
+ * the log rather than reconstructed from the browser.
+ *
+ * Non-secret fields only: endpoint, proof id, encoded phase, the two clock
+ * values and the error code. Never a signature, wire bytes, message bytes or
+ * any key material.
+ */
+function logRefusal(url: string | undefined, error: unknown, code: string | null): void {
+  const context = error instanceof AttestationError ? error.context : {};
+  const fields: Record<string, string> = {
+    at: new Date().toISOString(),
+    endpoint: context.endpoint ?? url ?? "unknown",
+    code: code ?? "UNCLASSIFIED",
+  };
+  for (const [key, value] of [["proofId", context.proofId], ["phase", context.phase], ["clock", context.clock], ["localT", context.localT]] as const) {
+    if (value !== undefined) fields[key] = value;
+  }
+  const summary = Object.entries(fields).map(([key, value]) => `${key}=${value}`).join(" ");
+  console.error(`REFUSED ${summary} :: ${error instanceof Error ? error.message : "unknown error"}`);
+}
+
+/** Every deployment re-attestation the flow asked for, in order. */
+const deploymentReattestations: { at: string; stage: string; digest: string; matched: true }[] = [];
+
+function requireArmed(): bigint {
+  if (!armed) throw new Error("Activation is not armed");
+  return BigInt(armed.localT);
+}
+
 const localOrigin = (origin: string | undefined) => origin === "http://127.0.0.1:4175" || origin === "http://localhost:4175";
 async function body(req: import("node:http").IncomingMessage): Promise<string> {
   let text = "";
@@ -114,13 +204,32 @@ async function recordEvidence(payload: string) {
     ledger[signature] = ((await response.json()) as { result?: unknown }).result ?? null;
   }
   const file = resolve(dir, "run-" + new Date().toISOString().replace(/[:.]/g, "") + ".json");
-  await writeFile(file, json({ environment: "LOCAL_EXECUTION_REPRODUCTION", armed, provenance, browserProof: proof, validatorMetadata: ledger }), { mode: 0o600 });
+  await writeFile(file, json({
+    environment: "LOCAL_EXECUTION_REPRODUCTION",
+    armed,
+    provenance,
+    // EG-A-02/EG-A-03: the coordinator's own records. These are the
+    // authoritative source for pre-sign validity, signing time and the
+    // program that was attested; `browserProof` is display and debugging.
+    coordinatorAttestations: {
+      note: "Established server-side from 127.0.0.1:8899. The browser supplies transaction bytes only: the simulation, the Ed25519 verification and every Clock read here are the coordinator's own.",
+      deployment: deployment.attestation,
+      deploymentDigest: deployment.digest,
+      deploymentReattestations,
+      ...attestations.snapshot(),
+    },
+    browserProof: proof,
+    validatorMetadata: ledger,
+  }), { mode: 0o600 });
   return { file };
 }
+
 createServer(async (req, res) => {
   try {
     if (req.url === "/api/status") {
-      res.setHeader("Content-Type", "application/json"); res.end(json({ ready: true, armed, provenance })); return;
+      res.setHeader("Content-Type", "application/json");
+      res.end(json({ ready: true, armed, provenance, deployment: deployment.attestation, deploymentDigest: deployment.digest }));
+      return;
     }
     if (req.url === "/api/arm" && req.method === "POST") {
       if (!localOrigin(req.headers.origin)) throw new Error("Local demo origin required");
@@ -130,6 +239,38 @@ createServer(async (req, res) => {
       if (!localOrigin(req.headers.origin)) throw new Error("Local demo origin required");
       res.setHeader("Content-Type", "application/json"); res.end(json(await recordEvidence(await body(req)))); return;
     }
+    // EG-A-03: the coordinator simulates the exact unsigned message itself and
+    // records that it was valid before the armed activation.
+    if (req.url === "/api/pre-sign-simulation" && req.method === "POST") {
+      if (!localOrigin(req.headers.origin)) throw new Error("Local demo origin required");
+      const input = JSON.parse(await body(req)) as { unsignedWireBase64?: string };
+      if (typeof input.unsignedWireBase64 !== "string") throw new Error("unsignedWireBase64 is required");
+      const record = await attestations.recordPreSignSimulation({ unsignedWireBase64: input.unsignedWireBase64, localT: requireArmed() });
+      res.setHeader("Content-Type", "application/json"); res.end(json(record)); return;
+    }
+    // EG-A-03: the coordinator verifies the Phantom signature over the exact
+    // bytes it simulated, and records that it held them before activation.
+    if (req.url === "/api/signed-authorization" && req.method === "POST") {
+      if (!localOrigin(req.headers.origin)) throw new Error("Local demo origin required");
+      const input = JSON.parse(await body(req)) as { proofId?: string; signedWireBase64?: string };
+      if (typeof input.proofId !== "string" || typeof input.signedWireBase64 !== "string") {
+        throw new Error("proofId and signedWireBase64 are required");
+      }
+      const record = await attestations.recordSignedAuthorization({ proofId: input.proofId, signedWireBase64: input.signedWireBase64, localT: requireArmed() });
+      res.setHeader("Content-Type", "application/json"); res.end(json(record)); return;
+    }
+    // EG-A-02: re-read the deployment. A pure RPC read; it never touches the
+    // transaction, so the held signed bytes are unaffected by calling it.
+    if (req.url === "/api/deployment-attestation" && req.method === "POST") {
+      if (!localOrigin(req.headers.origin)) throw new Error("Local demo origin required");
+      const input = JSON.parse(await body(req) || "{}") as { stage?: string };
+      const stage = typeof input.stage === "string" ? input.stage : "unspecified";
+      const current = await reattestGuardDeployment(readLoaderAccounts, deployment.digest);
+      deploymentReattestations.push({ at: new Date().toISOString(), stage, digest: current.digest, matched: true });
+      res.setHeader("Content-Type", "application/json");
+      res.end(json({ stage, digest: current.digest, attestation: current.attestation, readAtSlot: current.readAtSlot, matched: true }));
+      return;
+    }
     if (req.method !== "GET") { res.writeHead(405); res.end(); return; }
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     const file = resolve(dist, "." + (pathname === "/" ? "/index.html" : pathname));
@@ -138,7 +279,11 @@ createServer(async (req, res) => {
     res.setHeader("Content-Type", ({ ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json" } as Record<string, string>)[extname(file)] ?? "application/octet-stream");
     res.end(await readFile(file));
   } catch (error) {
+    const code = error instanceof AttestationError ? error.code
+      : error instanceof DeploymentAttestationError ? error.reason
+      : null;
+    logRefusal(req.url, error, code);
     res.writeHead(409, { "Content-Type": "application/json" });
-    res.end(json({ error: error instanceof Error ? error.message : "Local setup failed" }));
+    res.end(json({ error: error instanceof Error ? error.message : "Local setup failed", ...(code === null ? {} : { code }) }));
   }
 }).listen(4175, "127.0.0.1", () => console.log("Local activation reproduction ready at http://127.0.0.1:4175"));

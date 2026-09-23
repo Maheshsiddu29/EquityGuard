@@ -76,10 +76,33 @@ function prepared(kind: "STALE" | "REFRESHED"): PreparedReplay {
   } as unknown as PreparedReplay;
 }
 const BEFORE = { usdc: 5_000_000n, kox: 0n };
+/** The stale leg is authorized before the activation, so PENDING / before. */
+const STALE_TIMING = {
+  encodedPhase: "PENDING",
+  clockRelationToLocalT: "BEFORE_ACTIVATION",
+  requiredRelationToLocalT: "BEFORE_ACTIVATION",
+  clockMatchesExpectedPhase: true,
+} as const;
+
+/**
+ * A complete proof: the browser's own readings plus the local coordinator's
+ * authoritative pre-sign and signed-receipt attestations (EG-A-03) and its
+ * two deployment re-attestations (EG-A-02).
+ */
 const heldProof = (outcome: Awaited<ReturnType<typeof confirmReplay>>) => ({
   outcome, localT: 100n, atSigning: { unixTimestamp: 95n, slot: 1n }, atSubmission: { unixTimestamp: 101n, slot: 2n },
   lifetime: { valid: true, height: 90n, lastValidBlockHeight: 150n }, exactEquality: true,
   signedWireHashBeforeActivation: "ab", signedWireHashAtSubmission: "ab",
+  preSign: { proofId: "presign-1", messageSha256: "msg", timing: STALE_TIMING, source: "LOCAL_COORDINATOR" as const },
+  signedAuthorization: {
+    proofId: "presign-1", messageSha256: "msg", signedWireSha256: "ab",
+    messageMatchesSimulated: true as const, timing: STALE_TIMING,
+    signatureVerified: true as const, source: "LOCAL_COORDINATOR" as const,
+  },
+  deploymentAttestations: [
+    { stage: "PRE_SIGN" as const, digest: "guard-digest", matched: true as const },
+    { stage: "PRE_SUBMISSION" as const, digest: "guard-digest", matched: true as const },
+  ] as const,
 });
 function stale(): void {
   Object.assign(chain, { slot: 4242, err: { InstructionError: [0, { Custom: 12 }] }, logs: GUARD_FAILED, units: 11_017,
@@ -154,6 +177,26 @@ test("stale view refuses an incomplete signed-before-activation proof", async ()
     { ...proof, atSigning: { unixTimestamp: 100n, slot: 1n } },
     { ...proof, atSubmission: { unixTimestamp: 100n, slot: 2n } },
     { ...proof, lifetime: { ...proof.lifetime, valid: false } },
+    // EG-A-03: the coordinator's records are load-bearing, not decorative.
+    { ...proof, preSign: { ...proof.preSign, source: "BROWSER" as never } },
+    { ...proof, preSign: { ...proof.preSign, timing: { ...STALE_TIMING, clockMatchesExpectedPhase: false } as never } },
+    // A stale panel may not be rendered from an ACTIVATED authorization.
+    { ...proof, preSign: { ...proof.preSign, timing: { ...STALE_TIMING, encodedPhase: "ACTIVATED" } as never } },
+    { ...proof, preSign: { ...proof.preSign, timing: { ...STALE_TIMING, clockRelationToLocalT: "AT_OR_AFTER_ACTIVATION" } as never } },
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, source: "BROWSER" as never } },
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, timing: { ...STALE_TIMING, clockMatchesExpectedPhase: false } as never } },
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, timing: { ...STALE_TIMING, clockRelationToLocalT: "AT_OR_AFTER_ACTIVATION" } as never } },
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, signatureVerified: false as never } },
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, messageMatchesSimulated: false as never } },
+    // The signed message must be the one the coordinator simulated...
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, messageSha256: "other" } },
+    // ...and the attested wire must be the one that was held.
+    { ...proof, signedAuthorization: { ...proof.signedAuthorization, signedWireSha256: "cd" } },
+    // EG-A-02: the deployment must have been re-attested, twice, unchanged.
+    { ...proof, deploymentAttestations: [] as never },
+    { ...proof, deploymentAttestations: [proof.deploymentAttestations[0]] as never },
+    { ...proof, deploymentAttestations: [proof.deploymentAttestations[0], { stage: "PRE_SUBMISSION", digest: "other", matched: true }] as never },
+    { ...proof, deploymentAttestations: [proof.deploymentAttestations[0], { ...proof.deploymentAttestations[1], matched: false }] as never },
   ]) assert.throws(() => reproductionMessage(broken), /proof is incomplete/);
 });
 

@@ -155,7 +155,9 @@ const STAGE_HEADLINE: Record<BuyStage, string> = {
   TRANSACTION_BUILD: "The protected order could not be prepared.",
   SIGN_REQUEST: "The signature request could not be completed.",
   SIGNED_BYTES_RETURNED: "The signed transaction could not be read.",
-  PRE_SIGN_SIMULATION: "The order was not valid before signing. Reset the local reproduction.",
+  PRE_SIGN_SIMULATION: "This authorization could not be verified before signing. Reset the local reproduction.",
+  SIGNED_AUTHORIZATION_RECEIPT: "The signed authorization could not be attested before the state change. It was not submitted.",
+  DEPLOYMENT_ATTESTATION: "The EquityGuard program could not be re-verified. Nothing was signed or submitted.",
   WAITING_FOR_ACTIVATION: "The local state change could not be verified.",
   BLOCKHASH_VALIDATION: "The signed transaction expired. It was not rebuilt or resubmitted.",
   SIMULATION: "The protected order could not be validated.",
@@ -172,6 +174,12 @@ export function traderFacingError(
 ): { readonly headline: string; readonly technical: string } {
   const technical = formatTechnicalDetails(error, stage, development);
   if (isSignatureCancelled(error)) return { headline: "Signature request cancelled.", technical };
+  // The refreshed leg gets its own wording: "the order was not valid" reads as
+  // a verdict on the trade, when what failed was verifying the *updated*
+  // authorization before a second signature was ever requested.
+  if (action === "confirm" && stage === "PRE_SIGN_SIMULATION") {
+    return { headline: "The updated authorization could not be verified before signing.", technical };
+  }
   if (isPhantomMissing(error) || stage === "PHANTOM_CONNECT") return { headline: "Connect Phantom to continue.", technical };
   if (/reseed|baseline|Phantom (?:USDC|KOx) is/i.test(errorMessage(error))) {
     return { headline: "Demo environment needs reset\nReset the local replay environment before starting another trade.", technical };
