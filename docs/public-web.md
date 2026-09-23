@@ -13,7 +13,8 @@ to the root npm workspaces and has its own `package.json`, `package-lock.json`,
 with `npm --prefix apps/web run <script>`.
 
 The public app imports the already-vendored Geist and Geist Mono font files
-from `apps/shared/design-system/fonts`; it makes no runtime font request.
+from `apps/shared/design-system/fonts` and self-hosts Manrope from its installed
+package; it makes no runtime font request.
 
 ## Route and execution boundary
 
@@ -29,6 +30,14 @@ authorization-to-execution hero, unchanged/changed-state comparison, three
 execution principles, repository-backed proof, transaction-stack integration,
 and a final demo/docs call to action. The page retains the rbp-portfolio-derived
 frame, navigation, Motion and Lenis providers, and reduced-motion handling.
+
+The landing route uses a dark, Manrope-led visual system. One adapted React
+Bits Gradient Waves WebGL2 canvas provides the hero atmosphere; it uses a
+low-detail raymarch, is stopped by IntersectionObserver when offscreen, stops
+when the document is hidden, and is never initialized for reduced motion. A
+static CSS continuation reuses the wave palette in the final call to action,
+so the page does not mount a second animation. Other routes retain their
+existing presentation.
 
 The landing proof section reports only the established repository totals:
 19,986 mainnet observations, 294,527 authorization-to-execution comparisons,

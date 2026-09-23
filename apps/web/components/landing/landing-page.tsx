@@ -29,6 +29,23 @@ const METRICS = [
   { value: "0", label: "disagreements" },
 ] as const;
 
+const OUTCOMES = [
+  {
+    kind: "normal",
+    label: "Normal",
+    state: "State unchanged",
+    result: "Executes",
+    note: "The existing experience continues without interruption.",
+  },
+  {
+    kind: "changed",
+    label: "Changed state",
+    state: "Economic state changed",
+    result: "Needs review",
+    note: "Execution pauses before the protected action can run.",
+  },
+] as const;
+
 const KOX_LIFECYCLE = [
   { environment: "Recorded mainnet state", label: "Pre-activation authorization" },
   { environment: "Recorded mainnet state", label: "KOx state changes" },
@@ -58,46 +75,35 @@ export function LandingPage(): ReactNode {
         </div>
 
         <div className="outcome-comparison">
-          <article className="outcome-lane outcome-lane--normal">
-            <header>
-              <span className="outcome-lane__signal" aria-hidden="true" />
-              <div>
-                <p>Normal</p>
-                <strong>Nothing changed</strong>
-              </div>
-            </header>
-            <div className="outcome-flow" aria-label="Approve, then execute">
-              <span>Approve</span>
-              <i aria-hidden="true">↓</i>
-              <span className="outcome-flow__result">Execute</span>
-            </div>
-            <p className="outcome-lane__note">
-              The existing experience continues without interruption.
-            </p>
-          </article>
-
-          <article className="outcome-lane outcome-lane--changed">
-            <header>
-              <span className="outcome-lane__signal" aria-hidden="true" />
-              <div>
-                <p>Changed state</p>
-                <strong>Authorization is stale</strong>
-              </div>
-            </header>
-            <div
-              className="outcome-flow"
-              aria-label="Approve, state changes, then order needs review"
+          {OUTCOMES.map((outcome) => (
+            <article
+              className="outcome-lane"
+              data-outcome={outcome.kind}
+              key={outcome.kind}
             >
-              <span>Approve</span>
-              <i aria-hidden="true">↓</i>
-              <span>State changes</span>
-              <i aria-hidden="true">↓</i>
-              <span className="outcome-flow__result">Order needs review</span>
-            </div>
-            <p className="outcome-lane__note">
-              Execution pauses before the protected action can run.
-            </p>
-          </article>
+              <header>
+                <p>{outcome.label}</p>
+                <span>Authorized</span>
+              </header>
+              <div className="outcome-trade" aria-label="5 USDC to 0.05504261 KOx">
+                <div>
+                  <strong>5.00</strong>
+                  <span>USDC</span>
+                </div>
+                <i aria-hidden="true">→</i>
+                <div>
+                  <strong>0.05504261</strong>
+                  <span>KOx</span>
+                </div>
+              </div>
+              <div className="outcome-state">
+                <span aria-hidden="true" />
+                <p>{outcome.state}</p>
+              </div>
+              <strong className="outcome-result">{outcome.result}</strong>
+              <p className="outcome-lane__note">{outcome.note}</p>
+            </article>
+          ))}
         </div>
       </RevealSection>
 
@@ -221,15 +227,18 @@ export function LandingPage(): ReactNode {
         labelledBy="final-cta-title"
       >
         <div className="final-cta">
-          <p className="eyebrow">Protect the moment of execution</p>
-          <h2 id="final-cta-title">Authorization should not expire silently.</h2>
-          <div className="hero-actions">
-            <Link className="button button--light focus-ring" href="/demo">
-              Try the demo <span aria-hidden="true">→</span>
-            </Link>
-            <Link className="button button--dark-outline focus-ring" href="/docs">
-              Read the docs
-            </Link>
+          <div className="final-cta__waves" aria-hidden="true" />
+          <div className="final-cta__content">
+            <p className="eyebrow">Protect the moment of execution</p>
+            <h2 id="final-cta-title">Authorization should not expire silently.</h2>
+            <div className="hero-actions">
+              <Link className="button button--light focus-ring" href="/demo">
+                Try the demo <span aria-hidden="true">→</span>
+              </Link>
+              <Link className="button button--dark-outline focus-ring" href="/docs">
+                Read the docs
+              </Link>
+            </div>
           </div>
         </div>
       </RevealSection>

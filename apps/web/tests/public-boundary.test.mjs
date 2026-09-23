@@ -72,3 +72,28 @@ test("landing proof values and environment boundary remain exact", async () => {
   assert.match(source, /proven separately on local/);
   assert.match(source, /No EquityGuard\s+transaction was sent on mainnet/);
 });
+
+test("the revised landing uses one wave canvas and shared outcome structures", async () => {
+  const landingSource = await readFile(
+    new URL("landing/landing-page.tsx", COMPONENT_URL),
+    "utf8"
+  );
+  const heroSource = await readFile(
+    new URL("landing/scroll-expand-hero.tsx", COMPONENT_URL),
+    "utf8"
+  );
+  const waveSource = await readFile(
+    new URL("react-bits/gradient-waves.tsx", COMPONENT_URL),
+    "utf8"
+  );
+
+  assert.equal(heroSource.match(/<GradientWaves/g)?.length, 1);
+  assert.doesNotMatch(heroSource, /hero-story__grid/);
+  assert.match(landingSource, /OUTCOMES\.map/);
+  assert.match(landingSource, /0\.05504261/);
+  assert.match(landingSource, /Economic state changed/);
+  assert.match(landingSource, /Needs review/);
+  assert.match(waveSource, /prefersReducedMotion/);
+  assert.match(waveSource, /IntersectionObserver/);
+  assert.match(waveSource, /visibilitychange/);
+});

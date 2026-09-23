@@ -6,7 +6,10 @@ import { baseMetadata } from "@/lib/metadata";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
+import "@fontsource-variable/manrope";
 import "./globals.css";
+import "../components/react-bits/gradient-waves.css";
+import "../components/landing/landing-dark.css";
 
 const geistSans = localFont({
   src: "../../shared/design-system/fonts/geist-sans-latin.woff2",

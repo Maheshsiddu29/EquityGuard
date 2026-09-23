@@ -1,6 +1,7 @@
 "use client";
 
 import { ScrollExpand } from "@/components/react-bits/scroll-expand";
+import { GradientWaves } from "@/components/react-bits/gradient-waves";
 import { MotionDiv } from "@/lib/motion";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -10,6 +11,7 @@ const STORY_MARKERS = ["Authorized", "State changed", "Guard check", "Review"];
 export function ScrollExpandHero(): ReactNode {
   return (
     <section className="landing-hero" aria-labelledby="landing-title">
+      <GradientWaves className="landing-hero__waves" />
       <div className="landing-hero__intro page-container">
         <MotionDiv className="landing-hero__copy">
           <p className="eyebrow">
@@ -54,7 +56,6 @@ export function ScrollExpandHero(): ReactNode {
         >
           <div className="hero-story" aria-hidden="true">
             <div className="hero-story__wash" />
-            <div className="hero-story__grid" />
             <div className="hero-story__chrome">
               <span>Protected transaction</span>
               <span>Authorization → execution</span>
