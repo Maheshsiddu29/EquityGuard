@@ -13,6 +13,7 @@ import { useReducedMotion } from "@/lib/motion";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import "./live-demo.css";
+import "./demo-viewport.css";
 
 type ExecutionProof = {
   signature: string;
