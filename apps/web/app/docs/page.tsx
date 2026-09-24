@@ -125,7 +125,7 @@ export default function DocsPage(): ReactNode {
             <MonoLabel>Documentation</MonoLabel>
             <nav aria-label="Documentation sections"><DocsLinks /></nav>
             <Link className="button button--secondary focus-ring" href="/demo">
-              View evidence replay <span aria-hidden="true">→</span>
+              View public demo <span aria-hidden="true">→</span>
             </Link>
           </PublicSurface>
 
@@ -545,7 +545,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                     <tr><td>Grammar smuggling or reordering</td><td>Guard-first requirement, fixed instruction count/order, pinned programs and entrypoint.</td><td>Unsupported routes fail closed, reducing availability.</td></tr>
                     <tr><td>Mint, account, or program substitution</td><td>Mint in payload = account 0 = protected route role; Token-2022 owner; canonical ATAs; deployment check.</td><td>RPC remains trusted for off-chain classification of unknown assets.</td></tr>
                     <tr><td>Upgrade-authority TOCTOU</td><td>ELF + ProgramData attestation before signature and submission.</td><td>The devnet authority can upgrade between the final read and landing.</td></tr>
-                    <tr><td>Demo or localhost confusion</td><td>Genesis-hash gates and explicit mainnet/devnet/local labels.</td><td>Public replay is explanatory; it is not a live wallet or transaction.</td></tr>
+                    <tr><td>Demo or localhost confusion</td><td>Genesis-hash gates and explicit mainnet/devnet/local labels.</td><td>Recorded proof is a replay. Live Devnet is Phantom on Solana Devnet for Token-2022 TransferChecked, not Jupiter or Whirlpool.</td></tr>
                     <tr><td>Replay or evidence overclaim</td><td>Raw state provenance, deterministic fixtures, claim matrix, environment disclosures.</td><td>Historical replay is not a mainnet EquityGuard execution.</td></tr>
                     <tr><td>Wallet mutation or prefix insertion</td><td>Compare signed message to unsigned candidate; verify ix0 and suffix before submit.</td><td>Wallet UI and signing behavior are outside the on-chain program.</td></tr>
                   </tbody>
@@ -572,10 +572,15 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
             <section id="evidence" className="docs-section">
               <SectionIntro label="10 · Evidence & validation" title="Claims are scoped to the environment that produced them.">
                 <p>
-                  Mainnet evidence is read-only state and route data. Public devnet proves
-                  the deployed guard and human-signed transfer flow. A local validator
-                  proves the combined Jupiter and Whirlpool path against real binaries and
-                  mainnet-derived accounts. These are complementary, not interchangeable.
+                  Mainnet evidence is read-only state and route data. The public demo has
+                  two modes. Recorded proof replays KOx observations, protected Jupiter
+                  transaction composition, and Whirlpool execution from the canonical local
+                  reproduction, including the stale rejection and the refreshed execution.
+                  It does not represent a live public mainnet EquityGuard transaction.
+                  Live Devnet connects to Phantom on Solana Devnet, verifies the reviewed
+                  deployment, and protects Token-2022 TransferChecked on a fresh per-session
+                  demo asset. It does not execute Jupiter or Whirlpool. The layers are
+                  complementary, not interchangeable.
                 </p>
               </SectionIntro>
 
@@ -599,15 +604,16 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                     <tr><td>The guard instruction adds 168 bytes; recorded protected Jupiter builds were 675–918 bytes.</td><td>Compiled v0 message regression tests. A recorded transaction was 176 bytes above its original build because the composer also added an 8-byte CU-limit instruction.</td></tr>
                     <tr><td>Valid guard cost measured 4,811–5,615 CU for kind 1 and 10,675–15,243 CU for kinds 2/3.</td><td>LiteSVM over real mint bytes and route fixtures; not a TPS or public-cluster throughput claim.</td></tr>
                     <tr><td>A guarded Jupiter/Whirlpool trade path executed locally for 81,783 total CU.</td><td>Local validator with real binaries and mainnet-derived accounts; not mainnet and not public devnet execution.</td></tr>
-                    <tr><td>The reviewed 63,840-byte program ELF was deployed on devnet.</td><td>ProgramData readback matched SHA-256 <code>d7d59ccd…e46</code>; deployment remains upgradeable.</td></tr>
+                    <tr><td>The reviewed 63,840-byte program ELF was deployed on devnet.</td><td>ProgramData readback matched SHA-256 <code>d7d59ccd…e46</code>; deployment remains upgradeable. There is no mainnet deployment.</td></tr>
+                    <tr><td>A public Live Devnet session held a pending Token-2022 authorization, landed the stale transaction, then executed a new activated transfer.</td><td>Devnet <code>2G9qfs13xnUxYheu7t2cqY2EE9sBKodkpCuahMcGDtRZtRt5cwwjU7qYRGZVoMBegfZdqsmZEdqPU5CLUe4G92zj</code> is ActivationPhaseChanged with zero protected movement. <code>2rxQmrThkTgQiG1M4WFLM1YjJtE4mBj93YjSBeDPdnEai3vJ44gU7dSAfcaq1vWLWXCv2GYLrxZGBMhReCGuyddp</code> is a new authorization and Token-2022 TransferChecked of 100000 raw units. Demo asset only.</td></tr>
                   </tbody>
                 </table>
               </div>
 
               <div className="docs-environment-grid">
                 <article><MonoLabel>Live mainnet</MonoLabel><h3>Observe only</h3><p>Issuer mint state and Jupiter routes. No EquityGuard program, signature, or submitted transaction.</p></article>
-                <article><MonoLabel>Public devnet</MonoLabel><h3>Guard proof</h3><p>Reviewed deployed program, engineered Token-2022 transitions, real signatures, atomic transfer outcomes. Jupiter is not executable there.</p></article>
-                <article><MonoLabel>Local validator</MonoLabel><h3>Composition proof</h3><p>Real Jupiter and Whirlpool binaries with mainnet-derived accounts. Controlled replay, not a public-market trade.</p></article>
+                <article><MonoLabel>Live Devnet</MonoLabel><h3>TransferChecked proof</h3><p>Phantom on Solana Devnet. The browser verifies the reviewed upgradeable program, creates a KO-DEMO, UNH-DEMO, or CRM-DEMO ScaledUiAmount asset, holds the pending signed bytes, and submits them after the Devnet Clock crosses. Success requires ActivationPhaseChanged and zero protected movement, then a new authorization and Token-2022 TransferChecked. Demo assets are demonstration assets only: not real securities, no market value, and not issuer-affiliated. This path does not execute Jupiter or Whirlpool.</p></article>
+                <article><MonoLabel>Local validator</MonoLabel><h3>Composition proof</h3><p>Recorded proof of real Jupiter and Whirlpool binaries with mainnet-derived accounts. Controlled replay, not a public-market trade and not the Live Devnet path.</p></article>
               </div>
             </section>
 
@@ -631,7 +637,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                     <div><dt>Governance</dt><dd>Single upgrade authority; mutable</dd></div>
                     <div><dt>Mainnet</dt><dd>No deployment</dd></div>
                   </dl>
-                  <p>Before any signature, resolve cluster from genesis hash, verify Program + ProgramData in one read, and match the reviewed ELF. Reverify before submission.</p>
+                  <p>Before any signature, resolve cluster from genesis hash, verify Program + ProgramData in one read, and match the reviewed ELF. Reverify before submission. The website Live Devnet flow does this in the browser against public Devnet and refuses mainnet and testnet.</p>
                 </article>
                 <article>
                   <MonoLabel>Web documentation</MonoLabel>
@@ -687,7 +693,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                 <li><span>06</span><div><strong>Upgrade-authority TOCTOU</strong><p>Repeated attestation narrows—but does not eliminate—the time in which an authority can replace the program.</p></div></li>
                 <li><span>07</span><div><strong>No external audit</strong><p>Internal campaigns and test depth are evidence, not an independent security assessment.</p></div></li>
                 <li><span>08</span><div><strong>Packages are unpublished</strong><p>The documented package paths work in the monorepo and are marked private at version 0.1.0.</p></div></li>
-                <li><span>09</span><div><strong>Public demo is a replay</strong><p>The website demo does not connect to Phantom or submit transactions. The separate devnet wallet proof does.</p></div></li>
+                <li><span>09</span><div><strong>Two public demo modes</strong><p>Recorded proof replays preserved KOx, Jupiter, and Whirlpool evidence and does not submit a visitor transaction. Live Devnet connects to Phantom on Solana Devnet and protects Token-2022 TransferChecked. Its assets are demonstration assets only: not real securities, no market value, and not issuer-affiliated. Live Devnet does not execute Jupiter or Whirlpool, and neither mode is a mainnet EquityGuard deployment.</p></div></li>
                 <li><span>10</span><div><strong>No fair-value guarantee</strong><p>After a corporate-action transition, AMM repricing and ordinary slippage remain market-risk controls.</p></div></li>
               </ol>
             </section>
@@ -737,6 +743,8 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                   <ul>
                     <li><ExternalLink href="https://explorer.solana.com/address/EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT?cluster=devnet">Devnet program account</ExternalLink></li>
                     <li><ExternalLink href="https://explorer.solana.com/tx/5Vb8aaU47wz2bK8iA5yvAyYFEGQbWPy5vzVTo46kZi6VJb22gman2KaRyEBLpcgkkiQSvJSYkg6nSHZZvvQ1jXmb?cluster=devnet">Reviewed-binary upgrade transaction</ExternalLink></li>
+                    <li><ExternalLink href="https://explorer.solana.com/tx/2G9qfs13xnUxYheu7t2cqY2EE9sBKodkpCuahMcGDtRZtRt5cwwjU7qYRGZVoMBegfZdqsmZEdqPU5CLUe4G92zj?cluster=devnet">Public Live Devnet stale rejection</ExternalLink> · ActivationPhaseChanged, zero protected Token-2022 movement</li>
+                    <li><ExternalLink href="https://explorer.solana.com/tx/2rxQmrThkTgQiG1M4WFLM1YjJtE4mBj93YjSBeDPdnEai3vJ44gU7dSAfcaq1vWLWXCv2GYLrxZGBMhReCGuyddp?cluster=devnet">Public Live Devnet updated execution</ExternalLink> · new authorization, Token-2022 TransferChecked, 100000 raw units</li>
                     <li><ExternalLink href="https://github.com/Maheshsiddu29/EquityGuard/blob/main/evidence/final-demo/manifest.json">Final-demo evidence manifest</ExternalLink> · hashes and provenance for the reviewed evidence package</li>
                     <li><ExternalLink href="https://github.com/Maheshsiddu29/EquityGuard/blob/main/evidence/final-demo/verification-report.json">Final-demo verification report</ExternalLink> · machine-readable release checks and verified artifacts</li>
                     <li><ExternalLink href="https://github.com/Maheshsiddu29/EquityGuard/tree/main/scripts/m11b">Market-scale validation harness</ExternalLink> · replay, differential, transaction-size, and scenario tests</li>

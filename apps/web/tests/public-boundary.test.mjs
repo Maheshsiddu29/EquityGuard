@@ -168,7 +168,7 @@ test("the technical docs expose the complete implementation-led information arch
     "Upgrade-authority TOCTOU",
     "No external audit",
     "Packages are unpublished",
-    "Public demo is a replay",
+    "Two public demo modes",
   ]) {
     assert.match(pageSource, new RegExp(boundary));
   }
@@ -184,6 +184,24 @@ test("the technical docs expose the complete implementation-led information arch
   assert.match(diagramSource, /TransactionDiagram/);
   assert.match(diagramSource, /EconomicStateDiagram/);
   assert.match(diagramSource, /RouterIntegrationDiagram/);
+});
+
+test("the docs keep recorded proof and Live Devnet as separate claims", async () => {
+  const pageSource = await readFile(new URL("docs/page.tsx", APP_URL), "utf8");
+
+  assert.match(pageSource, /Recorded proof/);
+  assert.match(pageSource, /Live Devnet/);
+  assert.match(pageSource, /connects to Phantom on Solana Devnet/);
+  assert.match(pageSource, /Token-2022 TransferChecked/);
+  assert.match(pageSource, /does not execute Jupiter or Whirlpool/);
+  assert.match(pageSource, /not real securities, no market value, and not issuer-affiliated/);
+  assert.match(pageSource, /The program does not exist on mainnet/);
+  assert.match(pageSource, /Mainnet<\/dt><dd>No deployment/);
+  assert.doesNotMatch(pageSource, /website demo does not connect to Phantom/i);
+  assert.doesNotMatch(pageSource, /deployed on mainnet/i);
+  assert.match(pageSource, /2G9qfs13xnUxYheu7t2cqY2EE9sBKodkpCuahMcGDtRZtRt5cwwjU7qYRGZVoMBegfZdqsmZEdqPU5CLUe4G92zj/);
+  assert.match(pageSource, /2rxQmrThkTgQiG1M4WFLM1YjJtE4mBj93YjSBeDPdnEai3vJ44gU7dSAfcaq1vWLWXCv2GYLrxZGBMhReCGuyddp/);
+  assert.match(pageSource, /cluster=devnet/);
 });
 
 test("the public shell uses the approved final brand assets", async () => {
