@@ -1340,41 +1340,9 @@ button {
   z-index: 1;
 }
 
-.route-hero h1 {
-  margin: 1.15rem 0 1.45rem;
-  color: var(--eg-text);
-  font-size: clamp(3.15rem, 5.2vw, 5.6rem);
-  font-weight: 650;
-  letter-spacing: -0.06em;
-  line-height: 0.98;
-  text-wrap: balance;
-}
-
-.route-hero__intro {
-  max-width: 620px;
-  margin: 0;
-  color: var(--eg-text-secondary);
-  font-size: clamp(1.05rem, 1.4vw, 1.24rem);
-  letter-spacing: -0.018em;
-  line-height: 1.62;
-}
-
 .route-main {
   min-height: 100vh;
   padding: clamp(8.8rem, 13vw, 11.6rem) 0 5rem;
-}
-
-.route-hero__copy {
-  max-width: 870px;
-}
-
-.route-hero h1 {
-  max-width: 860px;
-  font-size: clamp(3rem, 5.5vw, 5.3rem);
-}
-
-.route-hero__intro {
-  max-width: 760px;
 }
 
 .demo-shell,
@@ -1569,24 +1537,6 @@ button {
   margin-top: 2rem;
 }
 
-.text-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
-  border-radius: 6px;
-  color: var(--eg-primary);
-  font-size: 0.85rem;
-  font-weight: 670;
-}
-
-.text-link span {
-  transition: transform 180ms var(--eg-ease-out);
-}
-
-.text-link:hover span {
-  transform: translateX(3px);
-}
-
 @media (max-width: 1024px) {
   .landing-hero__aside {
     display: none;
@@ -1746,10 +1696,6 @@ button {
     padding-top: 7.8rem;
   }
 
-  .route-hero h1 {
-    font-size: clamp(2.7rem, 11vw, 4.25rem);
-  }
-
   .landing-hero__intro {
     min-height: 94svh;
     padding-top: 8rem;
@@ -1786,11 +1732,6 @@ button {
 @media (max-width: 520px) {
   .brand-mark {
     font-size: 0.86rem;
-  }
-
-  .route-hero h1 {
-    margin-top: 1rem;
-    letter-spacing: -0.052em;
   }
 
   .landing-hero h1 {
