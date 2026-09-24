@@ -1,4 +1,7 @@
 import type { LiveResult } from "./live-execution.ts";
+import { DEMO_ASSET_DISCLAIMER, SCENARIO_CATALOG } from "./scenarios.ts";
+
+export const PROTECTION_EXPLANATION = "The asset's economic state changed after authorization. EquityGuard required a new authorization instead of silently executing against the changed state.";
 
 export function getElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -13,8 +16,25 @@ const token = (raw: bigint) => `${raw < 0n ? "−" : "+"}${(Number(raw < 0n ? -r
 export function resultMarkup(result: LiveResult): string {
   if (result.type === "LOCAL_PREVIEW") return `<div class="result result-expected"><span class="result-label">Expected</span><strong>${result.expected === "ALLOW" ? "State should match" : "EquityGuard should reject stale state"}</strong><p>No transaction has been signed or submitted.</p></div>`;
   if (result.type === "PENDING") {
-    const labels = { READY: "Preparing transaction", SIGNING: "Waiting for Phantom", SUBMITTED: "Submitted to devnet", CONFIRMING: "Confirming on devnet", VERIFYING_MINT: "Verifying demo asset" } as const;
+    const labels = {
+      READY: "Preparing transaction",
+      SIGNING: "Waiting for Phantom",
+      HOLDING: "Holding signed authorization",
+      WAITING_FOR_CLOCK: "Waiting for the Devnet clock",
+      SUBMITTED: "Submitted to devnet",
+      CONFIRMING: "Confirming on devnet",
+      VERIFYING_MINT: "Verifying demo asset",
+    } as const;
     return `<div class="result result-pending"><span class="spinner" aria-hidden="true"></span><div><span class="result-label">Live transaction</span><strong>${labels[result.phase]}</strong>${result.signature ? `<a href="${explorerUrl(result.signature)}" target="_blank" rel="noopener">View pending transaction ↗</a>` : ""}</div></div>`;
+  }
+  if (result.type === "STALE_AUTHORIZATION_EXPIRED") {
+    return `<div class="result result-failed"><span class="result-label">Not submitted</span><strong>STALE_AUTHORIZATION_EXPIRED</strong><p>The signed authorization expired before Solana could land it. This is not a protection result. Start a new attempt.</p></div>`;
+  }
+  if (result.type === "CONFIRMED_ACTIVATION_REJECTION") {
+    return `<div class="result result-block"><span class="result-label">Protected by EquityGuard</span><strong>PROTECTED BY EQUITYGUARD</strong><div class="delta"><span>Asset ${escapeHtml(result.symbol)}</span><span>${escapeHtml(result.eventLabel)}</span></div><p>Authorized state ${escapeHtml(result.authorizedMultiplier)}</p><p>Current state ${escapeHtml(result.currentMultiplier)}</p><p>Guard result ActivationPhaseChanged</p><p>Downstream action BLOCKED</p><p>Token movement 0</p><p>Network Solana Devnet</p><p>${escapeHtml(PROTECTION_EXPLANATION)}</p><p>${escapeHtml(DEMO_ASSET_DISCLAIMER)}</p><a href="${explorerUrl(result.signature)}" target="_blank" rel="noopener">View on Solana Explorer ↗</a></div>`;
+  }
+  if (result.type === "CONFIRMED_UPDATED_EXECUTION") {
+    return `<div class="result result-success"><span class="result-label">Confirmed on devnet</span><strong>Protected transfer executed</strong><p>Asset ${escapeHtml(result.symbol)}</p><p>${escapeHtml(result.eventLabel)}</p><p>EquityGuard passed</p><p>Token transfer executed</p><p>Token movement ${escapeHtml(result.tokenMovementRaw)}</p><p>Network Solana Devnet</p><p>${escapeHtml(DEMO_ASSET_DISCLAIMER)}</p><a href="${explorerUrl(result.signature)}" target="_blank" rel="noopener">View on Solana Explorer ↗</a></div>`;
   }
   if (result.type === "CANCELLED") return `<div class="result result-neutral"><span class="result-label">Cancelled</span><strong>Signature request cancelled</strong><p>${escapeHtml(result.detail)}</p></div>`;
   if (result.type === "FAILED") return `<div class="result result-failed"><span class="result-label">Failed</span><strong>Transaction was not confirmed as the expected proof</strong><p>${escapeHtml(result.detail)}</p>${result.signature ? `<a href="${explorerUrl(result.signature)}" target="_blank" rel="noopener">View transaction ↗</a>` : ""}</div>`;
@@ -64,4 +84,62 @@ export function logActivity(message: string, raw?: unknown): void {
   const line = document.createElement("div");
   line.textContent = `${new Date().toISOString()}  ${message}${raw === undefined ? "" : ` · ${String(raw)}`}`;
   getElement<HTMLElement>("activity-log").append(line);
+}
+
+export interface ScenarioPreview {
+  readonly symbol: string;
+  readonly displayName: string;
+  readonly eventLabel: string;
+  readonly currentMultiplier: string;
+  readonly scheduledMultiplier: string;
+  readonly activation?: string;
+  readonly chainClock?: string;
+}
+
+export function renderScenarioPreview(preview: ScenarioPreview): void {
+  getElement<HTMLElement>("scenario-panel").innerHTML = `<div class="expected"><span>${escapeHtml(preview.symbol)}</span><strong>${escapeHtml(preview.displayName)}</strong><p>${escapeHtml(preview.eventLabel)}</p><p>Current multiplier ${escapeHtml(preview.currentMultiplier)}</p><p>Scheduled multiplier ${escapeHtml(preview.scheduledMultiplier)}</p>${preview.activation ? `<p>Activation ${escapeHtml(preview.activation)}</p>` : ""}${preview.chainClock ? `<p>Chain clock ${escapeHtml(preview.chainClock)}</p>` : ""}<p>Protected action: token transfer</p></div>`;
+}
+
+export function showUpdatedReview(input: {
+  readonly symbol: string;
+  readonly eventLabel: string;
+  readonly previousMultiplier: string;
+  readonly currentMultiplier: string;
+}): void {
+  const panel = getElement<HTMLElement>("review-panel");
+  panel.hidden = false;
+  panel.innerHTML = `<div class="expected"><span>Review updated state</span><strong>${escapeHtml(input.symbol)}</strong><p>${escapeHtml(input.eventLabel)}</p><p>Previous multiplier ${escapeHtml(input.previousMultiplier)}</p><p>Current multiplier ${escapeHtml(input.currentMultiplier)}</p><p>${escapeHtml(DEMO_ASSET_DISCLAIMER)}</p></div>`;
+  getElement<HTMLButtonElement>("confirm-updated-btn").hidden = false;
+}
+
+export function showNewAttempt(): void {
+  getElement<HTMLButtonElement>("attempt-reset-btn").hidden = false;
+}
+
+/** Replaces the previous SAFE/BLOCK/REFRESH controls with the corporate-action flow. */
+export function installCorporateActionDemo(): void {
+  document.querySelectorAll(".setup, .workflow").forEach((element) => element.remove());
+  const lede = document.querySelector(".lede");
+  if (lede) lede.textContent = "Choose a demo equity, arm its corporate action, and sign the protected transfer before and after activation.";
+  const disclosure = document.querySelector(".disclosure");
+  if (disclosure) disclosure.textContent = DEMO_ASSET_DISCLAIMER;
+  const main = document.querySelector("main.wallet-page");
+  if (!main) throw new Error("Demo page is missing its main region");
+  const section = document.createElement("section");
+  section.className = "setup card";
+  section.id = "corporate-demo";
+  section.innerHTML = `<div class="step-number">1</div><div class="step-copy"><span class="eyebrow">Devnet demonstration</span><h2>Corporate action</h2><p id="demo-disclaimer" class="disclosure"></p><label class="asset-line">Asset <select id="scenario-select"></select></label><button id="random-scenario-btn" class="text-button" type="button">Random scenario</button><div class="asset-line"><span>Mint <strong id="mint-address">Not created</strong></span><span id="token-balance">—</span></div><div id="scenario-panel"></div></div><div class="step-action"><button id="prepare-btn" class="button button-primary" type="button" disabled>Prepare live demo</button><div id="prepare-result" aria-live="polite"></div><button id="authorize-btn" class="button button-primary" type="button" disabled>Authorize protected action</button><div id="authorize-result" aria-live="polite"></div><div id="review-panel" hidden></div><button id="confirm-updated-btn" class="button button-primary" type="button" hidden disabled>Confirm updated action</button><div id="updated-result" aria-live="polite"></div><button id="attempt-reset-btn" class="text-button" type="button" hidden>Start a new attempt</button></div>`;
+  const recorded = main.querySelector(".recorded");
+  if (recorded) main.insertBefore(section, recorded);
+  else main.append(section);
+  getElement<HTMLElement>("demo-disclaimer").textContent = DEMO_ASSET_DISCLAIMER;
+  const select = getElement<HTMLSelectElement>("scenario-select");
+  for (const scenario of SCENARIO_CATALOG) {
+    const option = document.createElement("option");
+    option.value = scenario.id;
+    option.textContent = `${scenario.symbol} · ${scenario.displayName}`;
+    select.append(option);
+  }
+  const first = SCENARIO_CATALOG[0];
+  if (first) select.value = first.id;
 }
