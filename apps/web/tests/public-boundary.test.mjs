@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import test from "node:test";
 
 const APP_URL = new URL("../app/", import.meta.url);
 const COMPONENT_URL = new URL("../components/", import.meta.url);
+const PUBLIC_URL = new URL("../public/", import.meta.url);
+const SOURCE_BRAND_URL = new URL("../../../EquityGuard_Logo_Assets/", import.meta.url);
 
 test("the public app exposes exactly the three requested page routes", async () => {
   const rootEntries = await readdir(APP_URL, { withFileTypes: true });
@@ -182,4 +184,66 @@ test("the technical docs expose the complete implementation-led information arch
   assert.match(diagramSource, /TransactionDiagram/);
   assert.match(diagramSource, /EconomicStateDiagram/);
   assert.match(diagramSource, /RouterIntegrationDiagram/);
+});
+
+test("the public shell uses the approved final brand assets", async () => {
+  const [navSource, footerSource, brandSource, layoutSource] = await Promise.all([
+    readFile(new URL("layout/nav.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("layout/site-footer.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("brand/brand-logo.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("layout.tsx", APP_URL), "utf8"),
+  ]);
+
+  assert.match(navSource, /<BrandLogo\s*\/>/);
+  assert.doesNotMatch(navSource, /brand-mark__symbol/);
+  assert.doesNotMatch(navSource, />\s*E\s*</);
+  assert.match(footerSource, /<BrandLogo\s*\/>/);
+  assert.match(layoutSource, /<SiteFooter\s*\/>/);
+  assert.match(brandSource, /equityguard-logo\.svg/);
+  assert.match(brandSource, /equityguard-mark\.svg/);
+
+  const [productionLogo, sourceLogo, productionMark, sourceMark] =
+    await Promise.all([
+      readFile(new URL("brand/equityguard-logo.svg", PUBLIC_URL)),
+      readFile(new URL("horizontal_primary_transparent.svg", SOURCE_BRAND_URL)),
+      readFile(new URL("brand/equityguard-mark.svg", PUBLIC_URL)),
+      readFile(new URL("symbol_primary_transparent.svg", SOURCE_BRAND_URL)),
+    ]);
+
+  assert.deepEqual(productionLogo, sourceLogo);
+  assert.deepEqual(productionMark, sourceMark);
+});
+
+test("production metadata, icons, social preview, and 404 are complete", async () => {
+  const [metadataSource, manifestSource, notFoundSource, readmeSource, ignoreSource] =
+    await Promise.all([
+      readFile(new URL("../lib/metadata.ts", import.meta.url), "utf8"),
+      readFile(new URL("manifest.ts", APP_URL), "utf8"),
+      readFile(new URL("not-found.tsx", APP_URL), "utf8"),
+      readFile(new URL("../README.md", import.meta.url), "utf8"),
+      readFile(new URL("../.gitignore", import.meta.url), "utf8"),
+    ]);
+
+  assert.match(metadataSource, /EquityGuard — Execution Integrity for Tokenized Assets/);
+  assert.match(metadataSource, /summary_large_image/);
+  assert.match(metadataSource, /opengraph-image\.png/);
+  assert.match(metadataSource, /NEXT_PUBLIC_SITE_URL/);
+  assert.match(metadataSource, /VERCEL_PROJECT_PRODUCTION_URL/);
+  assert.match(manifestSource, /equityguard-app-icon\.png/);
+  assert.match(manifestSource, /display: "standalone"/);
+  assert.match(notFoundSource, /Page not found/);
+  assert.match(notFoundSource, /Back to EquityGuard/);
+  assert.match(readmeSource, /Root Directory: `apps\/web`/);
+  assert.match(readmeSource, /Output Directory: leave unset/);
+  assert.match(ignoreSource, /^next-env\.d\.ts$/m);
+
+  const openGraphImage = await readFile(new URL("opengraph-image.png", APP_URL));
+  assert.equal(openGraphImage.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(openGraphImage.readUInt32BE(16), 1200);
+  assert.equal(openGraphImage.readUInt32BE(20), 630);
+  assert.ok(openGraphImage.byteLength < 500_000);
+
+  for (const path of ["favicon.ico", "icon.svg", "apple-icon.png"]) {
+    assert.ok((await stat(new URL(path, APP_URL))).size > 0);
+  }
 });

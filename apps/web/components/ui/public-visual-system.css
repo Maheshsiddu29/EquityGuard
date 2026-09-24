@@ -2229,3 +2229,215 @@ a:focus-visible {
     transition: none;
   }
 }
+
+/* Brand assets and production shell */
+
+.brand-logo {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.brand-logo--horizontal {
+  width: 9.5rem;
+  aspect-ratio: 4 / 1;
+}
+
+.brand-logo--mark {
+  width: 4rem;
+  aspect-ratio: 4 / 3;
+}
+
+.brand-mark {
+  min-height: 2.35rem;
+  padding-inline: 0.15rem;
+}
+
+.site-footer {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+  margin-top: clamp(4.5rem, 8vw, 8rem);
+  border-top: 1px solid rgba(210, 224, 255, 0.11);
+  background:
+    linear-gradient(180deg, rgba(8, 10, 20, 0.86), #080a14 72%),
+    #080a14;
+  color: var(--public-text);
+}
+
+.site-footer__waves {
+  position: absolute;
+  inset: auto -12% -9rem 35%;
+  height: 18rem;
+  opacity: 0.42;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(79, 124, 255, 0.3), transparent 59%),
+    repeating-radial-gradient(
+      ellipse at 60% 110%,
+      transparent 0 24px,
+      rgba(79, 124, 255, 0.12) 25px 27px,
+      transparent 28px 48px
+    );
+  pointer-events: none;
+}
+
+.site-footer__inner {
+  position: relative;
+  display: flex;
+  min-height: 12.5rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding-block: 3.25rem;
+}
+
+.site-footer__brand {
+  max-width: 30rem;
+}
+
+.site-footer__logo {
+  display: inline-flex;
+  border-radius: 8px;
+}
+
+.site-footer__brand p {
+  max-width: 29rem;
+  margin: 1.15rem 0 0;
+  color: var(--public-muted);
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
+.site-footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.site-footer__nav a {
+  display: inline-flex;
+  min-height: 2.4rem;
+  align-items: center;
+  gap: 0.3rem;
+  padding-inline: 0.85rem;
+  border-radius: 999px;
+  color: var(--public-muted-strong);
+  font-size: 0.75rem;
+  font-weight: 650;
+  transition:
+    color 180ms var(--eg-ease-out),
+    background 180ms var(--eg-ease-out);
+}
+
+.site-footer__nav a:hover {
+  background: rgba(79, 124, 255, 0.1);
+  color: #ffffff;
+}
+
+.not-found-page {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: calc(100svh - 12.5rem);
+  overflow: hidden;
+  place-items: center;
+  padding: 9rem var(--eg-page-gutter) 4rem;
+}
+
+.not-found-page__atmosphere {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 48% 44%, rgba(79, 124, 255, 0.16), transparent 27rem),
+    radial-gradient(ellipse at 50% 115%, rgba(31, 79, 214, 0.19), transparent 54%);
+  pointer-events: none;
+}
+
+.not-found-page__card {
+  position: relative;
+  width: min(100%, 44rem);
+  padding: clamp(2rem, 6vw, 4.5rem);
+  border: 1px solid var(--public-border);
+  border-radius: 26px;
+  background:
+    linear-gradient(145deg, rgba(14, 27, 51, 0.87), rgba(8, 15, 30, 0.92));
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  text-align: center;
+}
+
+.not-found-page__card .brand-logo {
+  margin-bottom: 1.4rem;
+}
+
+.not-found-page__card .section-label {
+  margin-inline: auto;
+}
+
+.not-found-page__card h1 {
+  margin: 1.2rem 0 0;
+  color: #ffffff;
+  font-family: "Manrope Variable", var(--font-geist-sans), sans-serif;
+  font-size: clamp(2.7rem, 8vw, 5rem);
+  letter-spacing: -0.06em;
+  line-height: 0.95;
+}
+
+.not-found-page__card > p:not(.section-label) {
+  max-width: 31rem;
+  margin: 1.25rem auto 0;
+  color: var(--public-muted);
+  font-size: 0.93rem;
+  line-height: 1.65;
+}
+
+.not-found-page__card .button {
+  margin-top: 2rem;
+}
+
+@media (max-width: 760px) {
+  .brand-logo--horizontal {
+    width: 8rem;
+  }
+
+  .site-footer__inner {
+    min-height: 0;
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 2.8rem;
+  }
+
+  .site-footer__nav {
+    justify-content: flex-start;
+  }
+
+  .site-footer__nav a:first-child {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand-logo--horizontal {
+    width: 7.45rem;
+  }
+
+  .not-found-page__card {
+    padding-inline: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-footer__nav a {
+    transition: none;
+  }
+}

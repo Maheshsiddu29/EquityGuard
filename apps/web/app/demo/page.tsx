@@ -8,7 +8,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = createMetadata({
-  title: "Demo",
+  title: "EquityGuard Demo — Protected Trade Replay",
   description:
     "A public, deterministic reproduction of EquityGuard's proven protected-trade lifecycle.",
   path: "/demo",

@@ -4,7 +4,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = createMetadata({
-  title: "Execution integrity for tokenized assets",
+  title: "EquityGuard — Execution Integrity for Tokenized Assets",
   description:
     "EquityGuard prevents tokenized-asset transactions authorized under one economic state from silently executing under another.",
   path: "/",

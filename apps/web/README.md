@@ -14,8 +14,24 @@ npm install
 npm run dev
 ```
 
-`NEXT_PUBLIC_SITE_URL` may be set to the canonical production URL. Vercel URL
-environment variables are used automatically when that variable is absent.
+`NEXT_PUBLIC_SITE_URL` may be set to the canonical production URL, including
+its `https://` scheme. Vercel's `VERCEL_PROJECT_PRODUCTION_URL` and
+`VERCEL_URL` values are used automatically when that variable is absent; local
+development falls back to `http://localhost:3000`. Once the production domain
+is known, configure `NEXT_PUBLIC_SITE_URL` in Vercel for Production so canonical,
+Open Graph, robots, and sitemap URLs use that domain. Preview deployments work
+without it.
+
+## Vercel configuration
+
+- Root Directory: `apps/web`
+- Framework Preset: Next.js
+- Install Command: `npm install`
+- Build Command: `npm run build`
+- Output Directory: leave unset
+- Node.js: 22.x
+
+No `vercel.json` is required. The site uses framework defaults.
 The production script selects Next's supported Webpack builder so it does not
 depend on Turbopack's loopback PostCSS worker in constrained build sandboxes.
 

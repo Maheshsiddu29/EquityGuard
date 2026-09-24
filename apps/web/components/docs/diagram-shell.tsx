@@ -29,7 +29,14 @@ export function DiagramShell({
           Expand <span aria-hidden="true">↗</span>
         </button>
       </figcaption>
-      <div className="docs-diagram__viewport">{children}</div>
+      <div
+        className="docs-diagram__viewport"
+        role="region"
+        aria-label={`${title} diagram`}
+        tabIndex={0}
+      >
+        {children}
+      </div>
 
       <dialog ref={dialogRef} className="docs-diagram-dialog">
         <div className="docs-diagram-dialog__header">

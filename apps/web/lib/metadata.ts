@@ -18,8 +18,9 @@ function getSiteUrl(): URL {
 
 export const siteConfig = {
   name: "EquityGuard",
+  title: "EquityGuard — Execution Integrity for Tokenized Assets",
   description:
-    "Execution-time protection for tokenized-equity transactions on Solana.",
+    "EquityGuard is execution-integrity infrastructure for protected tokenized-asset trading on Solana.",
   url: getSiteUrl(),
   repository: "https://github.com/Maheshsiddu29/EquityGuard",
   keywords: [
@@ -35,14 +36,17 @@ export const siteConfig = {
 export const baseMetadata: Metadata = {
   metadataBase: siteConfig.url,
   title: {
-    default: siteConfig.name,
-    template: `%s | ${siteConfig.name}`,
+    default: siteConfig.title,
+    template: `%s — ${siteConfig.name}`,
   },
   description: siteConfig.description,
   applicationName: siteConfig.name,
   keywords: [...siteConfig.keywords],
   creator: "EquityGuard",
   publisher: "EquityGuard",
+  category: "technology",
+  manifest: "/manifest.webmanifest",
+  alternates: { canonical: "/" },
   robots: {
     index: true,
     follow: true,
@@ -51,17 +55,31 @@ export const baseMetadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: siteConfig.url,
-    title: siteConfig.name,
+    title: siteConfig.title,
     description: siteConfig.description,
     siteName: siteConfig.name,
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: "EquityGuard — The trade you approved should be the trade that executes.",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
-    title: siteConfig.name,
+    card: "summary_large_image",
+    title: siteConfig.title,
     description: siteConfig.description,
+    images: ["/opengraph-image.png"],
   },
   icons: {
-    icon: "/icon.svg",
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { url: "/icon.svg", type: "image/svg+xml", sizes: "any" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -75,17 +93,27 @@ export function createMetadata({
   path: `/${string}` | "/";
 }): Metadata {
   return {
-    title,
+    title: { absolute: title },
     description,
     alternates: { canonical: path },
     openGraph: {
       title,
       description,
       url: new URL(path, siteConfig.url),
+      images: [
+        {
+          url: "/opengraph-image.png",
+          width: 1200,
+          height: 630,
+          alt: "EquityGuard — The trade you approved should be the trade that executes.",
+        },
+      ],
     },
     twitter: {
+      card: "summary_large_image",
       title,
       description,
+      images: ["/opengraph-image.png"],
     },
   };
 }

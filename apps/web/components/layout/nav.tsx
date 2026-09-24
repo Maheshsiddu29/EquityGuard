@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { siteConfig } from "@/lib/metadata";
 import { useReducedMotion } from "@/lib/motion";
 import { AnimatePresence, motion } from "motion/react";
@@ -122,10 +123,7 @@ export function Nav(): ReactNode {
     <header className="site-nav-wrap">
       <nav className="site-nav glass-nav" aria-label="Primary navigation">
         <Link href="/" className="brand-mark focus-ring" aria-label="EquityGuard home">
-          <span className="brand-mark__symbol" aria-hidden="true">
-            E
-          </span>
-          <span>EquityGuard</span>
+          <BrandLogo />
         </Link>
 
         <ul ref={listRef} className="desktop-nav">

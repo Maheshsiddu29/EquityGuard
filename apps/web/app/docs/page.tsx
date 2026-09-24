@@ -18,7 +18,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = createMetadata({
-  title: "Technical Documentation",
+  title: "EquityGuard Docs — Architecture, SDK & Integrations",
   description:
     "Architecture, transaction model, SDK integration, security boundaries, evidence, and deployment guidance for EquityGuard.",
   path: "/docs",
@@ -61,7 +61,7 @@ function CodeBlock({ title, children }: { title: string; children: string }): Re
         <span /><span /><span />
         <p>{title}</p>
       </div>
-      <pre><code>{children}</code></pre>
+      <pre tabIndex={0}><code>{children}</code></pre>
     </div>
   );
 }
@@ -184,7 +184,12 @@ export default function DocsPage(): ReactNode {
                 </p>
               </SectionIntro>
 
-              <div className="docs-timeline" aria-label="Quote to execution risk window">
+              <div
+                className="docs-timeline"
+                role="region"
+                aria-label="Quote to execution risk window"
+                tabIndex={0}
+              >
                 <div><span>t0</span><strong>Quote</strong><p>State S informs amount, route, and approval.</p></div>
                 <i aria-hidden="true">→</i>
                 <div><span>t1</span><strong>Wallet signature</strong><p>The message is valid for a recent blockhash.</p></div>
@@ -248,7 +253,7 @@ export default function DocsPage(): ReactNode {
               <SystemArchitectureDiagram />
               <ComponentDiagram />
 
-              <div className="docs-table-wrap">
+              <div className="docs-table-wrap" role="region" aria-label="Runtime ownership table" tabIndex={0}>
                 <table>
                   <caption>Runtime ownership</caption>
                   <thead><tr><th>Layer</th><th>Implemented responsibility</th><th>Does not do</th></tr></thead>
@@ -274,7 +279,7 @@ export default function DocsPage(): ReactNode {
 
               <TransactionDiagram />
 
-              <div className="docs-table-wrap">
+              <div className="docs-table-wrap" role="region" aria-label="ABI version 2 payload table" tabIndex={0}>
                 <table>
                   <caption>ABI v2 payload</caption>
                   <thead><tr><th>Bytes</th><th>Field</th><th>Meaning</th></tr></thead>
@@ -420,7 +425,7 @@ if (!(await reverifyGuardDeployment(result, rpc)).ok) throw new Error("deploymen
 // Hand result.transaction or result.transactionBase64 to the wallet layer.
 // Reverify the deployment again immediately before submission.`}</CodeBlock>
 
-              <div className="docs-table-wrap docs-table-wrap--api">
+              <div className="docs-table-wrap docs-table-wrap--api" role="region" aria-label="Public API map table" tabIndex={0}>
                 <table>
                   <caption>Public API map</caption>
                   <thead><tr><th>Import / API</th><th>Input</th><th>Return or failure</th><th>Security role</th></tr></thead>
@@ -503,7 +508,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
               <div className="docs-subsection" id="router-adapter-guide">
                 <MonoLabel>Routers & exchanges · adapter guide</MonoLabel>
                 <h3>Implement semantics before adding an adapter kind.</h3>
-                <div className="docs-table-wrap">
+                <div className="docs-table-wrap" role="region" aria-label="Router adapter guide table" tabIndex={0}>
                   <table>
                     <thead><tr><th>Adapter</th><th>Status</th><th>Required security work</th></tr></thead>
                     <tbody>
@@ -530,7 +535,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                 </p>
               </SectionIntro>
 
-              <div className="docs-table-wrap docs-table-wrap--security">
+              <div className="docs-table-wrap docs-table-wrap--security" role="region" aria-label="Threat and control summary table" tabIndex={0}>
                 <table>
                   <caption>Threat and control summary</caption>
                   <thead><tr><th>Threat</th><th>Control</th><th>Residual boundary</th></tr></thead>
@@ -581,7 +586,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                 <div><strong>0</strong><span>unexpected accepts</span></div>
               </div>
 
-              <div className="docs-table-wrap">
+              <div className="docs-table-wrap" role="region" aria-label="Claim and evidence matrix table" tabIndex={0}>
                 <table>
                   <caption>Claim / evidence matrix</caption>
                   <thead><tr><th>Claim</th><th>Evidence</th></tr></thead>
