@@ -23,6 +23,7 @@ import {
   authorizeUpdated,
   bindReviewedProgram,
   chainReadyForStaleSubmit,
+  DevnetSubmissionError,
   currentBlockHeight,
   detectPhantom,
   devnetExplorerUrl,
@@ -40,6 +41,7 @@ import {
   startAttempt,
   submissionPermitted,
   submitHeld,
+  unexpectedStaleResultCopy,
   verifyPublicEnvironment,
   type EquityScenario,
   type HeldAuthorization,
@@ -117,6 +119,7 @@ export function LiveDevnetExperience(): ReactNode {
     submitStarted.current = true;
     submitHeld(held)
       .then(async (outcome) => {
+        setStaleSignature(outcome.signature);
         const balances = await readSessionBalances(session);
         const accepted = acceptActivationRejection({
           outcome,
@@ -127,10 +130,9 @@ export function LiveDevnetExperience(): ReactNode {
         });
         if (!accepted) {
           setPhase("failed");
-          setDetail("The confirmed transaction was not an ActivationPhaseChanged rejection with zero token movement.");
+          setDetail(unexpectedStaleResultCopy(outcome));
           return;
         }
-        setStaleSignature(outcome.signature);
         setPhase("protected");
       })
       .catch((error: unknown) => {
@@ -138,6 +140,7 @@ export function LiveDevnetExperience(): ReactNode {
           setPhase("expired");
           return;
         }
+        if (error instanceof DevnetSubmissionError && error.signature) setStaleSignature(error.signature);
         setPhase("failed");
         setDetail(error instanceof Error ? error.message : "The held authorization could not be submitted.");
       });
@@ -372,7 +375,7 @@ export function LiveDevnetExperience(): ReactNode {
       {phase === "missed" ? <Failure title={AUTHORIZATION_WINDOW_MISSED_TITLE} body={AUTHORIZATION_WINDOW_MISSED_MESSAGE} onReset={reset} /> : null}
       {phase === "elapsed" ? <Failure title={AUTHORIZATION_WINDOW_ELAPSED_TITLE} body={AUTHORIZATION_WINDOW_ELAPSED_MESSAGE} onReset={reset} /> : null}
       {phase === "expired" ? <Failure title={STALE_AUTHORIZATION_EXPIRED_TITLE} body={STALE_AUTHORIZATION_EXPIRED_MESSAGE} onReset={reset} /> : null}
-      {phase === "failed" ? <Failure title="Attempt stopped" body={detail ?? "The live Devnet attempt did not complete."} onReset={reset} /> : null}
+      {phase === "failed" ? <Failure title="Attempt stopped" body={detail ?? "The live Devnet attempt did not complete."} signature={staleSignature} onReset={reset} /> : null}
       {phase === "updating" ? <p>Requesting a new Phantom signature for the activated state…</p> : null}
       {phase === "signing" ? <p>Waiting for Phantom…</p> : null}
 
@@ -385,6 +388,7 @@ export function LiveDevnetExperience(): ReactNode {
         <p>Setup signature {session?.setupSignature ?? "None"}</p>
         <p>Pending wire hash {held?.sha256 ?? "None"}</p>
         <p>Stale signature {staleSignature ?? "None"}</p>
+        {staleSignature ? <p><a href={devnetExplorerUrl(staleSignature)} target="_blank" rel="noopener noreferrer">View stale transaction on Solana Explorer</a></p> : null}
         <p>Updated signature {updatedSignature ?? "None"}</p>
         {detail ? <p>{detail}</p> : null}
       </details>
@@ -392,11 +396,12 @@ export function LiveDevnetExperience(): ReactNode {
   );
 }
 
-function Failure({ title, body, onReset }: { title: string; body: string; onReset: () => void }): ReactNode {
+function Failure({ title, body, signature = null, onReset }: { title: string; body: string; signature?: string | null; onReset: () => void }): ReactNode {
   return (
     <div className="live-devnet__result">
       <h3>{title}</h3>
       <p>{body}</p>
+      {signature ? <a href={devnetExplorerUrl(signature)} target="_blank" rel="noopener noreferrer">View transaction on Solana Explorer</a> : null}
       <button type="button" className="button button--secondary focus-ring" onClick={onReset}>Start a new attempt</button>
     </div>
   );

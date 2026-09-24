@@ -46,8 +46,11 @@ import {
   buildPublicGuardedTransfer,
   classifyPrepareInstruction,
   phantomSignedTransaction,
+  parseCustomError,
   prepareSessionInstructions,
   sha256Hex,
+  staleSendFailure,
+  unexpectedStaleResultCopy,
   verifyWalletSignedTransaction,
   startAttempt,
   storedMultiplier,
@@ -370,3 +373,80 @@ function markedSignedWire(transaction) {
   wire[1] = 9;
   return wire;
 }
+
+test("a landed ActivationPhaseChanged rejection is recognized at the guard index", async () => {
+  const root = new URL("../", import.meta.url);
+  const [policy, component] = await Promise.all([
+    readFile(new URL("lib/devnet-public.ts", root), "utf8"),
+    readFile(new URL("components/demo/live-devnet-experience.tsx", root), "utf8"),
+  ]);
+  const submit = policy.slice(policy.indexOf("export async function submitHeld"), policy.indexOf("export async function readSessionBalances"));
+  const setupSend = policy.slice(policy.indexOf("async function signAndSend"), policy.indexOf("function encodeWire"));
+  const prepare = policy.slice(policy.indexOf("export async function prepareLiveSession"), policy.indexOf("export async function authorizePending"));
+  const updated = policy.slice(policy.indexOf("export async function authorizeUpdated"), policy.indexOf("export function detectPhantom"));
+  assert.match(submit, /skipPreflight:\s*true/);
+  assert.match(setupSend, /skipPreflight:\s*false/);
+  assert.doesNotMatch(setupSend, /skipPreflight:\s*true/);
+  assert.match(prepare, /signAndSend\(/);
+  assert.doesNotMatch(prepare, /skipPreflight:\s*true/);
+  assert.match(updated, /signAndSend\(/);
+  assert.doesNotMatch(updated, /skipPreflight:\s*true/);
+
+  const chainError = { InstructionError: [2n, { Custom: 12n }] };
+  assert.deepEqual(parseCustomError(chainError), { instructionIndex: 2, code: 12 });
+  const logs = [
+    "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+    "Program ComputeBudget111111111111111111111111111111 success",
+    `Program ${EQUITY_GUARD_DEVNET_PROGRAM_ID} invoke [1]`,
+    "Program log: EquityGuard rejected: ActivationPhaseChanged",
+    `Program ${EQUITY_GUARD_DEVNET_PROGRAM_ID} failed: custom program error: 0xc`,
+  ];
+  const outcome = {
+    signature: "landed-stale-signature",
+    slot: 3n,
+    error: chainError,
+    customError: parseCustomError(chainError),
+    logs,
+    guardInstructionIndex: 2,
+  };
+  assert.equal(acceptActivationRejection({
+    outcome,
+    before: balances,
+    after: balances,
+    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), true);
+  assert.equal(acceptActivationRejection({
+    outcome: { ...outcome, guardInstructionIndex: 0 },
+    before: balances,
+    after: balances,
+    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), false);
+  assert.equal(acceptActivationRejection({
+    outcome: { ...outcome, logs: [...logs, `Program ${TOKEN_2022_PROGRAM_ADDRESS} success`] },
+    before: balances,
+    after: balances,
+    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), false);
+
+  const effect = component.slice(component.indexOf("submitHeld(held)"), component.indexOf("async function connect"));
+  assert.ok(effect.indexOf("setStaleSignature(outcome.signature)") < effect.indexOf("acceptActivationRejection"));
+  assert.doesNotMatch(effect, /setStaleSignature\(null\)/);
+  const preflight = staleSendFailure(new Error("Transaction simulation failed"));
+  const submission = staleSendFailure(new Error("network down"));
+  assert.equal(preflight.kind, "PREFLIGHT_REJECTED");
+  assert.equal(preflight.signature, null);
+  assert.equal(submission.kind, "SUBMISSION_FAILED");
+  assert.doesNotMatch(`${preflight.message} ${submission.message}`, /confirmed transaction/i);
+  const diagnostic = unexpectedStaleResultCopy({
+    ...outcome,
+    customError: { instructionIndex: 0, code: 9 },
+    logs: ["Program log: EquityGuard rejected: MultiplierChanged"],
+  });
+  assert.match(diagnostic, /UNEXPECTED_ONCHAIN_RESULT/);
+  assert.match(diagnostic, /MultiplierChanged/);
+  assert.match(diagnostic, /landed-stale-signature/);
+  assert.match(component, /View stale transaction on Solana Explorer/);
+});

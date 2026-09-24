@@ -1015,16 +1015,48 @@ function encodeWire(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function parseCustomError(error: unknown): { readonly instructionIndex: number; readonly code: number } | null {
+function safeNonnegativeNumber(value: unknown): number | null {
+  if (typeof value === "bigint") return value >= BigInt(0) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/** Kit's confirmed JSON meta uses bigint instruction indexes and custom codes. */
+export function parseCustomError(error: unknown): { readonly instructionIndex: number; readonly code: number } | null {
   if (typeof error !== "object" || error === null || !("InstructionError" in error)) return null;
   const detail = (error as { readonly InstructionError: unknown }).InstructionError;
   if (!Array.isArray(detail) || detail.length !== 2) return null;
-  const index = detail[0];
   const inner = detail[1];
-  if (typeof index !== "number" || typeof inner !== "object" || inner === null || !("Custom" in inner)) return null;
-  const code = (inner as { readonly Custom: unknown }).Custom;
-  if (typeof code !== "number") return null;
-  return { instructionIndex: index, code };
+  if (typeof inner !== "object" || inner === null || !("Custom" in inner)) return null;
+  const instructionIndex = safeNonnegativeNumber(detail[0]);
+  const code = safeNonnegativeNumber((inner as { readonly Custom: unknown }).Custom);
+  return instructionIndex === null || code === null ? null : { instructionIndex, code };
+}
+
+export class DevnetSubmissionError extends Error {
+  readonly kind: "PREFLIGHT_REJECTED" | "SUBMISSION_FAILED" | "CONFIRMATION_FAILED";
+  readonly signature: string | null;
+  constructor(kind: DevnetSubmissionError["kind"], message: string, signature: string | null = null) {
+    super(message);
+    this.name = "DevnetSubmissionError";
+    this.kind = kind;
+    this.signature = signature;
+  }
+}
+
+export function staleSendFailure(error: unknown): DevnetSubmissionError {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/preflight|simulation failed/i.test(message)) {
+    return new DevnetSubmissionError("PREFLIGHT_REJECTED", `PREFLIGHT_REJECTED. The transaction was not broadcast. No signature was returned. ${message}`);
+  }
+  return new DevnetSubmissionError("SUBMISSION_FAILED", `SUBMISSION_FAILED. The send failed before a signature was returned. ${message}`);
+}
+
+export function unexpectedStaleResultCopy(outcome: ConfirmedChainOutcome): string {
+  const chainError = JSON.stringify(outcome.error, (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value);
+  const parsed = outcome.customError
+    ? `instruction ${String(outcome.customError.instructionIndex)} custom ${String(outcome.customError.code)}`
+    : "no custom program error";
+  return `UNEXPECTED_ONCHAIN_RESULT. Signature ${outcome.signature} was confirmed, but it was not an ActivationPhaseChanged rejection with zero token movement. Guard instruction ${String(outcome.guardInstructionIndex)}. Parsed ${parsed}. Error ${chainError}. Logs ${outcome.logs.join(" | ")}`;
 }
 
 async function confirmSignature(signature: string, guardInstructionIndex: number): Promise<ConfirmedChainOutcome> {
@@ -1040,7 +1072,9 @@ async function confirmSignature(signature: string, guardInstructionIndex: number
     encoding: "json",
     maxSupportedTransactionVersion: 0,
   }).send();
-  if (!tx) throw new Error("Confirmed transaction metadata is unavailable");
+  if (!tx) {
+    throw new DevnetSubmissionError("CONFIRMATION_FAILED", `CONFIRMATION_FAILED. Signature ${signature} was returned, but confirmation could not be established.`, signature);
+  }
   return {
     signature,
     slot: tx.slot,
@@ -1194,7 +1228,8 @@ export async function submitHeld(held: HeldAuthorization): Promise<ConfirmedChai
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/blockhash not found|block height exceeded/i.test(message)) throw new StaleAuthorizationExpired();
-    throw error;
+    if (error instanceof DevnetSubmissionError) throw error;
+    throw staleSendFailure(error);
   }
   if (submitted !== held.signature) throw new Error("Devnet RPC returned a different transaction signature");
   return confirmSignature(held.signature, held.guardInstructionIndex);
