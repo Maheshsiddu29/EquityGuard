@@ -859,12 +859,42 @@ function encodePhantomTransaction(transaction: Transaction): string {
   return getBase58Decoder().decode(getTransactionEncoder().encode(transaction));
 }
 
-function phantomSignedTransaction(response: unknown): Uint8Array {
+function serializedBytes(value: unknown): Uint8Array | null {
+  if (value instanceof Uint8Array) return value;
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  return null;
+}
+
+function ownedSignedBytes(value: Uint8Array): Uint8Array {
+  if (value.length === 0) throw new Error("Phantom returned no signed transaction bytes");
+  return Uint8Array.from(value);
+}
+
+/**
+ * Accepts the Phantom shapes already proven in the wallet harness: raw bytes,
+ * a transaction object with `serialize()`, or `{ signedTransaction }` holding
+ * either of those. The returned bytes are an owned copy.
+ */
+export function phantomSignedTransaction(response: unknown): Uint8Array {
   const candidate = typeof response === "object" && response !== null && "signedTransaction" in response
     ? (response as { readonly signedTransaction: unknown }).signedTransaction
     : response;
-  if (candidate instanceof Uint8Array) return candidate;
-  if (ArrayBuffer.isView(candidate)) return new Uint8Array(candidate.buffer, candidate.byteOffset, candidate.byteLength);
+  const direct = serializedBytes(candidate);
+  if (direct) return ownedSignedBytes(direct);
+  if (typeof candidate === "object" && candidate !== null && "serialize" in candidate) {
+    const serialize = (candidate as { readonly serialize?: unknown }).serialize;
+    if (typeof serialize === "function") {
+      let serialized: unknown;
+      try {
+        serialized = serialize.call(candidate);
+      } catch {
+        throw new Error("Phantom returned no signed transaction bytes");
+      }
+      const bytes = serializedBytes(serialized);
+      if (bytes) return ownedSignedBytes(bytes);
+    }
+  }
   throw new Error("Phantom returned no signed transaction bytes");
 }
 
@@ -875,7 +905,22 @@ function sameBytes(left: ArrayLike<number> | undefined, right: ArrayLike<number>
   return true;
 }
 
-function verifyWalletSignedTransaction(unsignedTransaction: Transaction, signedWire: Uint8Array): { readonly signature: string; readonly guardInstructionIndex: number } {
+function sameInstruction(left: Instruction, right: Instruction): boolean {
+  if (left.programAddress !== right.programAddress || !sameBytes(left.data, right.data)) return false;
+  const leftAccounts = left.accounts ?? [];
+  const rightAccounts = right.accounts ?? [];
+  return leftAccounts.length === rightAccounts.length && leftAccounts.every((account, index) => {
+    const other = rightAccounts[index];
+    return other !== undefined && account.address === other.address && account.role === other.role;
+  });
+}
+
+function isAllowedComputeBudgetPrefix(instruction: Instruction): boolean {
+  if (instruction.programAddress !== COMPUTE_BUDGET_PROGRAM || (instruction.accounts?.length ?? 0) !== 0 || instruction.data === undefined) return false;
+  return (instruction.data.length === 5 && instruction.data[0] === 2) || (instruction.data.length === 9 && instruction.data[0] === 3);
+}
+
+export function verifyWalletSignedTransaction(unsignedTransaction: Transaction, signedWire: Uint8Array): { readonly signature: string; readonly guardInstructionIndex: number } {
   const signedTransaction = getTransactionDecoder().decode(signedWire);
   const decodeMessage = getCompiledTransactionMessageDecoder();
   const unsignedMessage = decodeMessage.decode(unsignedTransaction.messageBytes);
@@ -891,15 +936,14 @@ function verifyWalletSignedTransaction(unsignedTransaction: Transaction, signedW
   const prefixLength = signedInstructions.length - unsignedInstructions.length;
   if (prefixLength < 0 || prefixLength > 2) throw new Error("Phantom returned an unexpected signed transaction shape");
   const prefix = signedInstructions.slice(0, prefixLength);
-  if (!prefix.every((instruction) => instruction.programAddress === COMPUTE_BUDGET_PROGRAM && (instruction.accounts?.length ?? 0) === 0 && ((instruction.data?.length === 5 && instruction.data[0] === 2) || (instruction.data?.length === 9 && instruction.data[0] === 3)))) {
+  const discriminators = prefix.map((instruction) => instruction.data?.[0]);
+  if (!prefix.every(isAllowedComputeBudgetPrefix) || new Set(discriminators).size !== discriminators.length) {
     throw new Error("Phantom added an unsupported transaction instruction");
   }
   const signedSuffix = signedInstructions.slice(prefixLength);
   if (!unsignedInstructions.every((instruction, index) => {
     const signedInstruction = signedSuffix[index];
-    return signedInstruction !== undefined
-      && instruction.programAddress === signedInstruction.programAddress
-      && sameBytes(instruction.data, signedInstruction.data);
+    return signedInstruction !== undefined && sameInstruction(instruction, signedInstruction);
   })) {
     throw new Error("Phantom changed a protected transaction instruction while signing");
   }

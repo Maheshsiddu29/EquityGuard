@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { AccountRole, address, appendTransactionMessageInstructions, compileTransaction, createTransactionMessage, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from "@solana/kit";
+import { AccountRole, address, appendTransactionMessageInstructions, compileTransaction, createTransactionMessage, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from "@solana/kit";
 import { TOKEN_2022_PROGRAM_ADDRESS, getTransferCheckedInstruction } from "@solana-program/token-2022";
 
 import { ActivationPhase } from "../../../packages/guard-client/src/abi.ts";
@@ -45,8 +45,10 @@ import {
   bindReviewedProgram,
   buildPublicGuardedTransfer,
   classifyPrepareInstruction,
+  phantomSignedTransaction,
   prepareSessionInstructions,
   sha256Hex,
+  verifyWalletSignedTransaction,
   startAttempt,
   storedMultiplier,
   submissionPermitted,
@@ -164,6 +166,8 @@ test("Authorize has no pre-sign wait and fetches the pending blockhash at author
   assert.ok(authorize.indexOf("authorizeDecision") < authorize.indexOf("getLatestBlockhash"));
   assert.ok(authorize.indexOf("getLatestBlockhash") < authorize.indexOf("provider.request"));
   assert.ok(authorize.indexOf("provider.request") < authorize.indexOf("pendingReturnDecision"));
+  assert.ok(authorize.indexOf("pendingReturnDecision") < authorize.indexOf("verifyWalletSignedTransaction"));
+  assert.ok(authorize.indexOf("verifyWalletSignedTransaction") < authorize.indexOf("return seal"));
   assert.doesNotMatch(authorize.slice(authorize.indexOf("provider.request")), /sendTransaction/);
   assert.match(experience, /modeChoice \?\? \(live\.available \? "live" : "replay"\)/);
   assert.match(experience, /setModeChoice\("devnet"\)/);
@@ -310,3 +314,59 @@ test("the public guarded transfer matches the reviewed Token-2022 builder", () =
   );
   assert.equal(compileTransaction(message).messageBytes.length > 0, true);
 });
+
+test("Phantom signed responses become owned bytes and a substituted transaction is refused", async () => {
+  const payload = Uint8Array.of(4, 5, 6, 7);
+  const wrapped = phantomSignedTransaction({ signedTransaction: { serialize: () => payload } });
+  const direct = phantomSignedTransaction({ serialize: () => payload });
+  assert.deepEqual(wrapped, payload);
+  assert.deepEqual(direct, payload);
+  payload[0] = 1;
+  assert.equal(wrapped[0], 4);
+  wrapped[0] = 2;
+  assert.equal(payload[0], 1);
+  assert.equal(sha256Hex(wrapped).length, 64);
+
+  const buffer = new Uint8Array(payload.buffer.slice(0)).buffer;
+  assert.deepEqual(phantomSignedTransaction(buffer), Uint8Array.of(1, 5, 6, 7));
+  assert.throws(() => phantomSignedTransaction(null), /no signed transaction bytes/);
+  assert.throws(() => phantomSignedTransaction(undefined), /no signed transaction bytes/);
+  assert.throws(() => phantomSignedTransaction({}), /no signed transaction bytes/);
+  assert.throws(() => phantomSignedTransaction({ serialize: () => "not-bytes" }), /no signed transaction bytes/);
+  assert.throws(() => phantomSignedTransaction({ serialize: () => new Uint8Array() }), /no signed transaction bytes/);
+  assert.throws(() => phantomSignedTransaction({ serialize() { throw new Error("bad wire"); } }), /no signed transaction bytes/);
+  await assert.rejects(
+    Promise.reject(new Error("User rejected the request")).then((value) => phantomSignedTransaction(value)),
+    /User rejected the request/,
+  );
+
+  const presented = compiledTransfer(DEMO_TRANSFER_RAW);
+  const matching = markedSignedWire(presented.transaction);
+  assert.equal(verifyWalletSignedTransaction(presented.transaction, matching).signature.length > 0, true);
+  const substituted = compiledTransfer(DEMO_TRANSFER_RAW + 1n);
+  assert.throws(
+    () => verifyWalletSignedTransaction(presented.transaction, markedSignedWire(substituted.transaction)),
+    /changed a protected transaction instruction/,
+  );
+});
+
+function compiledTransfer(amount) {
+  const transfer = getTransferCheckedInstruction({
+    source, mint, destination, authority: signer, amount, decimals: 6,
+  });
+  const message = pipe(
+    createTransactionMessage({ version: "legacy" }),
+    (value) => setTransactionMessageFeePayer(wallet, value),
+    (value) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 9n }, value),
+    (value) => appendTransactionMessageInstructions([transfer], value),
+  );
+  return { transaction: compileTransaction(message) };
+}
+
+function markedSignedWire(transaction) {
+  const wire = Uint8Array.from(getTransactionEncoder().encode(transaction));
+  const signatureCount = wire[0];
+  assert.equal(signatureCount, 1);
+  wire[1] = 9;
+  return wire;
+}
