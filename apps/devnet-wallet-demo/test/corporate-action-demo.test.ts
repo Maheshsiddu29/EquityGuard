@@ -15,13 +15,18 @@ import {
 
 import { classifyPrepareInstruction, getPrepareSessionInstructions, verifyScheduledDemoMint } from "../src/demo-asset.ts";
 import {
+  AUTHORIZATION_WINDOW_ELAPSED_MESSAGE,
+  AuthorizationWindowElapsed,
   StaleAuthorizationExpired,
   acceptanceFromIdentity,
   assertMutationGate,
+  assertPendingAuthorizationStillOpen,
   assertSameSignedBytes,
   confirmedActivationRejection,
   confirmedUpdatedExecution,
+  pendingAuthorizationAfterSignature,
   prepareHeldSubmission,
+  sealPendingAuthorizationIfOpen,
   sealSignedTransaction,
   type ConfirmedOutcome,
 } from "../src/live-execution.ts";
@@ -398,6 +403,71 @@ describe("stale and updated evidence", () => {
   });
 });
 
+describe("late pending authorization", () => {
+  const scenario = scenarioById("KO-DEMO");
+  const activation = 1_700_000_075n;
+  const expectation = expectationFor(ActivationPhase.Pending, activation);
+  const sealInput = (value: GuardSnapshot, signedBytes = Uint8Array.of(4, 5, 6, 7)) => ({
+    snapshot: value,
+    scenario,
+    activationTimestamp: activation,
+    signedBytes,
+    lastValidBlockHeight: 80n,
+    signature: "pending-signature",
+    guardInstructionIndex: 0,
+    expectation,
+  });
+
+  it("holds a signature that returns while the chain clock is still before T", () => {
+    const open = snapshot({ clock: activation - 10n, activation });
+    assert.equal(pendingAuthorizationAfterSignature(open, scenario, activation), "hold");
+    assert.doesNotThrow(() => assertPendingAuthorizationStillOpen(open, scenario, activation));
+    const earlyLead = snapshot({ clock: activation - 36n, activation });
+    assert.equal(pendingAuthorizationAfterSignature(earlyLead, scenario, activation), "hold");
+    const signedBytes = Uint8Array.of(4, 5, 6, 7);
+    const held = sealPendingAuthorizationIfOpen(sealInput(open, signedBytes));
+    signedBytes[0] = 0;
+    assert.equal(held.signedBytes[0], 4);
+    assert.throws(() => assertSameSignedBytes(held, signedBytes), /bytes changed/);
+    assert.equal(prepareHeldSubmission(held, 80n)[0], 4);
+  });
+
+  it("refuses a signature that returns at T, after T, or against a changed mint, and sends nothing", () => {
+    let sent = 0;
+    const submit = () => { sent += 1; };
+    const cases = [
+      snapshot({ clock: activation, activation }),
+      snapshot({ clock: activation + 5n, activation }),
+      snapshot({ clock: activation - 10n, activation, scheduled: 1.5 }),
+      snapshot({ clock: activation - 10n, activation, initial: 2 }),
+    ];
+    const drifted = snapshot({ clock: activation - 10n, activation });
+    cases.push({
+      ...drifted,
+      state: { ...drifted.state, newMultiplierEffectiveTimestamp: activation + 1n },
+    });
+    for (const value of cases) {
+      assert.equal(pendingAuthorizationAfterSignature(value, scenario, activation), "elapsed");
+      assert.throws(() => {
+        sealPendingAuthorizationIfOpen(sealInput(value));
+        submit();
+      }, (error) => error instanceof AuthorizationWindowElapsed
+        && error.code === "AUTHORIZATION_WINDOW_ELAPSED"
+        && error.message === AUTHORIZATION_WINDOW_ELAPSED_MESSAGE
+        && error.clock === value.clock.unixTimestamp
+        && error.activation === activation);
+    }
+    assert.equal(sent, 0);
+    const html = resultMarkup({ type: "AUTHORIZATION_WINDOW_ELAPSED", clock: activation.toString(), activation: activation.toString() });
+    assert.match(html, /AUTHORIZATION_WINDOW_ELAPSED/);
+    assert.match(html, /activated before wallet approval completed/);
+    assert.match(html, /No transaction was submitted/);
+    assert.match(html, new RegExp(`Clock ${activation}`));
+    assert.match(html, new RegExp(`Activation ${activation}`));
+    assert.doesNotMatch(html, /PROTECTED BY EQUITYGUARD|ActivationPhaseChanged|explorer\.solana\.com/);
+  });
+});
+
 describe("devnet demo security boundary", () => {
   it("rejects mainnet and testnet and a deployment that is not the reviewed binary", () => {
     assert.equal(clusterFromGenesisHash(SOLANA_GENESIS_HASH["mainnet-beta"]), "mainnet-beta");
@@ -437,6 +507,13 @@ describe("devnet demo security boundary", () => {
     const signFn = sign.slice(sign.indexOf("export async function signPendingProtectedTransfer"), sign.indexOf("export async function submitHeldAuthorization"));
     assert.doesNotMatch(signFn, /sendTransaction/);
     assert.ok(signFn.lastIndexOf("pendingSignDecision") < signFn.indexOf("provider.request"));
+    const afterRequest = signFn.slice(signFn.indexOf("provider.request"));
+    assert.ok(afterRequest.indexOf("readSnapshot") < afterRequest.indexOf("assertPendingAuthorizationStillOpen"));
+    assert.ok(afterRequest.indexOf("assertPendingAuthorizationStillOpen") < afterRequest.indexOf("sealPendingAuthorizationIfOpen"));
+    assert.ok(afterRequest.indexOf("sealPendingAuthorizationIfOpen") < afterRequest.indexOf("onPhase(\"HOLDING\""));
+    assert.doesNotMatch(afterRequest, /sendTransaction|submitHeldAuthorization/);
+    const sealFn = sign.slice(sign.indexOf("export function sealPendingAuthorizationIfOpen"), sign.indexOf("export function prepareHeldSubmission"));
+    assert.ok(sealFn.indexOf("assertPendingAuthorizationStillOpen") < sealFn.indexOf("return sealSignedTransaction"));
     const submitFn = sign.slice(sign.indexOf("export async function submitHeldAuthorization"), sign.indexOf("export function confirmedActivationRejection"));
     assert.doesNotMatch(submitFn, /getLatestBlockhash|provider\.request|signTransaction/);
     assert.match(submitFn, /prepareHeldSubmission/);
@@ -444,6 +521,12 @@ describe("devnet demo security boundary", () => {
     assert.match(ui, /id="mint-address"/);
     assert.match(ui, /id="token-balance"/);
     const app = readFileSync(new URL("app.ts", root), "utf8");
+    const authorize = app.slice(app.indexOf("async function authorizeProtectedAction"), app.indexOf("async function confirmUpdatedAction"));
+    assert.equal(authorize.split("signPendingProtectedTransfer").length - 1, 1);
+    const late = app.slice(app.indexOf("if (error instanceof AuthorizationWindowElapsed)"), app.indexOf("const signature = error instanceof LiveExecutionError"));
+    assert.match(late, /proofClosed = true/);
+    assert.match(late, /type: "AUTHORIZATION_WINDOW_ELAPSED"/);
+    assert.doesNotMatch(late, /signPendingProtectedTransfer|submitHeldAuthorization|sendTransaction|provider\.request|getLatestBlockhash/);
     const expiry = app.slice(app.indexOf("if (error instanceof StaleAuthorizationExpired)"), app.indexOf("throw error;", app.indexOf("if (error instanceof StaleAuthorizationExpired)")));
     assert.doesNotMatch(expiry, /signPendingProtectedTransfer|buildClockCrossingTransfer|getLatestBlockhash|submitHeldAuthorization/);
     const confirm = app.slice(app.indexOf("async function confirmUpdatedAction"), app.indexOf("async function waitForPendingSign"));

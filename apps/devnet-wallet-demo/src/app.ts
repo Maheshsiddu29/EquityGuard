@@ -2,7 +2,7 @@ import { address, createAddressWithSeed, createSolanaRpc, generateKeyPairSigner,
 import { ActivationPhase } from "@equityguard/guard-client";
 import { DEVNET_RPC_URL, verifyDevnetCluster } from "./cluster-gate.ts";
 import { DEMO_MINT_AMOUNT, DEMO_MINT_DECIMALS, DEMO_TRANSFER_AMOUNT, buildTransferCheckedInstruction, deriveAta, demoMintSpace, getPrepareSessionInstructions, verifyDemoTokenAccountOwners, verifyScheduledDemoMint, type DemoAssetSetup } from "./demo-asset.ts";
-import { LiveExecutionError, StaleAuthorizationExpired, assertSetupTransactionSucceeded, confirmedActivationRejection, confirmedSetupResult, confirmedUpdatedExecution, friendlyLiveError, hasWalletContext, isWalletCancellation, readReviewedDeployment, signPendingProtectedTransfer, submitAndConfirm, submitHeldAuthorization, verifyMutationEnvironment, type HeldSignedTransaction, type LiveKind, type LivePhase, type LiveResult, type TokenBalances } from "./live-execution.ts";
+import { AuthorizationWindowElapsed, LiveExecutionError, StaleAuthorizationExpired, assertSetupTransactionSucceeded, confirmedActivationRejection, confirmedSetupResult, confirmedUpdatedExecution, friendlyLiveError, hasWalletContext, isWalletCancellation, readReviewedDeployment, signPendingProtectedTransfer, submitAndConfirm, submitHeldAuthorization, verifyMutationEnvironment, type HeldSignedTransaction, type LiveKind, type LivePhase, type LiveResult, type TokenBalances } from "./live-execution.ts";
 import { formatMultiplier, randomScenario, scenarioById, scenarioForAttempt, startAttempt, type ActiveAttempt, type EquityScenario } from "./scenarios.ts";
 import { activationTimestamp, activatedReviewDecision, chainReadyForStaleSubmit, getMintGuardSnapshot, heldWaitDecision, pendingSignDecision, readChainClock, buildClockCrossingTransfer } from "./transactions.ts";
 import { connectPhantomWallet, detectPhantom, disconnectWallet, type PhantomProvider } from "./wallet.ts";
@@ -15,6 +15,7 @@ interface Session {
   held: HeldSignedTransaction | null;
   staleAccepted: boolean;
   updated: boolean;
+  proofClosed: boolean;
 }
 
 interface AppState {
@@ -183,7 +184,7 @@ async function prepareDemo(): Promise<void> {
     if (decision === "mismatch" || decision === "missed") {
       throw new Error("The corporate action was already active when the demo was prepared. Start a new attempt. No protected-action signature was requested.");
     }
-    state.session = { attempt, asset, activation, held: null, staleAccepted: false, updated: false };
+    state.session = { attempt, asset, activation, held: null, staleAccepted: false, updated: false, proofClosed: false };
     state.token = balances.source;
     setAsset(mintAddress, balances.source);
     preview(attempt.scenario, snapshot.clock.unixTimestamp, activation);
@@ -421,6 +422,13 @@ async function withBusy(action: () => Promise<void>, kind: LiveKind, resultId: s
   catch (error) {
     const raw = errorMessage(error);
     const detail = friendlyLiveError(kind, error);
+    if (error instanceof AuthorizationWindowElapsed) {
+      if (state.session) state.session.proofClosed = true;
+      renderResult(resultId, { type: "AUTHORIZATION_WINDOW_ELAPSED", clock: error.clock.toString(), activation: error.activation.toString() });
+      showNewAttempt();
+      logActivity("AUTHORIZATION_WINDOW_ELAPSED", `Clock ${error.clock} T ${error.activation}`);
+      return;
+    }
     const signature = error instanceof LiveExecutionError ? error.signature : undefined;
     if (error instanceof LiveExecutionError) {
       setLiveTechnical(error.stage, signature, error.raw ?? raw);
@@ -452,7 +460,7 @@ function updateControls(): void {
   const locked = state.session !== null;
   getElement<HTMLButtonElement>("faucet-btn").disabled = !connected || state.busy;
   getElement<HTMLButtonElement>("prepare-btn").disabled = !connected || state.busy || locked;
-  getElement<HTMLButtonElement>("authorize-btn").disabled = !connected || state.busy || !state.session || state.session.held !== null;
+  getElement<HTMLButtonElement>("authorize-btn").disabled = !connected || state.busy || !state.session || state.session.held !== null || state.session.proofClosed;
   getElement<HTMLButtonElement>("confirm-updated-btn").disabled = !connected || state.busy || !state.session?.staleAccepted || state.session.updated;
   getElement<HTMLButtonElement>("random-scenario-btn").disabled = state.busy || locked;
   getElement<HTMLSelectElement>("scenario-select").disabled = state.busy || locked;

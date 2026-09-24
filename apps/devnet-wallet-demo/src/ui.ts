@@ -1,4 +1,4 @@
-import type { LiveResult } from "./live-execution.ts";
+import { AUTHORIZATION_WINDOW_ELAPSED_MESSAGE, type LiveResult } from "./live-execution.ts";
 import { DEMO_ASSET_DISCLAIMER, SCENARIO_CATALOG } from "./scenarios.ts";
 
 export const PROTECTION_EXPLANATION = "The asset's economic state changed after authorization. EquityGuard required a new authorization instead of silently executing against the changed state.";
@@ -29,6 +29,9 @@ export function resultMarkup(result: LiveResult): string {
   }
   if (result.type === "STALE_AUTHORIZATION_EXPIRED") {
     return `<div class="result result-failed"><span class="result-label">Not submitted</span><strong>STALE_AUTHORIZATION_EXPIRED</strong><p>The signed authorization expired before Solana could land it. This is not a protection result. Start a new attempt.</p></div>`;
+  }
+  if (result.type === "AUTHORIZATION_WINDOW_ELAPSED") {
+    return `<div class="result result-failed"><span class="result-label">Not submitted</span><strong>AUTHORIZATION_WINDOW_ELAPSED</strong><p>${escapeHtml(AUTHORIZATION_WINDOW_ELAPSED_MESSAGE)}</p><details><summary>Technical details</summary><p>Clock ${escapeHtml(result.clock)}</p><p>Activation ${escapeHtml(result.activation)}</p></details></div>`;
   }
   if (result.type === "CONFIRMED_ACTIVATION_REJECTION") {
     return `<div class="result result-block"><span class="result-label">Protected by EquityGuard</span><strong>PROTECTED BY EQUITYGUARD</strong><div class="delta"><span>Asset ${escapeHtml(result.symbol)}</span><span>${escapeHtml(result.eventLabel)}</span></div><p>Authorized state ${escapeHtml(result.authorizedMultiplier)}</p><p>Current state ${escapeHtml(result.currentMultiplier)}</p><p>Guard result ActivationPhaseChanged</p><p>Downstream action BLOCKED</p><p>Token movement 0</p><p>Network Solana Devnet</p><p>${escapeHtml(PROTECTION_EXPLANATION)}</p><p>${escapeHtml(DEMO_ASSET_DISCLAIMER)}</p><a href="${explorerUrl(result.signature)}" target="_blank" rel="noopener">View on Solana Explorer ↗</a></div>`;

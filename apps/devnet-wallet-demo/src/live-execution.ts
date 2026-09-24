@@ -59,6 +59,7 @@ export type LiveResult =
       readonly currentMultiplier: string;
     }
   | { readonly type: "STALE_AUTHORIZATION_EXPIRED" }
+  | { readonly type: "AUTHORIZATION_WINDOW_ELAPSED"; readonly clock: string; readonly activation: string }
   | {
       readonly type: "CONFIRMED_UPDATED_EXECUTION";
       readonly signature: string;
@@ -94,6 +95,21 @@ export class StaleAuthorizationExpired extends Error {
   constructor() {
     super("STALE_AUTHORIZATION_EXPIRED");
     this.name = "StaleAuthorizationExpired";
+  }
+}
+
+export const AUTHORIZATION_WINDOW_ELAPSED_MESSAGE =
+  "The corporate action activated before wallet approval completed. No transaction was submitted. Start a new attempt.";
+
+export class AuthorizationWindowElapsed extends Error {
+  readonly code = "AUTHORIZATION_WINDOW_ELAPSED" as const;
+  readonly clock: bigint;
+  readonly activation: bigint;
+  constructor(clock: bigint, activation: bigint) {
+    super(AUTHORIZATION_WINDOW_ELAPSED_MESSAGE);
+    this.name = "AuthorizationWindowElapsed";
+    this.clock = clock;
+    this.activation = activation;
   }
 }
 
@@ -504,6 +520,44 @@ export function assertSameSignedBytes(held: HeldSignedTransaction, actual: Uint8
   }
 }
 
+/**
+ * Post-Phantom check. `wait` is still pending: the sign lead is only a
+ * pre-request timing limit. Clock equal to T is already too late.
+ */
+export function pendingAuthorizationAfterSignature(
+  snapshot: GuardSnapshot,
+  scenario: EquityScenario,
+  activation: bigint,
+): "hold" | "elapsed" {
+  const decision = pendingSignDecision(snapshot, scenario, activation);
+  return decision === "sign" || decision === "wait" ? "hold" : "elapsed";
+}
+
+export function assertPendingAuthorizationStillOpen(
+  snapshot: GuardSnapshot,
+  scenario: EquityScenario,
+  activation: bigint,
+): void {
+  if (pendingAuthorizationAfterSignature(snapshot, scenario, activation) !== "hold") {
+    throw new AuthorizationWindowElapsed(snapshot.clock.unixTimestamp, activation);
+  }
+}
+
+/** Seals signed bytes only while the re-read mint is still the locked pending state. */
+export function sealPendingAuthorizationIfOpen(input: {
+  readonly snapshot: GuardSnapshot;
+  readonly scenario: EquityScenario;
+  readonly activationTimestamp: bigint;
+  readonly signedBytes: Uint8Array;
+  readonly lastValidBlockHeight: bigint;
+  readonly signature: string;
+  readonly guardInstructionIndex: number;
+  readonly expectation: AssertSafeExecutionRequest;
+}): HeldSignedTransaction {
+  assertPendingAuthorizationStillOpen(input.snapshot, input.scenario, input.activationTimestamp);
+  return sealSignedTransaction(input);
+}
+
 /** Bytes that may be submitted. Expiry and any mutation refuse before a send. */
 export function prepareHeldSubmission(held: HeldSignedTransaction, currentBlockHeight: bigint): Uint8Array {
   if (currentBlockHeight > held.lastValidBlockHeight) throw new StaleAuthorizationExpired();
@@ -579,8 +633,24 @@ export async function signPendingProtectedTransfer(input: {
     if (error instanceof LiveExecutionError) throw error;
     throw new LiveExecutionError(isWalletCancellation(error) ? "CANCELLED" : "SIGNING", error instanceof Error ? error.message : String(error), undefined, [], error);
   }
+  const afterSign = await input.readSnapshot();
+  try {
+    assertPendingAuthorizationStillOpen(afterSign, input.scenario, input.activationTimestamp);
+  } catch (error) {
+    if (error instanceof AuthorizationWindowElapsed) {
+      input.onPhase("FAILED");
+      input.onDiagnostic?.("AUTHORIZATION_WINDOW_ELAPSED", {
+        clock: afterSign.clock.unixTimestamp.toString(),
+        activation: input.activationTimestamp.toString(),
+      });
+    }
+    throw error;
+  }
   const verified = verifyWalletSignedTransaction(transaction, signedWire);
-  const held = sealSignedTransaction({
+  const held = sealPendingAuthorizationIfOpen({
+    snapshot: afterSign,
+    scenario: input.scenario,
+    activationTimestamp: input.activationTimestamp,
     signedBytes: signedWire,
     lastValidBlockHeight: blockhash.lastValidBlockHeight,
     signature: verified.signature,
@@ -715,6 +785,7 @@ export function confirmedUpdatedExecution(input: {
 
 export function friendlyLiveError(kind: LiveKind, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof AuthorizationWindowElapsed) return error.message;
   if (error instanceof StaleAuthorizationExpired || message === "STALE_AUTHORIZATION_EXPIRED") return "STALE_AUTHORIZATION_EXPIRED";
   if (/No signature was requested|Start a new attempt/i.test(message)) return message;
   if (isWalletCancellation(error)) return "No transaction was submitted.";
