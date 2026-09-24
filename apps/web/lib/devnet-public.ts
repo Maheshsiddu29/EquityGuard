@@ -132,18 +132,19 @@ export const PUBLIC_GENESIS = {
 
 /**
  * Setup reads the Devnet Clock and arms T this many seconds later.
- * A recent blockhash lasts about 60 seconds. The pending transaction's
- * blockhash is fetched only when the user authorizes, so the post-sign wait
- * is the time still left until T, which lands in the 5–15 second range when
- * setup and Phantom each take a few seconds.
+ * The interval has to cover Phantom setup approval and Devnet confirmation.
+ * A recent blockhash lasts about 60 seconds and is fetched only when the
+ * user authorizes, so the visible countdown is whatever chain time remains
+ * after that signature. It is usually a short wait and is not a fixed duration.
  */
-export const ACTIVATION_DELAY_SECONDS = 28;
+export const ACTIVATION_DELAY_SECONDS = 35;
 
 /**
  * Phantom is not opened when fewer than this many chain seconds remain.
- * There is no extra wait once more time than this remains.
+ * Authorize is enabled as soon as at least this much time remains.
+ * There is no extra wait once that minimum is met.
  */
-export const MIN_AUTHORIZATION_REMAINING_SECONDS = 12;
+export const MIN_AUTHORIZATION_REMAINING_SECONDS = 8;
 
 export const CLOCK_CROSSING_WINDOW: ProtectionWindow = { beforeSecs: 0, afterSecs: 0 };
 
@@ -220,8 +221,8 @@ export function validatePublicTiming(
   if (!Number.isInteger(delay) || !Number.isInteger(minimumRemaining)) {
     throw new Error("Activation timing must be whole seconds");
   }
-  if (delay < 25 || delay > 30) throw new Error("Activation delay must stay between 25 and 30 seconds");
-  if (minimumRemaining < 8 || minimumRemaining > 15) throw new Error("Minimum authorization window is outside the short public wait");
+  if (delay < 35 || delay > 45) throw new Error("Activation delay must leave room for Devnet setup confirmation");
+  if (minimumRemaining !== 8) throw new Error("Minimum authorization window must be 8 seconds");
   if (minimumRemaining >= delay) throw new Error("Minimum remaining time consumes the whole activation delay");
 }
 

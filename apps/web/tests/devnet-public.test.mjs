@@ -116,13 +116,13 @@ test("Phantom, Devnet genesis, and the reviewed deployment are required", () => 
 test("setup arms a fresh session and Authorize is immediate when enough chain time remains", async () => {
   const chain = 1_700_000_000n;
   const activation = activationTimestamp(chain);
-  assert.equal(activation - chain, BigInt(ACTIVATION_DELAY_SECONDS));
-  assert.equal(ACTIVATION_DELAY_SECONDS >= 25 && ACTIVATION_DELAY_SECONDS <= 30, true);
-  assert.equal(MIN_AUTHORIZATION_REMAINING_SECONDS >= 8 && MIN_AUTHORIZATION_REMAINING_SECONDS <= 15, true);
-  const open = snapshot({ clock: activation - BigInt(MIN_AUTHORIZATION_REMAINING_SECONDS), activation });
+  assert.equal(ACTIVATION_DELAY_SECONDS, 35);
+  assert.equal(MIN_AUTHORIZATION_REMAINING_SECONDS, 8);
+  assert.equal(activation - chain, BigInt(35));
+  const open = snapshot({ clock: activation - 8n, activation });
   assert.equal(authorizeDecision(open, scenario, activation), "sign");
   assert.equal(authorizeDecision(snapshot({ clock: activation - 20n, activation }), scenario, activation), "sign");
-  assert.equal(authorizeDecision(snapshot({ clock: activation - BigInt(MIN_AUTHORIZATION_REMAINING_SECONDS - 1), activation }), scenario, activation), "missed");
+  assert.equal(authorizeDecision(snapshot({ clock: activation - 7n, activation }), scenario, activation), "missed");
   const instructions = await prepareSessionInstructions({
     payer: signer,
     mintAddress: mint,
@@ -145,7 +145,7 @@ test("setup arms a fresh session and Authorize is immediate when enough chain ti
   assert.equal(instructions[3].accounts?.[1]?.role, AccountRole.WRITABLE_SIGNER);
 });
 
-test("the public path has no 35-second gate and fetches the pending blockhash at authorization", async () => {
+test("Authorize has no pre-sign wait and fetches the pending blockhash at authorization", async () => {
   const root = new URL("../", import.meta.url);
   const [policy, experience, component] = await Promise.all([
     readFile(new URL("lib/devnet-public.ts", root), "utf8"),
@@ -155,9 +155,12 @@ test("the public path has no 35-second gate and fetches the pending blockhash at
   const chain = policy;
   for (const sourceText of [policy, chain, component]) {
     assert.doesNotMatch(sourceText, /MAX_SIGN_LEAD|Date\.now|new Date\(/);
-    assert.doesNotMatch(sourceText, /\b(?:35|75)\b/);
+    assert.doesNotMatch(sourceText, /\b75\b/);
   }
+  const prepare = chain.slice(chain.indexOf("export async function prepareLiveSession"), chain.indexOf("export async function authorizePending"));
+  assert.doesNotMatch(prepare, /getLatestBlockhash|setTimeout/);
   const authorize = chain.slice(chain.indexOf("export async function authorizePending"), chain.indexOf("export async function currentBlockHeight"));
+  assert.doesNotMatch(authorize, /setTimeout/);
   assert.ok(authorize.indexOf("authorizeDecision") < authorize.indexOf("getLatestBlockhash"));
   assert.ok(authorize.indexOf("getLatestBlockhash") < authorize.indexOf("provider.request"));
   assert.ok(authorize.indexOf("provider.request") < authorize.indexOf("pendingReturnDecision"));
@@ -176,6 +179,7 @@ test("a late Phantom return is refused and a timely one freezes the signed bytes
   const activation = 1_700_000_028n;
   const open = snapshot({ clock: activation - 10n, activation });
   assert.equal(pendingReturnDecision(open, scenario, activation), "hold");
+  assert.equal(pendingReturnDecision(snapshot({ clock: activation - 1n, activation }), scenario, activation), "hold");
   assert.equal(pendingReturnDecision(snapshot({ clock: activation, activation }), scenario, activation), "elapsed");
   assert.equal(pendingReturnDecision(snapshot({ clock: activation + 3n, activation }), scenario, activation), "elapsed");
   assert.equal(pendingReturnDecision(snapshot({ clock: activation - 8n, activation, scheduled: 1.5 }), scenario, activation), "elapsed");
