@@ -23,7 +23,7 @@ export function ScrollExpandHero(): ReactNode {
             <span>should be the trade that executes.</span>
           </h1>
           <p className="landing-hero__support">
-            EquityGuard prevents tokenized-asset transactions authorized under
+            StateGuard prevents tokenized-asset transactions authorized under
             one economic state from silently executing under another.
           </p>
           <div className="hero-actions">
@@ -95,7 +95,7 @@ export function ScrollExpandHero(): ReactNode {
 
             <div className="hero-story__scene" data-scroll-step="0.46,0.8">
               <span className="story-status story-status--checking">
-                EquityGuard check
+                StateGuard check
               </span>
               <div className="story-guard-check">
                 <span>ix0</span>
@@ -114,7 +114,7 @@ export function ScrollExpandHero(): ReactNode {
               <strong className="story-result">No protected action executed.</strong>
               <p>The transaction must be refreshed and approved again.</p>
               <div className="story-stop-line">
-                <span>ix0 · EquityGuard</span>
+                <span>ix0 · StateGuard</span>
                 <span>downstream stopped</span>
               </div>
             </div>
@@ -123,7 +123,7 @@ export function ScrollExpandHero(): ReactNode {
 
         <p className="sr-only">
           A 5 USDC to KOx transaction is authorized against an economic-state
-          snapshot. The state changes before execution, so EquityGuard detects
+          snapshot. The state changes before execution, so StateGuard detects
           the mismatch at instruction zero. The order needs review and no
           protected action executes.
         </p>

@@ -1,6 +1,6 @@
-# EquityGuard public web app
+# StateGuard public web app
 
-This directory is the isolated Next.js public website for EquityGuard. It owns
+This directory is the isolated Next.js public website for StateGuard. It owns
 the three public page routes: `/`, `/demo`, and `/docs`.
 
 ## Local development
@@ -45,12 +45,12 @@ at commit `1581b9b8e5876f60e5eb844970747506980c4412`.
 
 Portfolio-specific copy, portraits, About/Projects/Contact sections, external
 portfolio imagery, Matter.js physics, dark-theme machinery, and that
-portfolio's OGL WebGL shader were intentionally not carried into EquityGuard.
+portfolio's OGL WebGL shader were intentionally not carried into StateGuard.
 
 The landing hero also adapts React Bits' TypeScript/CSS Scroll Expand and
 Gradient Waves components, reviewed at commit
 `b6666e9f3a03a062143ce409f3aac53e27fdfaa8`. Scroll Expand replaces its media
-surface with EquityGuard's transaction narrative. Gradient Waves uses one
+surface with StateGuard's transaction narrative. Gradient Waves uses one
 low-detail `ogl` WebGL2 canvas, pauses when offscreen or when the page is
 hidden, and is replaced by a static CSS treatment when reduced motion is
 requested. See `THIRD_PARTY_NOTICES.md` for the upstream license.

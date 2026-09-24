@@ -39,7 +39,7 @@ export function SystemArchitectureDiagram(): ReactNode {
       <div className="docs-flow docs-flow--architecture">
         <Node eyebrow="Input" title="Jupiter / action builder" copy="Produces an executable downstream plan." />
         <Arrow label="build" />
-        <Node eyebrow="Client" title="EquityGuard SDK" copy="Reads mint + Clock, derives state, binds the suffix." accent />
+        <Node eyebrow="Client" title="EquityGuard Protocol SDK" copy="Reads mint + Clock, derives state, binds the suffix." accent />
         <Arrow label="authorize" />
         <Node eyebrow="User boundary" title="Wallet" copy="Displays and signs one composed transaction." />
         <Arrow label="land" />
@@ -48,7 +48,7 @@ export function SystemArchitectureDiagram(): ReactNode {
       <div className="docs-diagram__rail">
         <span>Mainnet watcher: read-only evidence</span>
         <span>Devnet program: deployed, upgradeable</span>
-        <span>No EquityGuard mainnet deployment</span>
+        <span>No EquityGuard Protocol mainnet deployment</span>
       </div>
     </DiagramShell>
   );
@@ -121,7 +121,7 @@ export function TransactionDiagram(): ReactNode {
       caption="The deployed grammar permits one exact v0 instruction sequence."
     >
       <div className="docs-transaction-strip">
-        <div className="docs-transaction-strip__guard"><span>ix0</span><strong>EquityGuard</strong><small>state + phase + suffix hash</small></div>
+        <div className="docs-transaction-strip__guard"><span>ix0</span><strong>EquityGuard Protocol</strong><small>state + phase + suffix hash</small></div>
         <div><span>ix1</span><strong>CU price</strong><small>Jupiter build</small></div>
         <div><span>ix2</span><strong>CU limit</strong><small>explicit</small></div>
         <div><span>ix3?</span><strong>ATA create</strong><small>optional, idempotent</small></div>
@@ -159,7 +159,7 @@ export function RouterIntegrationDiagram(): ReactNode {
   return (
     <DiagramShell
       title="Router integration boundary"
-      caption="EquityGuard wraps a supported route; it does not select, price, or replace it."
+      caption="The EquityGuard Protocol wraps a supported route; it does not select, price, or replace it."
     >
       <div className="docs-router-flow">
         <Node eyebrow="1" title="Jupiter /build" copy="Raw instructions, quote fields, ALTs, blockhash." />

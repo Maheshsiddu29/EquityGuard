@@ -112,7 +112,7 @@ export function LandingPage(): ReactNode {
         labelledBy="principles-title"
       >
         <div className="section-heading">
-          <p className="eyebrow">What EquityGuard does</p>
+          <p className="eyebrow">What StateGuard does</p>
           <h2 id="principles-title">One check, at the point that matters.</h2>
         </div>
 
@@ -163,7 +163,7 @@ export function LandingPage(): ReactNode {
                 Real Solana mainnet state was observed read-only. The protected
                 stale and refreshed executions were proven separately on local
                 solana-test-validator using mainnet-derived state and real
-                Jupiter and Whirlpool program binaries. No EquityGuard
+                Jupiter and Whirlpool program binaries. No StateGuard
                 transaction was sent on mainnet.
               </p>
             </div>
@@ -193,8 +193,8 @@ export function LandingPage(): ReactNode {
           <p className="eyebrow">Fits the existing stack</p>
           <h2 id="stack-title">Protect execution without replacing the stack.</h2>
           <p>
-            EquityGuard does not choose the route. The router still owns
-            execution strategy. EquityGuard verifies that execution still
+            StateGuard does not choose the route. The router still owns
+            execution strategy. StateGuard verifies that execution still
             matches the authorization.
           </p>
           <Link className="button button--secondary focus-ring" href="/docs">
@@ -204,7 +204,7 @@ export function LandingPage(): ReactNode {
 
         <div
           className="stack-diagram public-surface public-surface--glass"
-          aria-label="EquityGuard execution stack"
+          aria-label="StateGuard execution stack"
         >
           <div className="stack-diagram__node">Trading app</div>
           <span className="stack-diagram__arrow" aria-hidden="true">↓</span>
@@ -214,7 +214,7 @@ export function LandingPage(): ReactNode {
             <p>Protected transaction</p>
             <div className="protected-transaction__instruction protected-transaction__instruction--guard">
               <span>ix0</span>
-              <strong>EquityGuard</strong>
+              <strong>StateGuard</strong>
               <small>state check</small>
             </div>
             <div className="protected-transaction__instruction">

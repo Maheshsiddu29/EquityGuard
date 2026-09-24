@@ -18,9 +18,9 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = createMetadata({
-  title: "EquityGuard Docs — Architecture, SDK & Integrations",
+  title: "StateGuard Docs — Architecture, SDK & Integrations",
   description:
-    "Architecture, transaction model, SDK integration, security boundaries, evidence, and deployment guidance for EquityGuard.",
+    "Architecture, transaction model, SDK integration, security boundaries, evidence, and deployment guidance for StateGuard.",
   path: "/docs",
 });
 
@@ -101,7 +101,7 @@ export default function DocsPage(): ReactNode {
           <SectionLabel>Technical documentation · ABI v2</SectionLabel>
           <h1 id="docs-title">Execution integrity for tokenized equities.</h1>
           <p>
-            EquityGuard makes the economic state authorized at quote time a
+            StateGuard makes the economic state authorized at quote time a
             condition of execution. This reference describes the code that
             exists today, the proof behind it, and the boundaries it does not cross.
           </p>
@@ -133,13 +133,23 @@ export default function DocsPage(): ReactNode {
             <section id="overview" className="docs-section">
               <SectionIntro label="01 · Overview" title="A guard, not another execution venue.">
                 <p>
-                  EquityGuard is execution-integrity infrastructure for
+                  StateGuard is execution-integrity infrastructure for
                   corporate-action-aware tokenized-equity transactions on Solana.
                   It places one read-only instruction before a supported action and
                   refuses the whole transaction when protected state no longer
                   matches the authorization.
                 </p>
               </SectionIntro>
+
+              <div className="docs-subsection">
+                <MonoLabel>Protocol relationship</MonoLabel>
+                <h3>Built on the EquityGuard Protocol.</h3>
+                <p>
+                  StateGuard is the public application and demo built on the EquityGuard
+                  Protocol. The protocol provides the underlying authorization and
+                  execution-integrity logic used by StateGuard.
+                </p>
+              </div>
 
               <PublicSurface tone="gradient" className="docs-principle">
                 <MonoLabel>Core rule</MonoLabel>
@@ -153,7 +163,7 @@ export default function DocsPage(): ReactNode {
 
               <div className="docs-split-grid">
                 <section className="docs-definition docs-definition--is">
-                  <span>EquityGuard is</span>
+                  <span>StateGuard is</span>
                   <ul>
                     <li>execution-integrity infrastructure;</li>
                     <li>a first-instruction guard for supported Solana swaps;</li>
@@ -162,7 +172,7 @@ export default function DocsPage(): ReactNode {
                   </ul>
                 </section>
                 <section className="docs-definition">
-                  <span>EquityGuard is not</span>
+                  <span>StateGuard is not</span>
                   <ul>
                     <li>a DEX, exchange, oracle, or route optimizer;</li>
                     <li>a replacement for Jupiter or ordinary slippage;</li>
@@ -202,7 +212,7 @@ export default function DocsPage(): ReactNode {
               <aside className="docs-note docs-note--warning">
                 <strong>The wedge</strong>
                 <p>
-                  Quote-time validation is a prediction. EquityGuard repeats the
+                  Quote-time validation is a prediction. The EquityGuard Protocol repeats the
                   decisive comparison against the runtime mint account and Solana
                   Clock inside the same atomic transaction as the protected action.
                 </p>
@@ -213,7 +223,7 @@ export default function DocsPage(): ReactNode {
               <SectionIntro label="03 · How it works" title="One authorization, one atomic verdict.">
                 <p>
                   The router still builds the trade and the wallet still owns the
-                  signature. EquityGuard adds an execution condition without becoming
+                  signature. StateGuard adds an execution condition without becoming
                   a gateway, custody layer, or separate settlement path.
                 </p>
               </SectionIntro>
@@ -235,7 +245,7 @@ export default function DocsPage(): ReactNode {
                 <p>
                   Only after rejection. The app refreshes state and quote, constructs a
                   different transaction, and asks the user to authorize that new trade.
-                  EquityGuard never silently updates a signed transaction.
+                  StateGuard never silently updates a signed transaction.
                 </p>
               </aside>
             </section>
@@ -315,7 +325,7 @@ export default function DocsPage(): ReactNode {
             <section id="economic-state-model" className="docs-section">
               <SectionIntro label="06 · Economic-state model" title="Stored bytes plus the phase selected by chain time.">
                 <p>
-                  EquityGuard’s implemented on-chain model is specifically Token-2022
+                  The EquityGuard Protocol’s implemented on-chain model is specifically Token-2022
                   <code>ScaledUiAmountConfig</code>. Safety comparisons use deterministic
                   integer and byte representations; floating-point equality is never a
                   security decision.
@@ -457,7 +467,7 @@ if (!(await reverifyGuardDeployment(result, rpc)).ok) throw new Error("deploymen
             <section id="integrations" className="docs-section">
               <SectionIntro label="08 · Integrations" title="Compose with the systems users already trust.">
                 <p>
-                  EquityGuard does not ask routers or wallets to surrender their role.
+                  StateGuard does not ask routers or wallets to surrender their role.
                   It consumes an action, validates whether that action fits a supported
                   adapter, and returns a transaction the existing wallet flow can sign.
                 </p>
@@ -546,7 +556,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                     <tr><td>Mint, account, or program substitution</td><td>Mint in payload = account 0 = protected route role; Token-2022 owner; canonical ATAs; deployment check.</td><td>RPC remains trusted for off-chain classification of unknown assets.</td></tr>
                     <tr><td>Upgrade-authority TOCTOU</td><td>ELF + ProgramData attestation before signature and submission.</td><td>The devnet authority can upgrade between the final read and landing.</td></tr>
                     <tr><td>Demo or localhost confusion</td><td>Genesis-hash gates and explicit mainnet/devnet/local labels.</td><td>Recorded proof is a replay. Live Devnet is Phantom on Solana Devnet for Token-2022 TransferChecked, not Jupiter or Whirlpool.</td></tr>
-                    <tr><td>Replay or evidence overclaim</td><td>Raw state provenance, deterministic fixtures, claim matrix, environment disclosures.</td><td>Historical replay is not a mainnet EquityGuard execution.</td></tr>
+                    <tr><td>Replay or evidence overclaim</td><td>Raw state provenance, deterministic fixtures, claim matrix, environment disclosures.</td><td>Historical replay is not a mainnet EquityGuard Protocol execution.</td></tr>
                     <tr><td>Wallet mutation or prefix insertion</td><td>Compare signed message to unsigned candidate; verify ix0 and suffix before submit.</td><td>Wallet UI and signing behavior are outside the on-chain program.</td></tr>
                   </tbody>
                 </table>
@@ -576,7 +586,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                   two modes. Recorded proof replays KOx observations, protected Jupiter
                   transaction composition, and Whirlpool execution from the canonical local
                   reproduction, including the stale rejection and the refreshed execution.
-                  It does not represent a live public mainnet EquityGuard transaction.
+                  It does not represent a live public mainnet EquityGuard Protocol transaction.
                   Live Devnet connects to Phantom on Solana Devnet, verifies the reviewed
                   deployment, and protects Token-2022 TransferChecked on a fresh per-session
                   demo asset. It does not execute Jupiter or Whirlpool. The layers are
@@ -611,7 +621,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
               </div>
 
               <div className="docs-environment-grid">
-                <article><MonoLabel>Live mainnet</MonoLabel><h3>Observe only</h3><p>Issuer mint state and Jupiter routes. No EquityGuard program, signature, or submitted transaction.</p></article>
+                <article><MonoLabel>Live mainnet</MonoLabel><h3>Observe only</h3><p>Issuer mint state and Jupiter routes. No EquityGuard Protocol program, signature, or submitted transaction.</p></article>
                 <article><MonoLabel>Live Devnet</MonoLabel><h3>TransferChecked proof</h3><p>Phantom on Solana Devnet. The browser verifies the reviewed upgradeable program, creates a KO-DEMO, UNH-DEMO, or CRM-DEMO ScaledUiAmount asset, holds the pending signed bytes, and submits them after the Devnet Clock crosses. Success requires ActivationPhaseChanged and zero protected movement, then a new authorization and Token-2022 TransferChecked. Demo assets are demonstration assets only: not real securities, no market value, and not issuer-affiliated. This path does not execute Jupiter or Whirlpool.</p></article>
                 <article><MonoLabel>Local validator</MonoLabel><h3>Composition proof</h3><p>Recorded proof of real Jupiter and Whirlpool binaries with mainnet-derived accounts. Controlled replay, not a public-market trade and not the Live Devnet path.</p></article>
               </div>
@@ -679,13 +689,13 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
             <section id="limitations" className="docs-section">
               <SectionIntro label="12 · Limitations" title="Deliberate constraints, stated without euphemism.">
                 <p>
-                  EquityGuard is a narrow proof of one execution invariant. The current
+                  StateGuard is a narrow proof of one execution invariant. The current
                   release should be evaluated by what it refuses as much as by what it accepts.
                 </p>
               </SectionIntro>
 
               <ol className="docs-limitations">
-                <li><span>01</span><div><strong>No mainnet EquityGuard transaction</strong><p>The program does not exist on mainnet. Mainnet activity is read-only or build-only.</p></div></li>
+                <li><span>01</span><div><strong>No mainnet program deployment</strong><p>The EquityGuard Protocol program does not exist on mainnet. Mainnet activity is read-only or build-only.</p></div></li>
                 <li><span>02</span><div><strong>Strict route subset</strong><p>Only ExactIn Jupiter v6 <code>route_v2</code>, canonical USDC, canonical ATAs, and the fixed suffix grammar are supported.</p></div></li>
                 <li><span>03</span><div><strong>No universal protection window</strong><p>Observed windows are test or demo policy, not an issuer-independent calibrated standard.</p></div></li>
                 <li><span>04</span><div><strong>Scalar state model</strong><p>One multiplier, a pending multiplier, and one activation timestamp cannot express every corporate action.</p></div></li>
@@ -693,7 +703,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                 <li><span>06</span><div><strong>Upgrade-authority TOCTOU</strong><p>Repeated attestation narrows—but does not eliminate—the time in which an authority can replace the program.</p></div></li>
                 <li><span>07</span><div><strong>No external audit</strong><p>Internal campaigns and test depth are evidence, not an independent security assessment.</p></div></li>
                 <li><span>08</span><div><strong>Packages are unpublished</strong><p>The documented package paths work in the monorepo and are marked private at version 0.1.0.</p></div></li>
-                <li><span>09</span><div><strong>Two public demo modes</strong><p>Recorded proof replays preserved KOx, Jupiter, and Whirlpool evidence and does not submit a visitor transaction. Live Devnet connects to Phantom on Solana Devnet and protects Token-2022 TransferChecked. Its assets are demonstration assets only: not real securities, no market value, and not issuer-affiliated. Live Devnet does not execute Jupiter or Whirlpool, and neither mode is a mainnet EquityGuard deployment.</p></div></li>
+                <li><span>09</span><div><strong>Two public demo modes</strong><p>Recorded proof replays preserved KOx, Jupiter, and Whirlpool evidence and does not submit a visitor transaction. Live Devnet connects to Phantom on Solana Devnet and protects Token-2022 TransferChecked. Its assets are demonstration assets only: not real securities, no market value, and not issuer-affiliated. Live Devnet does not execute Jupiter or Whirlpool, and neither mode is a mainnet EquityGuard Protocol deployment.</p></div></li>
                 <li><span>10</span><div><strong>No fair-value guarantee</strong><p>After a corporate-action transition, AMM repricing and ordinary slippage remain market-risk controls.</p></div></li>
               </ol>
             </section>
@@ -721,7 +731,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
               <SectionIntro label="14 · References" title="Primary sources and project evidence.">
                 <p>
                   External links below are official documentation or project-owner
-                  repositories. EquityGuard evidence is listed separately so protocol
+                  repositories. EquityGuard Protocol evidence is listed separately so protocol
                   facts are not confused with this project’s empirical claims.
                 </p>
               </SectionIntro>
@@ -739,7 +749,7 @@ verifyWalletSignedTransaction(unsignedTransaction, signedWire);
                   </ul>
                 </section>
                 <section>
-                  <MonoLabel>EquityGuard project evidence</MonoLabel>
+                  <MonoLabel>EquityGuard Protocol evidence</MonoLabel>
                   <ul>
                     <li><ExternalLink href="https://explorer.solana.com/address/EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT?cluster=devnet">Devnet program account</ExternalLink></li>
                     <li><ExternalLink href="https://explorer.solana.com/tx/5Vb8aaU47wz2bK8iA5yvAyYFEGQbWPy5vzVTo46kZi6VJb22gman2KaRyEBLpcgkkiQSvJSYkg6nSHZZvvQ1jXmb?cluster=devnet">Reviewed-binary upgrade transaction</ExternalLink></li>

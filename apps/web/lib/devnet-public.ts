@@ -163,7 +163,7 @@ export const STALE_AUTHORIZATION_EXPIRED_MESSAGE =
   "The signed authorization expired before Solana could land it. This is not a protection result. Start a new attempt.";
 
 export const PROTECTION_EXPLANATION =
-  "The asset's economic state changed after authorization. EquityGuard required a new authorization instead of silently executing against the changed state.";
+  "The asset's economic state changed after authorization. StateGuard required a new authorization instead of silently executing against the changed state.";
 
 export interface EquityScenario {
   readonly id: "KO-DEMO" | "UNH-DEMO" | "CRM-DEMO";
@@ -451,7 +451,7 @@ export function bindReviewedProgram(programId: Address): void {
 }
 
 export function reviewedProgramId(): Address {
-  if (boundProgram === null) throw new Error("Reviewed EquityGuard program was not bound");
+  if (boundProgram === null) throw new Error("Reviewed StateGuard program was not bound");
   return boundProgram;
 }
 
@@ -667,11 +667,11 @@ export async function verifyPublicEnvironment(): Promise<{ readonly upgradeAutho
   const program = accounts.value[0];
   const programData = accounts.value[1];
   if (!program?.executable || program.owner !== BPF_LOADER) {
-    throw new Error("Reviewed EquityGuard program is missing or not executable");
+    throw new Error("Reviewed StateGuard program is missing or not executable");
   }
   const programBytes = accountBytes(program.data);
   if (programBytes.length !== 36 || new DataView(programBytes.buffer, programBytes.byteOffset, 4).getUint32(0, true) !== 2) {
-    throw new Error("Reviewed EquityGuard program is not an upgradeable loader program");
+    throw new Error("Reviewed StateGuard program is not an upgradeable loader program");
   }
   const pointer = getAddressDecoder().decode(programBytes.subarray(4, 36));
   if (pointer !== PROGRAM_DATA_ADDRESS) throw new Error("ProgramData does not match the reviewed deployment");

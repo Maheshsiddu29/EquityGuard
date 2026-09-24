@@ -5,7 +5,6 @@ import test from "node:test";
 const APP_URL = new URL("../app/", import.meta.url);
 const COMPONENT_URL = new URL("../components/", import.meta.url);
 const PUBLIC_URL = new URL("../public/", import.meta.url);
-const SOURCE_BRAND_URL = new URL("../../../EquityGuard_Logo_Assets/", import.meta.url);
 
 test("the public app exposes exactly the three requested page routes", async () => {
   const rootEntries = await readdir(APP_URL, { withFileTypes: true });
@@ -80,7 +79,7 @@ test("landing proof values and environment boundary remain exact", async () => {
   assert.match(source, /value: "0", label: "disagreements"/);
   assert.match(source, /Real Solana mainnet state was observed read-only/);
   assert.match(source, /proven separately on local/);
-  assert.match(source, /No EquityGuard\s+transaction was sent on mainnet/);
+  assert.match(source, /No StateGuard\s+transaction was sent on mainnet/);
 });
 
 test("the revised landing uses one wave canvas and shared outcome structures", async () => {
@@ -162,7 +161,7 @@ test("the technical docs expose the complete implementation-led information arch
   }
 
   for (const boundary of [
-    "No mainnet EquityGuard transaction",
+    "No mainnet program deployment",
     "Strict route subset",
     "No universal protection window",
     "Upgrade-authority TOCTOU",
@@ -195,7 +194,7 @@ test("the docs keep recorded proof and Live Devnet as separate claims", async ()
   assert.match(pageSource, /Token-2022 TransferChecked/);
   assert.match(pageSource, /does not execute Jupiter or Whirlpool/);
   assert.match(pageSource, /not real securities, no market value, and not issuer-affiliated/);
-  assert.match(pageSource, /The program does not exist on mainnet/);
+  assert.match(pageSource, /The EquityGuard Protocol program does not exist on mainnet/);
   assert.match(pageSource, /Mainnet<\/dt><dd>No deployment/);
   assert.doesNotMatch(pageSource, /website demo does not connect to Phantom/i);
   assert.doesNotMatch(pageSource, /deployed on mainnet/i);
@@ -217,19 +216,49 @@ test("the public shell uses the approved final brand assets", async () => {
   assert.doesNotMatch(navSource, />\s*E\s*</);
   assert.match(footerSource, /<BrandLogo\s*\/>/);
   assert.match(layoutSource, /<SiteFooter\s*\/>/);
-  assert.match(brandSource, /equityguard-logo\.svg/);
-  assert.match(brandSource, /equityguard-mark\.svg/);
+  assert.match(brandSource, /stateguard-mark\.svg/);
+  assert.match(brandSource, /StateGuard/);
+  assert.doesNotMatch(brandSource, /equityguard-logo\.svg/);
+  assert.doesNotMatch(brandSource, /StateLatch/i);
+  assert.doesNotMatch(brandSource, /EquityGuard/);
 
-  const [productionLogo, sourceLogo, productionMark, sourceMark] =
-    await Promise.all([
-      readFile(new URL("brand/equityguard-logo.svg", PUBLIC_URL)),
-      readFile(new URL("horizontal_primary_transparent.svg", SOURCE_BRAND_URL)),
-      readFile(new URL("brand/equityguard-mark.svg", PUBLIC_URL)),
-      readFile(new URL("symbol_primary_transparent.svg", SOURCE_BRAND_URL)),
-    ]);
+  const mark = await readFile(new URL("brand/stateguard-mark.svg", PUBLIC_URL), "utf8");
+  assert.match(mark, /aria-label="StateGuard"/);
+  assert.doesNotMatch(mark, /EquityGuard|StateLatch/i);
+});
 
-  assert.deepEqual(productionLogo, sourceLogo);
-  assert.deepEqual(productionMark, sourceMark);
+test("landing and demo stay on the StateGuard product name", async () => {
+  const sources = await Promise.all([
+    readFile(new URL("page.tsx", APP_URL), "utf8"),
+    readFile(new URL("demo/page.tsx", APP_URL), "utf8"),
+    readFile(new URL("not-found.tsx", APP_URL), "utf8"),
+    readFile(new URL("landing/landing-page.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("landing/scroll-expand-hero.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("layout/nav.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("layout/site-footer.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("demo/demo-experience.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("demo/live-devnet-experience.tsx", COMPONENT_URL), "utf8"),
+    readFile(new URL("../lib/metadata.ts", import.meta.url), "utf8"),
+  ]);
+  const visible = sources.join("\n").replaceAll("equityguard-kox-trade-replay", "").replaceAll(
+    "https://github.com/Maheshsiddu29/EquityGuard",
+    ""
+  );
+
+  assert.match(visible, /StateGuard/);
+  assert.match(visible, /StateGuard PASSED/);
+  assert.match(visible, /Protected by StateGuard/);
+  assert.doesNotMatch(visible, /StateLatch/i);
+  assert.doesNotMatch(visible, /EquityGuard/i);
+  assert.doesNotMatch(visible, /by EquityGuard Protocol/);
+
+  const docs = await readFile(new URL("docs/page.tsx", APP_URL), "utf8");
+  assert.match(
+    docs,
+    /StateGuard is the public application and demo built on the EquityGuard\s+Protocol/
+  );
+  assert.doesNotMatch(docs, /StateGuard by EquityGuard Protocol/);
+  assert.doesNotMatch(docs, /StateLatch/i);
 });
 
 test("production metadata, icons, social preview, and 404 are complete", async () => {
@@ -242,15 +271,15 @@ test("production metadata, icons, social preview, and 404 are complete", async (
       readFile(new URL("../.gitignore", import.meta.url), "utf8"),
     ]);
 
-  assert.match(metadataSource, /EquityGuard — Execution Integrity for Tokenized Assets/);
+  assert.match(metadataSource, /StateGuard — Execution Integrity for Tokenized Assets/);
   assert.match(metadataSource, /summary_large_image/);
   assert.match(metadataSource, /opengraph-image\.png/);
   assert.match(metadataSource, /NEXT_PUBLIC_SITE_URL/);
   assert.match(metadataSource, /VERCEL_PROJECT_PRODUCTION_URL/);
-  assert.match(manifestSource, /equityguard-app-icon\.png/);
+  assert.match(manifestSource, /stateguard-app-icon\.png/);
   assert.match(manifestSource, /display: "standalone"/);
   assert.match(notFoundSource, /Page not found/);
-  assert.match(notFoundSource, /Back to EquityGuard/);
+  assert.match(notFoundSource, /Back to StateGuard/);
   assert.match(readmeSource, /Root Directory: `apps\/web`/);
   assert.match(readmeSource, /Output Directory: leave unset/);
   assert.match(ignoreSource, /^next-env\.d\.ts$/m);

@@ -7,7 +7,7 @@ Source: <https://github.com/DavidHDev/react-bits>
 Reviewed revision: `b6666e9f3a03a062143ce409f3aac53e27fdfaa8`
 
 The files in `components/react-bits/` adapt the upstream TypeScript/CSS Scroll
-Expand and Gradient Waves implementations for the EquityGuard landing page.
+Expand and Gradient Waves implementations for the StateGuard landing page.
 Gradient Waves uses the upstream `ogl` dependency under the Unlicense.
 
 ### License

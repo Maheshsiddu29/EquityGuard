@@ -122,7 +122,7 @@ export function Nav(): ReactNode {
   return (
     <header className="site-nav-wrap">
       <nav className="site-nav glass-nav" aria-label="Primary navigation">
-        <Link href="/" className="brand-mark focus-ring" aria-label="EquityGuard home">
+        <Link href="/" className="brand-mark focus-ring" aria-label="StateGuard home">
           <BrandLogo />
         </Link>
 

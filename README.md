@@ -1,17 +1,19 @@
-# EquityGuard
+# StateGuard
 
-**EquityGuard is an economic-intent protection layer for tokenized assets.**
+**StateGuard is an economic-intent protection layer for tokenized assets.**
 
 A transaction authorized under one tokenized-stock economic state must not silently execute under another.
 
-A trade can be prepared under one economic state and land after that state has changed. EquityGuard binds the expected state to the transaction and checks it atomically before the protected action executes.
+A trade can be prepared under one economic state and land after that state has changed. StateGuard binds the expected state to the transaction and checks it atomically before the protected action executes.
 
-Integrators are venues, wallets, aggregators, trading applications, agents, and DeFi protocols. EquityGuard is not primarily a retail product.
+Integrators are venues, wallets, aggregators, trading applications, agents, and DeFi protocols. StateGuard is not primarily a retail product.
+
+Underlying protocol: EquityGuard Protocol
 
 ```
 ONE SOLANA TRANSACTION
      │
-     ├── instruction 0: EquityGuard.assert_safe_execution
+     ├── instruction 0: EquityGuard Protocol assert_safe_execution
      │     ├─ reads mint state directly from chain account
      │     ├─ checks clock phase & expected multiplier bytes
      │     └─ validates downstream instruction commitment
@@ -24,14 +26,14 @@ ONE SOLANA TRANSACTION
 
 ## Status & Proof Stack
 
-EquityGuard has four distinct proof layers:
+StateGuard has four distinct proof layers:
 
 ### 1. Real Mainnet Data
 - **19,986** real tokenized-stock state observations captured read-only from Solana mainnet.
 - **294,527** authorization-to-execution pairs evaluated.
 - **7,029** economically stale pairs detected and **all 7,029** blocked by the guard model.
 - **0** unexpected ALLOWs, **0** unexpected BLOCKs.
-- *No EquityGuard transaction was sent on mainnet.*
+- *No StateGuard transaction was sent on mainnet. The EquityGuard Protocol has no mainnet deployment.*
 
 ### 2. Guard-Model Replay
 - Demonstrates **SAFE / BLOCK / REFRESH** state evaluations using real captured mainnet state.
@@ -68,7 +70,7 @@ We observed real tokenized-stock state transitions on Solana mainnet across xSto
 
 ## Integrating with Jupiter
 
-Applications that build Jupiter Swap V2 swaps add EquityGuard using the integration surface:
+Applications that build Jupiter Swap V2 swaps add the EquityGuard Protocol using the integration surface:
 
 ```ts
 import { protectJupiterSwap } from "@equityguard/jupiter/protect";
@@ -88,9 +90,9 @@ if (guarded.status === "PROTECTED") await wallet.signAndSendTransaction(guarded.
 | `status` | Meaning |
 | --- | --- |
 | `PROTECTED` | Supported protected route, built against a guard deployment that can execute on this cluster; sign and send `transaction` |
-| `NOT_APPLICABLE` | The asset was read and is positively outside EquityGuard's protected universe; continue your existing path |
+| `NOT_APPLICABLE` | The asset was read and is positively outside the EquityGuard Protocol's protected universe; continue your existing path |
 | `UNSUPPORTED_PROTECTED_ASSET` | A known tokenized equity whose protection semantics cannot be established; fail closed |
-| `UNSUPPORTED_PROTECTED_ROUTE` | Protected asset on a route EquityGuard cannot represent; fail closed |
+| `UNSUPPORTED_PROTECTED_ROUTE` | Protected asset on a route the EquityGuard Protocol cannot represent; fail closed |
 | `ERROR` | Malformed input, unreadable state, state that moved, or no usable guard deployment; fail closed |
 
 - **`unsupported` is never `unprotected`.** No refusal carries a transaction; sending the plain Jupiter transaction instead would defeat the product.
@@ -101,7 +103,7 @@ if (guarded.status === "PROTECTED") await wallet.signAndSendTransaction(guarded.
 
 ## Why Solana
 
-EquityGuard relies fundamentally on Solana-native primitives:
+The EquityGuard Protocol relies fundamentally on Solana-native primitives:
 - **Token-2022 Extensions:** `ScaledUiAmount` multiplier state stored directly on token mint accounts.
 - **Solana Clock:** Enables deterministic, on-chain evaluation of scheduled economic-state activations.
 - **Instructions Sysvar:** Enables instruction 0 to introspect the transaction and cryptographically bind the guard to the exact downstream swap.
@@ -128,7 +130,7 @@ Verified empirical metrics from the release candidate:
 
 This release is a **hackathon release candidate / reviewed prototype**:
 
-1. **No Mainnet Deployment:** EquityGuard is deployed on Solana devnet only (`EbzHfaoS…NnhT`). No mainnet deployment exists.
+1. **No Mainnet Deployment:** The EquityGuard Protocol is deployed on Solana devnet only (`EbzHfaoS…NnhT`). No mainnet deployment exists.
 2. **Strict Supported Jupiter Subset:** Supports only Jupiter v6 `route_v2`, `ExactIn`, canonical USDC ↔ protected mint, BUY and SELL, guard at instruction 0. Any route-shape drift fails closed.
 3. **Uncalibrated Protection Windows:** Pre/post transition windows are policy inputs configured by the integrator; they are uncalibrated demo values.
 4. **Scalar State Model:** Protects Token-2022 `ScaledUiAmount` scalar multiplier state. Structural corporate actions (mergers, spinoffs, redemptions) are not represented by the current scalar model.

@@ -98,7 +98,7 @@ type GradientWavesProps = {
  * Adapted from React Bits Gradient Waves (JS/CSS registry variant).
  * Copyright (c) 2026 David Haz; MIT + Commons Clause.
  *
- * The EquityGuard version uses one low-detail WebGL2 canvas, removes pointer
+ * The StateGuard version uses one low-detail WebGL2 canvas, removes pointer
  * tracking and grain, pauses outside the viewport, and does not initialize
  * WebGL when reduced motion is requested.
  */

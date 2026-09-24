@@ -2246,8 +2246,20 @@ a:focus-visible {
 }
 
 .brand-logo--horizontal {
-  width: 9.5rem;
-  aspect-ratio: 4 / 1;
+  gap: 0.55rem;
+}
+
+.brand-logo--horizontal img {
+  width: 1.7rem;
+}
+
+.brand-logo__word {
+  color: var(--public-text);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .brand-logo--mark {
@@ -2406,10 +2418,6 @@ a:focus-visible {
 }
 
 @media (max-width: 760px) {
-  .brand-logo--horizontal {
-    width: 8rem;
-  }
-
   .site-footer__inner {
     min-height: 0;
     align-items: flex-start;
@@ -2427,10 +2435,6 @@ a:focus-visible {
 }
 
 @media (max-width: 420px) {
-  .brand-logo--horizontal {
-    width: 7.45rem;
-  }
-
   .not-found-page__card {
     padding-inline: 1.25rem;
   }

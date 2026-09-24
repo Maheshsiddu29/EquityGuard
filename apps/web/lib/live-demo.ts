@@ -268,7 +268,7 @@ export function assertStaleInvariants(result: LiveStaleResult): void {
   const problems: string[] = [];
   if (result.leg !== "STALE") problems.push("result is not the stale leg");
   if (result.environment !== CANONICAL.environment) problems.push("result is not a local proof execution");
-  if (result.failedInstruction !== 0) problems.push("EquityGuard did not stop the transaction at ix0");
+  if (result.failedInstruction !== 0) problems.push("StateGuard did not stop the transaction at ix0");
   if (result.guardErrorName !== CANONICAL.guardError) problems.push(`guard error was not ${CANONICAL.guardError}`);
   if (result.jupiterInvoked) problems.push("Jupiter was invoked");
   if (result.whirlpoolInvoked) problems.push("Whirlpool was invoked");

@@ -152,7 +152,7 @@ function LiveRunEvidence({
         {wallet ? <TechnicalValue label="Phantom wallet" value={wallet} /> : null}
         {stale ? (
           <>
-            <div><dt>Stale · EquityGuard</dt><dd>{stale.guard} · {stale.guardErrorName}</dd></div>
+            <div><dt>Stale · StateGuard</dt><dd>{stale.guard} · {stale.guardErrorName}</dd></div>
             <div><dt>Stale · Jupiter</dt><dd>{stale.jupiterInvoked ? "INVOKED" : "NOT INVOKED"}</dd></div>
             <div><dt>Stale · Whirlpool</dt><dd>{stale.whirlpoolInvoked ? "INVOKED" : "NOT INVOKED"}</dd></div>
             <div><dt>Stale · raw token delta</dt><dd>{stale.usdcDelta} USDC · {stale.koxDelta} KOx</dd></div>
@@ -162,7 +162,7 @@ function LiveRunEvidence({
         ) : null}
         {updated ? (
           <>
-            <div><dt>Updated · EquityGuard</dt><dd>{updated.guard}</dd></div>
+            <div><dt>Updated · StateGuard</dt><dd>{updated.guard}</dd></div>
             <div><dt>Updated · Jupiter</dt><dd>{updated.jupiterInvoked ? "EXECUTED" : "NOT INVOKED"}</dd></div>
             <div><dt>Updated · Whirlpool</dt><dd>{updated.whirlpoolInvoked ? "EXECUTED" : "NOT INVOKED"}</dd></div>
             <div><dt>Updated · raw token delta</dt><dd>−{updated.usdcSpentRaw} USDC · +{updated.koxReceivedRaw} KOx</dd></div>
@@ -345,7 +345,7 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
           <h1 id="demo-title">{isDevnet ? "Live Devnet" : "See a stale trade stop before settlement."}</h1>
           {isDevnet ? (
             <p>
-              Run EquityGuard yourself with a simulated tokenized-equity corporate action.
+              Run StateGuard yourself with a simulated tokenized-equity corporate action.
             </p>
           ) : isLive ? (
             <p>
@@ -500,9 +500,9 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
               </section>
               <section>
                 <SectionLabel>Signed stale attempt</SectionLabel>
-                <h2>Stopped at EquityGuard</h2>
+                <h2>StateGuard blocked the stale authorization</h2>
                 <dl className="evidence-list">
-                  <div><dt>EquityGuard</dt><dd>{evidence.stale.guard}</dd></div>
+                  <div><dt>StateGuard</dt><dd>{evidence.stale.guard}</dd></div>
                   <div><dt>Jupiter</dt><dd>{evidence.stale.jupiter}</dd></div>
                   <div><dt>Token movement</dt><dd>{evidence.stale.usdc} USDC · {evidence.stale.kox} KOx</dd></div>
                   <div><dt>Slot</dt><dd>{evidence.stale.slot}</dd></div>
@@ -513,7 +513,7 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
                 <SectionLabel>Signed updated attempt</SectionLabel>
                 <h2>Protected route completed</h2>
                 <dl className="evidence-list">
-                  <div><dt>EquityGuard</dt><dd>{evidence.updated.guard}</dd></div>
+                  <div><dt>StateGuard</dt><dd>{evidence.updated.guard}</dd></div>
                   <div><dt>Jupiter / Whirlpool</dt><dd>{evidence.updated.jupiter} · {evidence.updated.whirlpool}</dd></div>
                   <div><dt>Token movement</dt><dd>{evidence.updated.usdc} USDC · {evidence.updated.kox} KOx</dd></div>
                   <div><dt>Slot</dt><dd>{evidence.updated.slot}</dd></div>

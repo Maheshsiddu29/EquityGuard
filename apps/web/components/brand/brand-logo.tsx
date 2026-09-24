@@ -18,16 +18,13 @@ export function BrandLogo({
       aria-hidden="true"
     >
       <Image
-        src={
-          isMark
-            ? "/brand/equityguard-mark.svg"
-            : "/brand/equityguard-logo.svg"
-        }
+        src="/brand/stateguard-mark.svg"
         alt=""
-        width={isMark ? 800 : 1600}
-        height={isMark ? 600 : 400}
-        sizes={isMark ? "48px" : "(max-width: 520px) 120px, 152px"}
+        width={800}
+        height={600}
+        sizes={isMark ? "48px" : "28px"}
       />
+      {isMark ? null : <span className="brand-logo__word">StateGuard</span>}
     </span>
   );
 }

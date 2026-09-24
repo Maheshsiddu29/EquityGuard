@@ -19,7 +19,7 @@ export default function manifest(): MetadataRoute.Manifest {
         type: "image/svg+xml",
       },
       {
-        src: "/brand/equityguard-app-icon.png",
+        src: "/brand/stateguard-app-icon.png",
         sizes: "1024x1024",
         type: "image/png",
       },

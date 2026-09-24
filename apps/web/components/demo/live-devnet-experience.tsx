@@ -259,7 +259,7 @@ export function LiveDevnetExperience(): ReactNode {
     <PublicSurface as="article" tone="gradient" className="demo-trade-card live-devnet">
       <SectionLabel>Live Devnet</SectionLabel>
       <div className="live-devnet__hero">
-        <h2>Run EquityGuard yourself with a simulated tokenized-equity corporate action.</h2>
+        <h2>Run StateGuard yourself with a simulated tokenized-equity corporate action.</h2>
         <p>{DEVNET_PUBLIC_DISCLAIMER}</p>
       </div>
       <dl className="live-devnet__facts">
@@ -342,7 +342,7 @@ export function LiveDevnetExperience(): ReactNode {
 
       {phase === "protected" && staleSignature ? (
         <div className="live-devnet__result">
-          <h3>Protected by EquityGuard</h3>
+          <h3>Protected by StateGuard</h3>
           <p>Asset {scenario.symbol}</p>
           <p>Corporate action {scenario.eventLabel}</p>
           <p>Authorized state {formatMultiplier(scenario.initialMultiplier)}</p>
@@ -364,7 +364,7 @@ export function LiveDevnetExperience(): ReactNode {
       {phase === "executed" && updatedSignature && movement ? (
         <div className="live-devnet__result">
           <h3>Executed</h3>
-          <p>EquityGuard PASSED</p>
+          <p>StateGuard PASSED</p>
           <p>Protected action Token-2022 TransferChecked</p>
           <p>Token movement {movement}</p>
           <p>Network Solana Devnet</p>

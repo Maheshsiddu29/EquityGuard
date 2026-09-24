@@ -12,7 +12,7 @@ export function SiteFooter(): ReactNode {
           <Link
             href="/"
             className="site-footer__logo focus-ring"
-            aria-label="EquityGuard home"
+            aria-label="StateGuard home"
           >
             <BrandLogo />
           </Link>

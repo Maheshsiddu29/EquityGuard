@@ -55,7 +55,7 @@ The landing proof section reports only the established repository totals:
 7,029 of 7,029 stale cases blocked, 1,000,000 TypeScript/Rust differential
 cases, and zero disagreements. Its KOx lifecycle explicitly separates
 read-only recorded mainnet state from execution on the proven local validator;
-it does not claim that an EquityGuard transaction ran on mainnet.
+it does not claim that a StateGuard transaction ran on mainnet.
 
 ## Vercel
 

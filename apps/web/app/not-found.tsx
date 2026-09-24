@@ -4,8 +4,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: { absolute: "Page Not Found — EquityGuard" },
-  description: "The requested route is not part of the EquityGuard public site.",
+  title: { absolute: "Page Not Found — StateGuard" },
+  description: "The requested route is not part of the StateGuard public site.",
 };
 
 export default function NotFound(): ReactNode {
@@ -16,9 +16,9 @@ export default function NotFound(): ReactNode {
         <BrandLogo variant="mark" />
         <p className="section-label">Error · 404</p>
         <h1 id="not-found-title">Page not found</h1>
-        <p>The route you&apos;re looking for isn&apos;t part of EquityGuard.</p>
+        <p>The route you&apos;re looking for isn&apos;t part of StateGuard.</p>
         <Link className="button button--primary focus-ring" href="/">
-          Back to EquityGuard <span aria-hidden="true">→</span>
+          Back to StateGuard <span aria-hidden="true">→</span>
         </Link>
       </section>
     </main>

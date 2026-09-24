@@ -17,14 +17,14 @@ function getSiteUrl(): URL {
 }
 
 export const siteConfig = {
-  name: "EquityGuard",
-  title: "EquityGuard — Execution Integrity for Tokenized Assets",
+  name: "StateGuard",
+  title: "StateGuard — Execution Integrity for Tokenized Assets",
   description:
-    "EquityGuard is execution-integrity infrastructure for protected tokenized-asset trading on Solana.",
+    "StateGuard is execution-integrity infrastructure for protected tokenized-asset trading on Solana.",
   url: getSiteUrl(),
   repository: "https://github.com/Maheshsiddu29/EquityGuard",
   keywords: [
-    "EquityGuard",
+    "StateGuard",
     "Solana",
     "Token-2022",
     "tokenized equities",
@@ -42,8 +42,8 @@ export const baseMetadata: Metadata = {
   description: siteConfig.description,
   applicationName: siteConfig.name,
   keywords: [...siteConfig.keywords],
-  creator: "EquityGuard",
-  publisher: "EquityGuard",
+  creator: "StateGuard",
+  publisher: "StateGuard",
   category: "technology",
   manifest: "/manifest.webmanifest",
   alternates: { canonical: "/" },
@@ -63,7 +63,7 @@ export const baseMetadata: Metadata = {
         url: "/opengraph-image.png",
         width: 1200,
         height: 630,
-        alt: "EquityGuard — The trade you approved should be the trade that executes.",
+        alt: "StateGuard — The trade you approved should be the trade that executes.",
       },
     ],
   },
@@ -105,7 +105,7 @@ export function createMetadata({
           url: "/opengraph-image.png",
           width: 1200,
           height: 630,
-          alt: "EquityGuard — The trade you approved should be the trade that executes.",
+          alt: "StateGuard — The trade you approved should be the trade that executes.",
         },
       ],
     },
