@@ -79,6 +79,43 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Default depth is 1, which omits the PR base and the previous push
+          # SHA. Those commits are required to diff a committed range. This is
+          # not a full-history whitespace scan.
+          fetch-depth: 0
+      - name: Check committed diff for whitespace errors
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$PR_BASE"
+            head="$PR_HEAD"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            base="$PUSH_BEFORE"
+            head="$PUSH_HEAD"
+            if [ "$base" = "0000000000000000000000000000000000000000" ]; then
+              echo "Initial push has no previous commit to diff."
+              exit 0
+            fi
+          else
+            echo "No committed range for event $EVENT_NAME."
+            exit 0
+          fi
+          for sha in "$base" "$head"; do
+            case "$sha" in
+              *[!0-9a-f]* | "")
+                echo "Refusing to diff a non-SHA ref."
+                exit 1
+                ;;
+            esac
+          done
+          git diff --check "$base" "$head"
       - uses: actions/setup-node@v4
         with:
           # Type stripping (running .ts directly) is enabled by default from 22.18.
@@ -92,3 +129,27 @@ jobs:
         run: node --check scripts/evidence/capture-equity-mints.mjs
       - name: Test
         run: npm test
+
+  web:
+    name: Web (apps/web lint, typecheck, tests, build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
