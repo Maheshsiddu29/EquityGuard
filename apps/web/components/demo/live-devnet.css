@@ -1,0 +1,106 @@
+.live-devnet {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.live-devnet__hero p,
+.live-devnet__note,
+.live-devnet__copy p {
+  margin: 0.35rem 0 0;
+  color: var(--public-muted-strong);
+}
+
+.live-devnet__facts,
+.live-devnet__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1.25rem;
+  margin: 1rem 0 0;
+}
+
+.live-devnet__facts dt,
+.live-devnet__grid dt,
+.live-devnet__scenario span {
+  color: var(--public-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-devnet__facts dd,
+.live-devnet__grid dd,
+.live-devnet__scenario strong {
+  margin: 0.2rem 0 0;
+  color: var(--public-text);
+  font-size: 0.98rem;
+}
+
+.live-devnet__scenario {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.live-devnet__scenario select,
+.live-devnet__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.live-devnet .button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  transform: none;
+  box-shadow: none;
+}
+
+.live-devnet__scenario select {
+  width: min(100%, 28rem);
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--public-border);
+  border-radius: 0.85rem;
+  background: rgba(8, 14, 28, 0.55);
+  color: var(--public-text);
+  font: inherit;
+}
+
+.live-devnet__countdown {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.6rem;
+}
+
+.live-devnet__result {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.live-devnet__copy h3,
+.live-devnet__result h3 {
+  margin: 0.4rem 0 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-devnet__result a {
+  color: var(--public-cobalt);
+}
+
+.live-devnet__technical {
+  margin-top: 0.8rem;
+  color: var(--public-muted);
+  font-size: 0.78rem;
+}
+
+.live-devnet__technical summary {
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .live-devnet__facts,
+  .live-devnet__grid {
+    grid-template-columns: 1fr;
+  }
+}

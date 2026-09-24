@@ -7,6 +7,7 @@ import {
   StatusLabel,
 } from "@/components/ui/public-ui";
 import { AnimatedPublicPageAtmosphere } from "@/components/ui/animated-public-page-atmosphere";
+import { LiveDevnetExperience } from "@/components/demo/live-devnet-experience";
 import { useLiveDemo } from "@/components/demo/use-live-demo";
 import { CANONICAL, type LiveStaleResult, type LiveUpdatedResult } from "@/lib/live-demo";
 import { useReducedMotion } from "@/lib/motion";
@@ -194,7 +195,7 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
   const [busy, setBusy] = useState(false);
   // Null means "whatever this machine supports"; a value is the operator's own
   // explicit choice, which is why it is never overwritten by a later effect.
-  const [modeChoice, setModeChoice] = useState<"replay" | "live" | null>(null);
+  const [modeChoice, setModeChoice] = useState<"replay" | "live" | "devnet" | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
   const prefersReducedMotion = useReducedMotion();
@@ -212,6 +213,7 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
   // still lets them move back to the replay on purpose.
   const mode = modeChoice ?? (live.available ? "live" : "replay");
   const isLive = mode === "live" && live.available;
+  const isDevnet = mode === "devnet";
   const panels = live.panels;
   const liveFailure = panels.failure;
 
@@ -338,10 +340,14 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
       <section className="page-container demo-page" aria-labelledby="demo-title">
         <header className="route-heading demo-page__heading">
           <SectionLabel>
-            {isLive ? "Local demo · live Phantom proof" : "Public demo · deterministic replay"}
+            {isDevnet ? "Live Devnet" : isLive ? "Local demo · live Phantom proof" : "Public demo · deterministic replay"}
           </SectionLabel>
-          <h1 id="demo-title">See a stale trade stop before settlement.</h1>
-          {isLive ? (
+          <h1 id="demo-title">{isDevnet ? "Live Devnet" : "See a stale trade stop before settlement."}</h1>
+          {isDevnet ? (
+            <p>
+              Run EquityGuard yourself with a simulated tokenized-equity corporate action.
+            </p>
+          ) : isLive ? (
             <p>
               This machine is running the local proof environment. Buy builds a real
               protected authorization, Phantom signs it, and the local validator
@@ -357,6 +363,24 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
               proof environment.
             </p>
           )}
+          <div className="demo-mode-switch" role="group" aria-label="Demo evidence">
+            <button
+              type="button"
+              className={`demo-mode-switch__option focus-ring${mode === "replay" ? " is-selected" : ""}`}
+              aria-pressed={mode === "replay"}
+              onClick={() => setModeChoice("replay")}
+            >
+              Recorded proof
+            </button>
+            <button
+              type="button"
+              className={`demo-mode-switch__option focus-ring${isDevnet ? " is-selected" : ""}`}
+              aria-pressed={isDevnet}
+              onClick={() => setModeChoice("devnet")}
+            >
+              Live Devnet
+            </button>
+          </div>
           {live.available ? (
             <div className="demo-mode-switch" role="group" aria-label="Demo mode">
               <button
@@ -379,6 +403,7 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
           ) : null}
         </header>
 
+        {isDevnet ? <LiveDevnetExperience /> : <>
         <PublicSurface as="article" tone="gradient" className="demo-trade-card">
           <div className="demo-trade-card__topline">
             <div className="demo-asset">
@@ -527,6 +552,7 @@ export function DemoExperience({ evidence }: { evidence: DemoEvidence }): ReactN
             </div>
           </details>
         </PublicSurface>
+        </>}
       </section>
     </main>
   );
