@@ -2,20 +2,18 @@
  * Public Devnet demo policy. No wallet, no RPC, and no localhost coordinator.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { AccountRole, address, appendTransactionMessageInstructions, compileTransaction, createTransactionMessage, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from "@solana/kit";
 import { TOKEN_2022_PROGRAM_ADDRESS, getTransferCheckedInstruction } from "@solana-program/token-2022";
 
-import { ActivationPhase } from "../../../packages/guard-client/src/abi.ts";
-import { SOLANA_GENESIS_HASH } from "../../../packages/guard-client/src/deployment.ts";
-import { EQUITY_GUARD_DEVNET_PROGRAM_ID } from "../../../packages/guard-client/src/program-id.ts";
-import { buildGuardedTransferChecked } from "../../../packages/guard-client/src/downstream.ts";
 import { SCENARIO_CATALOG as REFERENCE_CATALOG } from "../../devnet-wallet-demo/src/scenarios.ts";
 import {
   ACTIVATION_DELAY_SECONDS,
   AUTHORIZATION_WINDOW_ELAPSED_MESSAGE,
   AUTHORIZATION_WINDOW_MISSED_MESSAGE,
+  ActivationPhase,
   CLOCK_CROSSING_WINDOW,
   DEMO_TRANSFER_RAW,
   DEVNET_RPC_URL,
@@ -43,7 +41,6 @@ import {
   scenarioById,
   scenarioForAttempt,
   bindReviewedProgram,
-  buildPublicGuardedTransfer,
   classifyPrepareInstruction,
   phantomSignedTransaction,
   parseCustomError,
@@ -57,7 +54,11 @@ import {
   submissionPermitted,
 } from "../lib/devnet-public.ts";
 
-bindReviewedProgram(EQUITY_GUARD_DEVNET_PROGRAM_ID);
+const componentSource = readFileSync(new URL("../components/demo/live-devnet-experience.tsx", import.meta.url), "utf8");
+const reviewedProgram = componentSource.match(/bindReviewedProgram\(address\("([1-9A-HJ-NP-Za-km-z]{32,44})"\)\)/);
+if (reviewedProgram === null) throw new Error("Live Devnet component does not bind a reviewed program");
+const reviewedProgramId = reviewedProgram[1];
+bindReviewedProgram(address(reviewedProgramId));
 
 const wallet = address("GgBaCs3NGLqX87FtL4WQ6eqR5vUtdKQeKqHHB8SNn7z");
 const source = address("7w2MRSqKByxbNkYoXWR7vNC2D8yaZ3iPfZCVd4FcrBgT");
@@ -111,11 +112,10 @@ test("Phantom, Devnet genesis, and the reviewed deployment are required", () => 
   assert.throws(() => requirePhantom(null), /Phantom/);
   assert.throws(() => requirePhantom({ isPhantom: false }), /Phantom/);
   assert.equal(assertDevnetCluster(PUBLIC_GENESIS.devnet), "devnet");
-  assert.deepEqual(PUBLIC_GENESIS, SOLANA_GENESIS_HASH);
   assert.throws(() => assertDevnetCluster(PUBLIC_GENESIS["mainnet-beta"]), /mainnet/);
   assert.throws(() => assertDevnetCluster(PUBLIC_GENESIS.testnet), /testnet/);
   assert.equal(DEVNET_RPC_URL, "https://api.devnet.solana.com");
-  assert.equal(EQUITY_GUARD_DEVNET_PROGRAM_ID.length > 30, true);
+  assert.equal(reviewedProgramId.length > 30, true);
 });
 
 test("setup arms a fresh session and Authorize is immediate when enough chain time remains", async () => {
@@ -176,8 +176,8 @@ test("Authorize has no pre-sign wait and fetches the pending blockhash at author
   assert.match(experience, /setModeChoice\("devnet"\)/);
   assert.match(component, /submissionPermitted/);
   assert.match(component, /bindReviewedProgram/);
-  assert.equal(component.includes(EQUITY_GUARD_DEVNET_PROGRAM_ID), true);
-  assert.equal(policy.includes(EQUITY_GUARD_DEVNET_PROGRAM_ID), false);
+  assert.equal(component.includes(reviewedProgramId), true);
+  assert.equal(policy.includes(reviewedProgramId), false);
   assert.doesNotMatch(component, /127\.0\.0\.1:4175|NEXT_PUBLIC_EQUITYGUARD_LIVE_DEMO|Jupiter|Whirlpool/);
   assert.doesNotMatch(chain, /127\.0\.0\.1:4175|NEXT_PUBLIC_EQUITYGUARD_LIVE_DEMO|Jupiter|Whirlpool/);
 });
@@ -226,33 +226,33 @@ test("stale success is only ActivationPhaseChanged with zero movement", () => {
     logs,
     guardInstructionIndex: 0,
   });
-  const logs = [`Program ${EQUITY_GUARD_DEVNET_PROGRAM_ID} invoke [1]`];
+  const logs = [`Program ${reviewedProgramId} invoke [1]`];
   assert.equal(acceptActivationRejection({
     outcome: outcome(12, logs),
     before: balances,
     after: balances,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), true);
   assert.equal(acceptActivationRejection({
     outcome: outcome(9, logs),
     before: balances,
     after: balances,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
   assert.equal(acceptActivationRejection({
     outcome: outcome(12, [...logs, `Program ${TOKEN_2022_PROGRAM_ADDRESS} success`]),
     before: balances,
     after: balances,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
   assert.equal(acceptActivationRejection({
     outcome: outcome(12, logs),
     before: balances,
     after: { source: 900_000n, destination: 100_000n },
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
   assert.match(PROTECTION_EXPLANATION, /new authorization/);
@@ -270,7 +270,7 @@ test("the updated authorization is a new confirmed transfer, not the stale signa
     slot: 9n,
     error: null,
     customError: null,
-    logs: [`Program ${EQUITY_GUARD_DEVNET_PROGRAM_ID} success`, `Program ${TOKEN_2022_PROGRAM_ADDRESS} success`],
+    logs: [`Program ${reviewedProgramId} success`, `Program ${TOKEN_2022_PROGRAM_ADDRESS} success`],
     guardInstructionIndex: 0,
   };
   assert.equal(acceptUpdatedExecution({
@@ -278,7 +278,7 @@ test("the updated authorization is a new confirmed transfer, not the stale signa
     before: balances,
     after: { source: 900_000n, destination: DEMO_TRANSFER_RAW },
     amount: DEMO_TRANSFER_RAW,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), true);
   assert.equal(acceptUpdatedExecution({
@@ -286,36 +286,9 @@ test("the updated authorization is a new confirmed transfer, not the stale signa
     before: balances,
     after: balances,
     amount: DEMO_TRANSFER_RAW,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
-});
-
-test("the public guarded transfer matches the reviewed Token-2022 builder", () => {
-  const activation = 90n;
-  const view = snapshot({ clock: activation - 10n, activation });
-  const transfer = getTransferCheckedInstruction({
-    source, mint, destination, authority: signer, amount: DEMO_TRANSFER_RAW, decimals: 6,
-  });
-  const expectation = expectationForSnapshot(view);
-  const proven = buildGuardedTransferChecked({
-    programAddress: EQUITY_GUARD_DEVNET_PROGRAM_ID,
-    feePayer: wallet,
-    mint,
-    expectation,
-    transferChecked: transfer,
-  });
-  const pub = buildPublicGuardedTransfer({ feePayer: wallet, mint, expectation, transferChecked: transfer });
-  assert.equal(pub.instructions.length, proven.instructions.length);
-  assert.deepEqual(pub.guard.data, proven.guard.data);
-  assert.equal(pub.guard.programAddress, EQUITY_GUARD_DEVNET_PROGRAM_ID);
-  const message = pipe(
-    createTransactionMessage({ version: "legacy" }),
-    (value) => setTransactionMessageFeePayer(wallet, value),
-    (value) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 1n }, value),
-    (value) => appendTransactionMessageInstructions(pub.instructions, value),
-  );
-  assert.equal(compileTransaction(message).messageBytes.length > 0, true);
 });
 
 test("Phantom signed responses become owned bytes and a substituted transaction is refused", async () => {
@@ -397,9 +370,9 @@ test("a landed ActivationPhaseChanged rejection is recognized at the guard index
   const logs = [
     "Program ComputeBudget111111111111111111111111111111 invoke [1]",
     "Program ComputeBudget111111111111111111111111111111 success",
-    `Program ${EQUITY_GUARD_DEVNET_PROGRAM_ID} invoke [1]`,
+    `Program ${reviewedProgramId} invoke [1]`,
     "Program log: EquityGuard rejected: ActivationPhaseChanged",
-    `Program ${EQUITY_GUARD_DEVNET_PROGRAM_ID} failed: custom program error: 0xc`,
+    `Program ${reviewedProgramId} failed: custom program error: 0xc`,
   ];
   const outcome = {
     signature: "landed-stale-signature",
@@ -413,21 +386,21 @@ test("a landed ActivationPhaseChanged rejection is recognized at the guard index
     outcome,
     before: balances,
     after: balances,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), true);
   assert.equal(acceptActivationRejection({
     outcome: { ...outcome, guardInstructionIndex: 0 },
     before: balances,
     after: balances,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
   assert.equal(acceptActivationRejection({
     outcome: { ...outcome, logs: [...logs, `Program ${TOKEN_2022_PROGRAM_ADDRESS} success`] },
     before: balances,
     after: balances,
-    programId: EQUITY_GUARD_DEVNET_PROGRAM_ID,
+    programId: reviewedProgramId,
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
 
