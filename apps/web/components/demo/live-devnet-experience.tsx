@@ -12,16 +12,10 @@ import {
   SCENARIO_CATALOG,
   STALE_AUTHORIZATION_EXPIRED_MESSAGE,
   STALE_AUTHORIZATION_EXPIRED_TITLE,
-  CONFIRMATION_STATUS_UNKNOWN_TITLE,
-  SUBMISSION_STATUS_UNKNOWN_MESSAGE,
-  SUBMISSION_STATUS_UNKNOWN_TITLE,
-  confirmationStatusUnknownMessage,
   TOKEN_2022_PROGRAM_ADDRESS,
   AuthorizationWindowElapsed,
   AuthorizationWindowMissed,
   StaleAuthorizationExpired,
-  ConfirmationStatusUnknown,
-  SubmissionStatusUnknown,
   acceptActivationRejection,
   acceptUpdatedExecution,
   address,
@@ -60,7 +54,7 @@ import "./live-devnet.css";
 bindReviewedProgram(address("EbzHfaoSHdsWuVdatCmmcBnZi5npJBNXmWhFVeEtNnhT"));
 const EQUITY_GUARD_DEVNET_PROGRAM_ID = reviewedProgramId();
 
-type Phase = "ready" | "preparing" | "armed" | "signing" | "locked" | "activating" | "protected" | "updating" | "executed" | "missed" | "elapsed" | "expired" | "unknown" | "unconfirmed" | "failed";
+type Phase = "ready" | "preparing" | "armed" | "signing" | "locked" | "activating" | "protected" | "updating" | "executed" | "missed" | "elapsed" | "expired" | "failed";
 
 export function LiveDevnetExperience(): ReactNode {
   const [phase, setPhase] = useState<Phase>("ready");
@@ -71,9 +65,6 @@ export function LiveDevnetExperience(): ReactNode {
   const [held, setHeld] = useState<HeldAuthorization | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [staleSignature, setStaleSignature] = useState<string | null>(null);
-  const [expectedSignature, setExpectedSignature] = useState<string | null>(null);
-  const [checkingSubmission, setCheckingSubmission] = useState(false);
-  const [reconcilingConfirmation, setReconcilingConfirmation] = useState(false);
   const [updatedSignature, setUpdatedSignature] = useState<string | null>(null);
   const [movement, setMovement] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
@@ -126,15 +117,8 @@ export function LiveDevnetExperience(): ReactNode {
   useEffect(() => {
     if (phase !== "activating" || !session || !held || submitStarted.current) return;
     submitStarted.current = true;
-    setCheckingSubmission(false);
-    submitHeld(held, {
-      onExpectedSignature: (signature) => setExpectedSignature(signature),
-      onKnownSignature: (signature) => setStaleSignature(signature),
-      onChecking: () => setCheckingSubmission(true),
-      onReconciling: () => setReconcilingConfirmation(true),
-    })
+    submitHeld(held)
       .then(async (outcome) => {
-        setReconcilingConfirmation(false);
         setStaleSignature(outcome.signature);
         const balances = await readSessionBalances(session);
         const accepted = acceptActivationRejection({
@@ -154,20 +138,6 @@ export function LiveDevnetExperience(): ReactNode {
       .catch((error: unknown) => {
         if (error instanceof StaleAuthorizationExpired) {
           setPhase("expired");
-          return;
-        }
-        if (error instanceof SubmissionStatusUnknown) {
-          setExpectedSignature(error.signature);
-          setCheckingSubmission(false);
-          setReconcilingConfirmation(false);
-          setPhase("unknown");
-          return;
-        }
-        if (error instanceof ConfirmationStatusUnknown) {
-          setStaleSignature(error.signature);
-          setCheckingSubmission(false);
-          setReconcilingConfirmation(false);
-          setPhase("unconfirmed");
           return;
         }
         if (error instanceof DevnetSubmissionError && error.signature) setStaleSignature(error.signature);
@@ -278,9 +248,6 @@ export function LiveDevnetExperience(): ReactNode {
     setHeld(null);
     setCountdown(null);
     setStaleSignature(null);
-    setExpectedSignature(null);
-    setCheckingSubmission(false);
-    setReconcilingConfirmation(false);
     setUpdatedSignature(null);
     setMovement(null);
     setDetail(null);
@@ -363,13 +330,7 @@ export function LiveDevnetExperience(): ReactNode {
           <p>Authorized state {formatMultiplier(scenario.initialMultiplier)}</p>
           <p>Corporate action {scenario.eventLabel}</p>
           {phase === "activating" ? (
-            reconcilingConfirmation ? (
-              <p>Checking the on-chain result for the submitted transaction...</p>
-            ) : checkingSubmission ? (
-              <p>Checking whether the signed transaction reached Solana...</p>
-            ) : (
-              <p>{formatMultiplier(scenario.initialMultiplier)} → {formatMultiplier(scenario.newMultiplier)}. Submitting the exact authorization you signed…</p>
-            )
+            <p>{formatMultiplier(scenario.initialMultiplier)} → {formatMultiplier(scenario.newMultiplier)}. Submitting the exact authorization you signed…</p>
           ) : (
             <>
               <p className="live-devnet__countdown">Activates in {countdown ?? "—"}s</p>
@@ -414,23 +375,6 @@ export function LiveDevnetExperience(): ReactNode {
       {phase === "missed" ? <Failure title={AUTHORIZATION_WINDOW_MISSED_TITLE} body={AUTHORIZATION_WINDOW_MISSED_MESSAGE} onReset={reset} /> : null}
       {phase === "elapsed" ? <Failure title={AUTHORIZATION_WINDOW_ELAPSED_TITLE} body={AUTHORIZATION_WINDOW_ELAPSED_MESSAGE} onReset={reset} /> : null}
       {phase === "expired" ? <Failure title={STALE_AUTHORIZATION_EXPIRED_TITLE} body={STALE_AUTHORIZATION_EXPIRED_MESSAGE} onReset={reset} /> : null}
-      {phase === "unconfirmed" && staleSignature ? (
-        <div className="live-devnet__result">
-          <h3>{CONFIRMATION_STATUS_UNKNOWN_TITLE}</h3>
-          <p>{confirmationStatusUnknownMessage(staleSignature)}</p>
-          <a href={devnetExplorerUrl(staleSignature)} target="_blank" rel="noopener noreferrer">Check the transaction status on Solana Explorer</a>
-          <button type="button" className="button button--secondary focus-ring" onClick={reset}>Start a new attempt</button>
-        </div>
-      ) : null}
-      {phase === "unknown" ? (
-        <div className="live-devnet__result">
-          <h3>{SUBMISSION_STATUS_UNKNOWN_TITLE}</h3>
-          <p>{SUBMISSION_STATUS_UNKNOWN_MESSAGE}</p>
-          {expectedSignature ? <p>Expected signature {expectedSignature}. Not confirmed.</p> : null}
-          {expectedSignature ? <a href={devnetExplorerUrl(expectedSignature)} target="_blank" rel="noopener noreferrer">Check the transaction status on Solana Explorer</a> : null}
-          <button type="button" className="button button--secondary focus-ring" onClick={reset}>Start a new attempt</button>
-        </div>
-      ) : null}
       {phase === "failed" ? <Failure title="Attempt stopped" body={detail ?? "The live Devnet attempt did not complete."} signature={staleSignature} onReset={reset} /> : null}
       {phase === "updating" ? <p>Requesting a new Phantom signature for the activated state…</p> : null}
       {phase === "signing" ? <p>Waiting for Phantom…</p> : null}
@@ -443,7 +387,6 @@ export function LiveDevnetExperience(): ReactNode {
         <p>Activation {session?.activation.toString() ?? "Not armed"}</p>
         <p>Setup signature {session?.setupSignature ?? "None"}</p>
         <p>Pending wire hash {held?.sha256 ?? "None"}</p>
-        <p>Expected signature {expectedSignature ?? "None"}{expectedSignature && staleSignature === null ? " (not confirmed)" : ""}</p>
         <p>Stale signature {staleSignature ?? "None"}</p>
         {staleSignature ? <p><a href={devnetExplorerUrl(staleSignature)} target="_blank" rel="noopener noreferrer">View stale transaction on Solana Explorer</a></p> : null}
         <p>Updated signature {updatedSignature ?? "None"}</p>
