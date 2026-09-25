@@ -21,6 +21,7 @@ import {
   PROTECTION_EXPLANATION,
   PUBLIC_GENESIS,
   SCENARIO_CATALOG,
+  CONFIRMATION_STATUS_UNKNOWN_TITLE,
   STALE_AUTHORIZATION_EXPIRED_MESSAGE,
   STALE_SEND_TIMEOUT_MS,
   STALE_STATUS_POLL_MS,
@@ -50,7 +51,10 @@ import {
   parseCustomError,
   prepareSessionInstructions,
   sha256Hex,
+  ConfirmationStatusUnknown,
+  DevnetSubmissionError,
   classifyStaleSend,
+  confirmationStatusUnknownMessage,
   runStaleSubmission,
   signatureFromSignedBytes,
   staleSendAmbiguous,
@@ -238,7 +242,7 @@ test("a polled block height cannot abandon the sealed stale authorization", asyn
   assert.match(beforeSend, /Uint8Array\.from\(held\.signedBytes\)/);
   assert.match(beforeSend, /assertSameSignedBytes\(held, bytes\)/);
   assert.match(submit, /skipPreflight:\s*true/);
-  assert.match(runner, /ports\.confirm\(expectedSignature, held\.guardInstructionIndex\)/);
+  assert.match(runner, /finishKnown\(expectedSignature\)/);
   assert.equal(submit.match(/connection\.sendTransaction/g)?.length, 1);
   assert.doesNotMatch(`${runner}\n${submit}`, /getLatestBlockhash|signTransaction|compileTransaction|signAndSend|Promise\.race|while\s*\(\s*true\s*\)/);
   assert.equal(staleSendExpiry(new Error("Transaction simulation failed: Blockhash not found")), true);
@@ -405,6 +409,166 @@ test("a lost stale send is recovered from the sealed signature", async () => {
   assert.ok(caught.indexOf('setPhase("unknown")') < caught.indexOf('setPhase("failed")'));
   assert.equal(Number.isFinite(STALE_SEND_TIMEOUT_MS) && STALE_SEND_TIMEOUT_MS > 0, true);
   assert.equal(Number.isFinite(STALE_STATUS_WINDOW_MS) && STALE_STATUS_WINDOW_MS > 0, true);
+});
+
+test("a known stale signature is reconciled after confirmation failure", async () => {
+  const presented = compiledTransfer(DEMO_TRANSFER_RAW);
+  const signedBytes = markedSignedWire(presented.transaction);
+  const signature = signatureFromSignedBytes(signedBytes);
+  const held = {
+    signedBytes,
+    sha256: sha256Hex(signedBytes),
+    lastValidBlockHeight: 9n,
+    signature,
+    guardInstructionIndex: 2,
+    expectation: expectationForSnapshot(snapshot({ clock: 40n, activation: 50n })),
+  };
+  const protectedOutcome = {
+    signature,
+    slot: 8n,
+    error: { InstructionError: [2, { Custom: 12 }] },
+    customError: { instructionIndex: 2, code: 12 },
+    logs: [`Program ${reviewedProgramId} invoke [1]`, "Program log: EquityGuard rejected: ActivationPhaseChanged"],
+    guardInstructionIndex: 2,
+  };
+  const clock = { now: 0 };
+  const sleep = async (ms) => { clock.now += ms; };
+  const base = () => ({
+    timeoutMs: STALE_SEND_TIMEOUT_MS,
+    recoveryWindowMs: STALE_STATUS_WINDOW_MS,
+    pollMs: STALE_STATUS_POLL_MS,
+    now: () => clock.now,
+    sleep,
+  });
+
+  const events = [];
+  let sends = 0;
+  const reconciled = await runStaleSubmission(held, {
+    ...base(),
+    send: async (bytes) => {
+      sends += 1;
+      assert.deepEqual(bytes, signedBytes);
+      events.push("sent");
+      return signature;
+    },
+    onKnownSignature: (known) => {
+      assert.equal(known, signature);
+      events.push("known");
+    },
+    confirm: async (known) => {
+      assert.equal(known, signature);
+      events.push("confirm");
+      throw new DevnetSubmissionError("CONFIRMATION_FAILED", `CONFIRMATION_FAILED. Signature ${known} was returned, but confirmation could not be established.`, known);
+    },
+    observeSignature: async (known) => {
+      assert.equal(known, signature);
+      events.push("status");
+      return true;
+    },
+    readChainOutcome: async (known, guardInstructionIndex) => {
+      assert.equal(known, signature);
+      assert.equal(guardInstructionIndex, 2);
+      events.push("meta");
+      return protectedOutcome;
+    },
+  });
+  assert.deepEqual(events, ["sent", "known", "confirm", "status", "meta"]);
+  assert.equal(sends, 1);
+  assert.equal(acceptActivationRejection({
+    outcome: reconciled,
+    before: balances,
+    after: balances,
+    programId: reviewedProgramId,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), true);
+
+  clock.now = 0;
+  let unexpectedSends = 0;
+  const unexpected = await runStaleSubmission(held, {
+    ...base(),
+    send: async () => { unexpectedSends += 1; return signature; },
+    confirm: async () => { throw new DevnetSubmissionError("CONFIRMATION_FAILED", "CONFIRMATION_FAILED", signature); },
+    observeSignature: async (known) => known === signature,
+    readChainOutcome: async () => ({
+      signature,
+      slot: 9n,
+      error: null,
+      customError: null,
+      logs: [`Program ${reviewedProgramId} success`, `Program ${TOKEN_2022_PROGRAM_ADDRESS} success`],
+      guardInstructionIndex: 2,
+    }),
+  });
+  assert.equal(unexpectedSends, 1);
+  assert.equal(acceptActivationRejection({
+    outcome: unexpected,
+    before: balances,
+    after: balances,
+    programId: reviewedProgramId,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), false);
+  assert.match(unexpectedStaleResultCopy(unexpected), /UNEXPECTED_ONCHAIN_RESULT/);
+
+  clock.now = 0;
+  const started = { at: null };
+  let unresolvedSends = 0;
+  let unresolvedLookups = 0;
+  await assert.rejects(
+    runStaleSubmission(held, {
+      ...base(),
+      send: async () => { unresolvedSends += 1; return signature; },
+      onReconciling: () => { started.at = clock.now; },
+      confirm: async () => { throw new DevnetSubmissionError("CONFIRMATION_FAILED", "CONFIRMATION_FAILED", signature); },
+      observeSignature: async (known) => {
+        assert.equal(known, signature);
+        unresolvedLookups += 1;
+        return false;
+      },
+      readChainOutcome: async () => { throw new Error("meta must wait for a visible status"); },
+    }),
+    (error) => error instanceof ConfirmationStatusUnknown
+      && error.code === "CONFIRMATION_STATUS_UNKNOWN"
+      && error.signature === signature
+      && error.message === confirmationStatusUnknownMessage(signature),
+  );
+  assert.equal(unresolvedSends, 1);
+  assert.equal(unresolvedLookups > 0, true);
+  assert.equal(clock.now - started.at, STALE_STATUS_WINDOW_MS);
+  clock.now = 0;
+  let hungSends = 0;
+  const hungConfirmation = await runStaleSubmission(held, {
+    ...base(),
+    send: async () => { hungSends += 1; return signature; },
+    confirm: () => new Promise(() => undefined),
+    observeSignature: async (known) => known === signature,
+    readChainOutcome: async () => protectedOutcome,
+  });
+  assert.equal(hungSends, 1);
+  assert.equal(acceptActivationRejection({
+    outcome: hungConfirmation,
+    before: balances,
+    after: balances,
+    programId: reviewedProgramId,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), true);
+  assert.doesNotMatch(confirmationStatusUnknownMessage(signature), /ActivationPhaseChanged|STALE_AUTHORIZATION_EXPIRED|protection result|SUBMISSION_STATUS_UNKNOWN/);
+
+  const policy = await readFile(new URL("../lib/devnet-public.ts", import.meta.url), "utf8");
+  const recovery = policy.slice(policy.indexOf("async function reconcileKnownSignature"), policy.indexOf("async function finishKnownSignature"));
+  const finish = policy.slice(policy.indexOf("async function finishKnownSignature"), policy.indexOf("async function signatureVisible"));
+  assert.doesNotMatch(`${recovery}\n${finish}`, /sendTransaction|getLatestBlockhash|signTransaction|compileTransaction|signAndSend/);
+  assert.match(recovery, /observeWithin\(ports\.observeSignature, signature/);
+  assert.match(finish, /ports\.confirm\(signature, guardInstructionIndex\)/);
+  assert.match(recovery, /throw new ConfirmationStatusUnknown\(signature\)/);
+
+  const component = await readFile(new URL("../components/demo/live-devnet-experience.tsx", import.meta.url), "utf8");
+  const panel = component.slice(component.indexOf('phase === "unconfirmed"'), component.indexOf('phase === "unknown"'));
+  assert.match(panel, /CONFIRMATION_STATUS_UNKNOWN_TITLE/);
+  assert.match(panel, /confirmationStatusUnknownMessage\(staleSignature\)/);
+  assert.match(panel, /devnetExplorerUrl\(staleSignature\)/);
+  assert.ok(panel.indexOf("confirmationStatusUnknownMessage(staleSignature)") < panel.indexOf("Start a new attempt"));
+  assert.match(component, /onKnownSignature: \(signature\) => setStaleSignature\(signature\)/);
+  assert.match(component, /Checking the on-chain result for the submitted transaction\.\.\./);
+  assert.equal(CONFIRMATION_STATUS_UNKNOWN_TITLE, "CONFIRMATION_STATUS_UNKNOWN");
 });
 
 test("stale success is only ActivationPhaseChanged with zero movement", () => {

@@ -166,6 +166,12 @@ export const SUBMISSION_STATUS_UNKNOWN_TITLE = "SUBMISSION_STATUS_UNKNOWN";
 export const SUBMISSION_STATUS_UNKNOWN_MESSAGE =
   "The RPC response was interrupted and StateGuard could not confirm whether the signed transaction reached Solana. Check the transaction status before starting another attempt.";
 
+export const CONFIRMATION_STATUS_UNKNOWN_TITLE = "CONFIRMATION_STATUS_UNKNOWN";
+
+export function confirmationStatusUnknownMessage(signature: string): string {
+  return `The transaction was submitted with signature ${signature}, but StateGuard could not establish its final on-chain result. Check Solana Explorer before starting another attempt.`;
+}
+
 /** Bounds the stale send RPC. A timeout starts signature recovery and is not a failure. */
 export const STALE_SEND_TIMEOUT_MS = 12_000;
 /** Bounds how long recovery looks for the signature already inside the sealed bytes. */
@@ -635,6 +641,16 @@ export class SubmissionStatusUnknown extends Error {
   constructor(signature: string) {
     super(SUBMISSION_STATUS_UNKNOWN_MESSAGE);
     this.name = "SubmissionStatusUnknown";
+    this.signature = signature;
+  }
+}
+
+export class ConfirmationStatusUnknown extends Error {
+  readonly code = "CONFIRMATION_STATUS_UNKNOWN" as const;
+  readonly signature: string;
+  constructor(signature: string) {
+    super(confirmationStatusUnknownMessage(signature));
+    this.name = "ConfirmationStatusUnknown";
     this.signature = signature;
   }
 }
@@ -1281,13 +1297,23 @@ export interface StaleSubmissionPorts {
   readonly send: (bytes: Uint8Array) => Promise<string>;
   readonly observeSignature: (signature: string) => Promise<boolean>;
   readonly confirm: (signature: string, guardInstructionIndex: number) => Promise<ConfirmedChainOutcome>;
+  readonly readChainOutcome?: (signature: string, guardInstructionIndex: number) => Promise<ConfirmedChainOutcome | null>;
   readonly onExpectedSignature?: (signature: string) => void;
+  readonly onKnownSignature?: (signature: string) => void;
   readonly onChecking?: () => void;
+  readonly onReconciling?: () => void;
   readonly timeoutMs?: number;
   readonly recoveryWindowMs?: number;
   readonly pollMs?: number;
   readonly now?: () => number;
   readonly sleep?: (ms: number) => Promise<void>;
+}
+
+interface StaleRecoveryClock {
+  readonly recoveryWindowMs: number;
+  readonly pollMs: number;
+  readonly now: () => number;
+  readonly sleep: (ms: number) => Promise<void>;
 }
 
 async function settlePendingReactions(): Promise<void> {
@@ -1336,6 +1362,107 @@ async function waitUntilSettled(done: Promise<void>, timeoutMs: number, sleep: (
   });
 }
 
+async function loadConfirmedOutcome(
+  connection: ReturnType<typeof createSolanaRpc>,
+  signature: string,
+  guardInstructionIndex: number,
+): Promise<ConfirmedChainOutcome | null> {
+  try {
+    const tx = await connection.getTransaction(signature as Signature, {
+      commitment: "confirmed",
+      encoding: "json",
+      maxSupportedTransactionVersion: 0,
+    }).send();
+    if (!tx) return null;
+    return {
+      signature,
+      slot: tx.slot,
+      error: tx.meta?.err ?? null,
+      customError: parseCustomError(tx.meta?.err ?? null),
+      logs: tx.meta?.logMessages ?? [],
+      guardInstructionIndex,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After the signature is known, poll the same bounded status helper used when
+ * a send response is lost. A visible status then loads transaction meta and
+ * logs for the existing stale-result parser. This does not send again.
+ */
+async function reconcileKnownSignature(
+  signature: string,
+  guardInstructionIndex: number,
+  ports: StaleSubmissionPorts,
+  clock: StaleRecoveryClock,
+  pendingConfirm: { outcome: ConfirmedChainOutcome | null },
+): Promise<ConfirmedChainOutcome> {
+  ports.onReconciling?.();
+  const started = clock.now();
+  while (clock.now() - started < clock.recoveryWindowMs) {
+    if (pendingConfirm.outcome) return pendingConfirm.outcome;
+    const remaining = clock.recoveryWindowMs - (clock.now() - started);
+    if (remaining <= 0) break;
+    const beforeObserve = clock.now();
+    const seen = await observeWithin(ports.observeSignature, signature, Math.min(clock.pollMs, remaining), clock.sleep);
+    if (pendingConfirm.outcome) return pendingConfirm.outcome;
+    if (seen && ports.readChainOutcome) {
+      try {
+        const outcome = await ports.readChainOutcome(signature, guardInstructionIndex);
+        if (outcome) return outcome;
+      } catch {
+        // A failed meta read leaves the known signature unresolved for this poll.
+      }
+    }
+    const elapsed = clock.now() - beforeObserve;
+    const left = clock.recoveryWindowMs - (clock.now() - started);
+    const pause = Math.min(clock.pollMs, Math.max(left, 0)) - elapsed;
+    if (pause > 0) await clock.sleep(pause);
+  }
+  if (pendingConfirm.outcome) return pendingConfirm.outcome;
+  throw new ConfirmationStatusUnknown(signature);
+}
+
+async function finishKnownSignature(
+  signature: string,
+  guardInstructionIndex: number,
+  ports: StaleSubmissionPorts,
+  clock: StaleRecoveryClock,
+): Promise<ConfirmedChainOutcome> {
+  ports.onKnownSignature?.(signature);
+  const pendingConfirm: { outcome: ConfirmedChainOutcome | null; error: unknown; settled: boolean } = {
+    outcome: null,
+    error: undefined,
+    settled: false,
+  };
+  let markSettled: () => void = () => undefined;
+  const done = new Promise<void>((resolve) => { markSettled = resolve; });
+  void Promise.resolve().then(() => ports.confirm(signature, guardInstructionIndex)).then(
+    (outcome) => {
+      pendingConfirm.outcome = outcome;
+      pendingConfirm.settled = true;
+      markSettled();
+    },
+    (error: unknown) => {
+      pendingConfirm.error = error;
+      pendingConfirm.settled = true;
+      markSettled();
+    },
+  );
+  await settlePendingReactions();
+  if (pendingConfirm.outcome) return pendingConfirm.outcome;
+  if (pendingConfirm.error instanceof StaleAuthorizationExpired) throw pendingConfirm.error;
+  if (!pendingConfirm.settled) {
+    await waitUntilSettled(done, clock.recoveryWindowMs, clock.sleep);
+    await settlePendingReactions();
+  }
+  if (pendingConfirm.outcome) return pendingConfirm.outcome;
+  if (pendingConfirm.error instanceof StaleAuthorizationExpired) throw pendingConfirm.error;
+  return reconcileKnownSignature(signature, guardInstructionIndex, ports, clock, pendingConfirm);
+}
+
 async function signatureVisible(connection: ReturnType<typeof createSolanaRpc>, signature: string): Promise<boolean> {
   try {
     const { value } = await connection.getSignatureStatuses([signature as Signature], { searchTransactionHistory: true }).send();
@@ -1362,6 +1489,8 @@ export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSu
   const pollMs = ports.pollMs ?? STALE_STATUS_POLL_MS;
   const now = ports.now ?? ((): number => performance.now());
   const sleep = ports.sleep ?? ((ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); }));
+  const clock = { recoveryWindowMs, pollMs, now, sleep };
+  const finishKnown = (signature: string): Promise<ConfirmedChainOutcome> => finishKnownSignature(signature, held.guardInstructionIndex, ports, clock);
   const snapshot: { current: StaleSendSnapshot } = { current: { kind: "pending" } };
   let markSettled: () => void = () => undefined;
   const sendDone = new Promise<void>((resolve) => { markSettled = resolve; });
@@ -1379,7 +1508,7 @@ export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSu
   await waitUntilSettled(sendDone, timeoutMs, sleep);
   await settlePendingReactions();
   const immediate = classifyStaleSend(snapshot.current, expectedSignature);
-  if (immediate === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+  if (immediate === "confirm") return finishKnown(expectedSignature);
   if (immediate === "expired") throw new StaleAuthorizationExpired();
   if (immediate === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
   if (immediate === "rejected") {
@@ -1392,7 +1521,7 @@ export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSu
   const started = now();
   while (now() - started < recoveryWindowMs) {
     const during = classifyStaleSend(snapshot.current, expectedSignature);
-    if (during === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+    if (during === "confirm") return finishKnown(expectedSignature);
     if (during === "expired") throw new StaleAuthorizationExpired();
     if (during === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
     if (during === "rejected") {
@@ -1404,10 +1533,10 @@ export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSu
     if (remaining <= 0) break;
     const beforeObserve = now();
     if (await observeWithin(ports.observeSignature, expectedSignature, Math.min(pollMs, remaining), sleep)) {
-      return ports.confirm(expectedSignature, held.guardInstructionIndex);
+      return finishKnown(expectedSignature);
     }
     const observedClass = classifyStaleSend(snapshot.current, expectedSignature);
-    if (observedClass === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+    if (observedClass === "confirm") return finishKnown(expectedSignature);
     if (observedClass === "expired") throw new StaleAuthorizationExpired();
     if (observedClass === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
     if (observedClass === "rejected") {
@@ -1421,7 +1550,7 @@ export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSu
     if (pause > 0) await sleep(pause);
   }
   const finalClass = classifyStaleSend(snapshot.current, expectedSignature);
-  if (finalClass === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+  if (finalClass === "confirm") return finishKnown(expectedSignature);
   if (finalClass === "expired") throw new StaleAuthorizationExpired();
   if (finalClass === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
   if (finalClass === "rejected") {
@@ -1434,13 +1563,17 @@ export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSu
 
 export async function submitHeld(held: HeldAuthorization, hooks?: {
   readonly onExpectedSignature?: (signature: string) => void;
+  readonly onKnownSignature?: (signature: string) => void;
   readonly onChecking?: () => void;
+  readonly onReconciling?: () => void;
 }): Promise<ConfirmedChainOutcome> {
   await verifyPublicEnvironment();
   const connection = client();
   return runStaleSubmission(held, {
     ...(hooks?.onExpectedSignature ? { onExpectedSignature: hooks.onExpectedSignature } : {}),
+    ...(hooks?.onKnownSignature ? { onKnownSignature: hooks.onKnownSignature } : {}),
     ...(hooks?.onChecking ? { onChecking: hooks.onChecking } : {}),
+    ...(hooks?.onReconciling ? { onReconciling: hooks.onReconciling } : {}),
     send: (bytes) => connection.sendTransaction(encodeWire(bytes) as Parameters<ReturnType<typeof createSolanaRpc>["sendTransaction"]>[0], {
       encoding: "base64",
       skipPreflight: true,
@@ -1448,6 +1581,7 @@ export async function submitHeld(held: HeldAuthorization, hooks?: {
     }).send(),
     observeSignature: (signature) => signatureVisible(connection, signature),
     confirm: (signature, guardInstructionIndex) => confirmSignature(signature, guardInstructionIndex),
+    readChainOutcome: (signature, guardInstructionIndex) => loadConfirmedOutcome(connection, signature, guardInstructionIndex),
   });
 }
 
