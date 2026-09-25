@@ -25,6 +25,7 @@ import {
   chainReadyForStaleSubmit,
   DevnetSubmissionError,
   currentBlockHeight,
+  demoAuthorizationOpensInSeconds,
   detectPhantom,
   devnetExplorerUrl,
   formatMultiplier,
@@ -32,6 +33,7 @@ import {
   prepareLiveSession,
   presentationCountdownSeconds,
   randomScenario,
+  readChainClock,
   readChainSnapshot,
   readSessionBalances,
   requestDevnetSol,
@@ -64,6 +66,7 @@ export function LiveDevnetExperience(): ReactNode {
   const [session, setSession] = useState<PreparedSession | null>(null);
   const [held, setHeld] = useState<HeldAuthorization | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [opensIn, setOpensIn] = useState<number | null>(null);
   const [staleSignature, setStaleSignature] = useState<string | null>(null);
   const [updatedSignature, setUpdatedSignature] = useState<string | null>(null);
   const [movement, setMovement] = useState<string | null>(null);
@@ -79,6 +82,28 @@ export function LiveDevnetExperience(): ReactNode {
       .catch(() => { if (!cancelled) setEnvironment("Devnet verification failed"); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (phase !== "armed" || !session) return;
+    let cancelled = false;
+    const poll = async (): Promise<void> => {
+      try {
+        const clock = await readChainClock();
+        if (cancelled) return;
+        const seconds = demoAuthorizationOpensInSeconds(clock, session.activation);
+        setOpensIn(seconds);
+        if (seconds === 0) return;
+        window.setTimeout(() => { if (!cancelled) void poll(); }, 1000);
+      } catch (error) {
+        if (!cancelled) {
+          setPhase("failed");
+          setDetail(error instanceof Error ? error.message : "The Devnet clock could not be read.");
+        }
+      }
+    };
+    void poll();
+    return () => { cancelled = true; };
+  }, [phase, session]);
 
   useEffect(() => {
     if (phase !== "locked" || !session || !held) return;
@@ -183,7 +208,7 @@ export function LiveDevnetExperience(): ReactNode {
   }
 
   async function authorize(): Promise<void> {
-    if (!provider || !connectedWallet || !session || held) return;
+    if (!provider || !connectedWallet || !session || held || opensIn !== 0) return;
     setPhase("signing");
     try {
       const signed = await authorizePending({
@@ -247,6 +272,7 @@ export function LiveDevnetExperience(): ReactNode {
     setSession(null);
     setHeld(null);
     setCountdown(null);
+    setOpensIn(null);
     setStaleSignature(null);
     setUpdatedSignature(null);
     setMovement(null);
@@ -317,10 +343,13 @@ export function LiveDevnetExperience(): ReactNode {
           <button type="button" className="button button--primary focus-ring" disabled={!wallet || locked || busy} onClick={() => void prepare()}>
             {phase === "preparing" ? "Preparing…" : "Prepare"}
           </button>
-          <button type="button" className="button button--primary focus-ring" disabled={phase !== "armed" || busy} onClick={() => void authorize()}>
+          <button type="button" className="button button--primary focus-ring" disabled={phase !== "armed" || busy || opensIn !== 0} onClick={() => void authorize()}>
             Authorize
           </button>
         </div>
+      ) : null}
+      {phase === "armed" && opensIn !== 0 ? (
+        <p className="live-devnet__note" aria-live="polite">Authorization opens in {opensIn ?? "—"}s</p>
       ) : null}
 
       {phase === "locked" || phase === "activating" ? (

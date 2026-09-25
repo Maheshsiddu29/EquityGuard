@@ -141,10 +141,24 @@ export const ACTIVATION_DELAY_SECONDS = 35;
 
 /**
  * Phantom is not opened when fewer than this many chain seconds remain.
- * Authorize is enabled as soon as at least this much time remains.
- * There is no extra wait once that minimum is met.
+ * authorizePending adds no wait of its own once this minimum is met; the
+ * page's demo window below decides when Authorize is offered.
  */
 export const MIN_AUTHORIZATION_REMAINING_SECONDS = 8;
+
+/**
+ * Public demo presentation only. This is not a protocol security bound.
+ * The page offers Authorize once the chain clock is within this many seconds
+ * of activation, so the signed pending transaction is held only briefly.
+ * Nothing is fetched, built, or signed while the page waits for it.
+ */
+export const DEMO_AUTHORIZATION_MAX_REMAINING_SECONDS = 15;
+
+/** Chain seconds until the demo offers Authorize. Zero means it is offered now. */
+export function demoAuthorizationOpensInSeconds(chainUnixTimestamp: bigint, activation: bigint): number {
+  const wait = activation - chainUnixTimestamp - BigInt(DEMO_AUTHORIZATION_MAX_REMAINING_SECONDS);
+  return wait > BigInt(0) ? Number(wait) : 0;
+}
 
 export const CLOCK_CROSSING_WINDOW: ProtectionWindow = { beforeSecs: 0, afterSecs: 0 };
 

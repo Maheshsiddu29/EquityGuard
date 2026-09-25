@@ -15,6 +15,7 @@ import {
   AUTHORIZATION_WINDOW_MISSED_MESSAGE,
   ActivationPhase,
   CLOCK_CROSSING_WINDOW,
+  DEMO_AUTHORIZATION_MAX_REMAINING_SECONDS,
   DEMO_TRANSFER_RAW,
   DEVNET_RPC_URL,
   MIN_AUTHORIZATION_REMAINING_SECONDS,
@@ -30,6 +31,7 @@ import {
   assertSameSignedBytes,
   authorizeDecision,
   chainReadyForStaleSubmit,
+  demoAuthorizationOpensInSeconds,
   expectationForSnapshot,
   formatMultiplier,
   heldWaitDecision,
@@ -149,6 +151,47 @@ test("setup arms a fresh session and Authorize is immediate when enough chain ti
     "create-ata",
   ]);
   assert.equal(instructions[3].accounts?.[1]?.role, AccountRole.WRITABLE_SIGNER);
+});
+
+test("the demo offers Authorize only within 15 chain seconds of activation", async () => {
+  const chain = 1_700_000_000n;
+  const activation = activationTimestamp(chain);
+  assert.equal(DEMO_AUTHORIZATION_MAX_REMAINING_SECONDS, 15);
+  assert.equal(ACTIVATION_DELAY_SECONDS, 35);
+  assert.equal(MIN_AUTHORIZATION_REMAINING_SECONDS, 8);
+  assert.ok(MIN_AUTHORIZATION_REMAINING_SECONDS < DEMO_AUTHORIZATION_MAX_REMAINING_SECONDS);
+  assert.ok(DEMO_AUTHORIZATION_MAX_REMAINING_SECONDS < ACTIVATION_DELAY_SECONDS);
+
+  assert.equal(demoAuthorizationOpensInSeconds(chain, activation), 20);
+  assert.equal(demoAuthorizationOpensInSeconds(activation - 22n, activation), 7);
+  assert.equal(demoAuthorizationOpensInSeconds(activation - 16n, activation), 1);
+  assert.equal(demoAuthorizationOpensInSeconds(activation - 15n, activation), 0);
+  assert.equal(demoAuthorizationOpensInSeconds(activation - 9n, activation), 0);
+  assert.equal(authorizeDecision(snapshot({ clock: activation - 15n, activation }), scenario, activation), "sign");
+  assert.equal(authorizeDecision(snapshot({ clock: activation - 8n, activation }), scenario, activation), "sign");
+  assert.equal(demoAuthorizationOpensInSeconds(activation - 7n, activation), 0);
+  assert.equal(authorizeDecision(snapshot({ clock: activation - 7n, activation }), scenario, activation), "missed");
+
+  const root = new URL("../", import.meta.url);
+  const [policy, component] = await Promise.all([
+    readFile(new URL("lib/devnet-public.ts", root), "utf8"),
+    readFile(new URL("components/demo/live-devnet-experience.tsx", root), "utf8"),
+  ]);
+  const opens = policy.slice(policy.indexOf("export function demoAuthorizationOpensInSeconds"), policy.indexOf("export const CLOCK_CROSSING_WINDOW"));
+  assert.doesNotMatch(opens, /client\(|getLatestBlockhash|await/);
+
+  const waiting = component.slice(component.indexOf('if (phase !== "armed" || !session) return;'), component.indexOf('if (phase !== "locked" || !session || !held) return;'));
+  assert.match(waiting, /readChainClock\(\)/);
+  assert.match(waiting, /demoAuthorizationOpensInSeconds\(clock, session\.activation\)/);
+  assert.doesNotMatch(waiting, /authorizePending|getLatestBlockhash|provider|signTransaction|request\(|setSession|activationTimestamp|prepareLiveSession/);
+
+  const authorize = component.slice(component.indexOf("async function authorize()"), component.indexOf("async function confirmUpdated()"));
+  assert.match(authorize, /opensIn !== 0\) return;/);
+  assert.ok(authorize.indexOf("opensIn !== 0") < authorize.indexOf('setPhase("signing")'));
+  assert.ok(authorize.indexOf("opensIn !== 0") < authorize.indexOf("authorizePending("));
+  assert.match(authorize, /AuthorizationWindowMissed\) \{\s*setPhase\("missed"\)/);
+  assert.match(component, /disabled=\{phase !== "armed" \|\| busy \|\| opensIn !== 0\} onClick=\{\(\) => void authorize\(\)\}/);
+  assert.match(component, /Authorization opens in \{opensIn \?\? "—"\}s/);
 });
 
 test("Authorize has no pre-sign wait and fetches the pending blockhash at authorization", async () => {
