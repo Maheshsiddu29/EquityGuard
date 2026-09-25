@@ -46,6 +46,7 @@ import {
   parseCustomError,
   prepareSessionInstructions,
   sha256Hex,
+  staleSendExpiry,
   staleSendFailure,
   unexpectedStaleResultCopy,
   verifyWalletSignedTransaction,
@@ -211,9 +212,33 @@ test("the countdown cannot submit and only the chain clock can", () => {
   const crossed = snapshot({ clock: activation + 1n, activation });
   assert.equal(chainReadyForStaleSubmit(crossed, expectation), true);
   assert.equal(submissionPermitted({ displayedSeconds: 0, chainReady: true }), true);
-  assert.equal(heldWaitDecision({ blockHeight: 10n, lastValidBlockHeight: 9n, ready: true }), "expired");
+  assert.equal(heldWaitDecision({ blockHeight: 10n, lastValidBlockHeight: 9n, ready: true }), "submit");
   assert.equal(heldWaitDecision({ blockHeight: 4n, lastValidBlockHeight: 9n, ready: false }), "wait");
   assert.equal(heldWaitDecision({ blockHeight: 4n, lastValidBlockHeight: 9n, ready: true }), "submit");
+  assert.match(STALE_AUTHORIZATION_EXPIRED_MESSAGE, /not a protection result/);
+});
+
+test("a polled block height cannot abandon the sealed stale authorization", async () => {
+  const policy = await readFile(new URL("../lib/devnet-public.ts", import.meta.url), "utf8");
+  const submit = policy.slice(policy.indexOf("export async function submitHeld"), policy.indexOf("export async function readSessionBalances"));
+  const beforeSend = submit.slice(0, submit.indexOf("sendTransaction"));
+  assert.equal(heldWaitDecision({ blockHeight: 50n, lastValidBlockHeight: 10n, ready: true }), "submit");
+  assert.equal(heldWaitDecision({ blockHeight: 50n, lastValidBlockHeight: 10n, ready: false }), "wait");
+  assert.doesNotMatch(beforeSend, /getBlockHeight|lastValidBlockHeight/);
+  assert.match(beforeSend, /Uint8Array\.from\(held\.signedBytes\)/);
+  assert.match(beforeSend, /assertSameSignedBytes\(held, bytes\)/);
+  assert.match(submit, /skipPreflight:\s*true/);
+  assert.match(submit, /confirmSignature\(held\.signature, held\.guardInstructionIndex\)/);
+  assert.equal(submit.match(/connection\.sendTransaction/g)?.length, 1);
+  assert.doesNotMatch(submit, /getLatestBlockhash|signTransaction|compileTransaction|signAndSend/);
+  assert.equal(staleSendExpiry(new Error("Transaction simulation failed: Blockhash not found")), true);
+  assert.equal(staleSendExpiry(new Error("Blockhash not found")), true);
+  assert.equal(staleSendExpiry(new Error("block height exceeded")), true);
+  assert.equal(staleSendExpiry(new Error("Block height exceeded for this transaction")), true);
+  assert.equal(staleSendExpiry(new Error("network down")), false);
+  assert.match(submit, /if \(staleSendExpiry\(error\)\) throw new StaleAuthorizationExpired\(\)/);
+  const expiry = new Error("blockhash not found");
+  assert.equal(staleSendFailure(expiry).kind, "SUBMISSION_FAILED");
   assert.match(STALE_AUTHORIZATION_EXPIRED_MESSAGE, /not a protection result/);
 });
 

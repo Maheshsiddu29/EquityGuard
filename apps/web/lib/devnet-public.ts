@@ -354,12 +354,20 @@ export function chainReadyForStaleSubmit(snapshot: GuardSnapshot, expectation: A
   return checkGuardOffline(expectation, snapshot.state, snapshot.clock.unixTimestamp) === "ActivationPhaseChanged";
 }
 
+/**
+ * Wait until the sealed authorization should produce ActivationPhaseChanged,
+ * then submit those exact bytes. A later processed-height read is not Solana's
+ * decision about this transaction: a public RPC can report that height from
+ * another node. `lastValidBlockHeight` stays on the held authorization for
+ * diagnostics. Expiry is only a sendTransaction rejection of these bytes.
+ */
 export function heldWaitDecision(input: {
   readonly blockHeight: bigint;
   readonly lastValidBlockHeight: bigint;
   readonly ready: boolean;
 }): "wait" | "submit" | "expired" {
-  if (input.blockHeight > input.lastValidBlockHeight) return "expired";
+  void input.blockHeight;
+  void input.lastValidBlockHeight;
   return input.ready ? "submit" : "wait";
 }
 
@@ -1043,6 +1051,12 @@ export class DevnetSubmissionError extends Error {
   }
 }
 
+/** True only when sendTransaction itself rejects these exact signed bytes. */
+export function staleSendExpiry(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /blockhash not found|block height exceeded/i.test(message);
+}
+
 export function staleSendFailure(error: unknown): DevnetSubmissionError {
   const message = error instanceof Error ? error.message : String(error);
   if (/preflight|simulation failed/i.test(message)) {
@@ -1214,8 +1228,6 @@ export async function currentBlockHeight(): Promise<bigint> {
 export async function submitHeld(held: HeldAuthorization): Promise<ConfirmedChainOutcome> {
   await verifyPublicEnvironment();
   const connection = client();
-  const height = await connection.getBlockHeight({ commitment: "processed" }).send();
-  if (height > held.lastValidBlockHeight) throw new StaleAuthorizationExpired();
   const bytes = Uint8Array.from(held.signedBytes);
   assertSameSignedBytes(held, bytes);
   let submitted: string;
@@ -1226,8 +1238,7 @@ export async function submitHeld(held: HeldAuthorization): Promise<ConfirmedChai
       preflightCommitment: "confirmed",
     }).send();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/blockhash not found|block height exceeded/i.test(message)) throw new StaleAuthorizationExpired();
+    if (staleSendExpiry(error)) throw new StaleAuthorizationExpired();
     if (error instanceof DevnetSubmissionError) throw error;
     throw staleSendFailure(error);
   }
