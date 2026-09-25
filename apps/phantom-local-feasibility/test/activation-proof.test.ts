@@ -118,7 +118,7 @@ test("refresh cannot be derived before the current phase activates", async () =>
   assert.ok(!h.events.includes("sign"));
 });
 test("derived local mint preserves source bytes and both multiplier bytes", () => {
-  const fixture = JSON.parse(readFileSync(new URL("../../../tmp/m9d-c1/accounts/XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ.json", import.meta.url), "utf8"));
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/m9d-c1/accounts/XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ.json", import.meta.url), "utf8"));
   const source = Uint8Array.from(Buffer.from(fixture.account.data[0], "base64"));
   const before = source.slice();
   const derived = deriveLocalMint(source, address("CBquXGAiR8StFU3HvPNuwyNwmrkY3yNGwL9bjZvVLb4X"), 12345678900n);

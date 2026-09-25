@@ -52,10 +52,10 @@ const ZERO_WINDOW = { beforeSecs: 0, afterSecs: 0 };
 const DEPLOYMENT_DIGEST = "guard|programdata|d7d59ccd|1111|NO_USABLE_AUTHORITY|REVIEWED_BINARY";
 
 const fixture = JSON.parse(
-  readFileSync(new URL("../../../tmp/m9d-c1/route-fixture.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./fixtures/m9d-c1/route-fixture.json", import.meta.url), "utf8"),
 ) as { adapterKind: number; computeUnitLimit: number; build: unknown };
 const mintAccount = JSON.parse(
-  readFileSync(new URL("../../../tmp/m9d-c1/accounts/XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./fixtures/m9d-c1/accounts/XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ.json", import.meta.url), "utf8"),
 ) as { account: { data: [string, string] } };
 const CAPTURED = decodeProtectedState(TOKEN_2022_PROGRAM_ADDRESS, Uint8Array.from(Buffer.from(mintAccount.account.data[0], "base64")));
 /** The local mint as armed: captured multipliers, activation moved to localT. */

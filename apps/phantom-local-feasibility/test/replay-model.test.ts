@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -18,7 +19,8 @@ import {
 } from "../src/replay-model.ts";
 
 const ROOT = new URL("../../../", import.meta.url).pathname;
-const FIXTURE = JSON.parse(readFileSync(join(ROOT, "tmp/m9d-c1/route-fixture.json"), "utf8")) as {
+const ROUTE_FIXTURE_BYTES = readFileSync(new URL("./fixtures/m9d-c1/route-fixture.json", import.meta.url));
+const FIXTURE = JSON.parse(ROUTE_FIXTURE_BYTES.toString("utf8")) as {
   readonly adapterKind: 2;
   readonly computeUnitLimit: number;
   readonly build: unknown;
@@ -32,6 +34,10 @@ const AUTHORIZATION = expectationFromRecordedAuthorization({
   newMultiplierEffectiveTimestamp: "1789432200",
   expectedPhase: 1,
   window: { beforeSecs: 0, afterSecs: 0 },
+});
+
+test("committed route fixture is the captured M9D-C1 input", () => {
+  assert.equal(createHash("sha256").update(ROUTE_FIXTURE_BYTES).digest("hex"), "d5d76b2ccf222ea9f9a53e340a9cd76540a24e133966838168a726a428cc1914");
 });
 
 test("Phantom cleanly replaces the sole fixture signer and canonical user ATAs", async () => {

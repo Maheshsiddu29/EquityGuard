@@ -49,10 +49,10 @@ const GUARD = address(EQUITY_GUARD_PROGRAM);
 const SUCCESS_LOGS = [EQUITY_GUARD_PROGRAM, JUPITER_PROGRAM, WHIRLPOOL_PROGRAM].map((program) => `Program ${program} success`);
 
 const fixture = JSON.parse(
-  readFileSync(new URL("../../../tmp/m9d-c1/route-fixture.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./fixtures/m9d-c1/route-fixture.json", import.meta.url), "utf8"),
 ) as { adapterKind: number; computeUnitLimit: number; build: unknown };
 const mintAccount = JSON.parse(
-  readFileSync(new URL("../../../tmp/m9d-c1/accounts/XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./fixtures/m9d-c1/accounts/XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ.json", import.meta.url), "utf8"),
 ) as { account: { data: [string, string] } };
 const KOX_STATE = decodeProtectedState(TOKEN_2022_PROGRAM_ADDRESS, Uint8Array.from(Buffer.from(mintAccount.account.data[0], "base64")));
 
