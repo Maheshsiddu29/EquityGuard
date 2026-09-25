@@ -22,6 +22,10 @@ import {
   PUBLIC_GENESIS,
   SCENARIO_CATALOG,
   STALE_AUTHORIZATION_EXPIRED_MESSAGE,
+  STALE_SEND_TIMEOUT_MS,
+  STALE_STATUS_POLL_MS,
+  STALE_STATUS_WINDOW_MS,
+  SUBMISSION_STATUS_UNKNOWN_MESSAGE,
   acceptActivationRejection,
   acceptUpdatedExecution,
   activatedReviewDecision,
@@ -46,8 +50,13 @@ import {
   parseCustomError,
   prepareSessionInstructions,
   sha256Hex,
+  classifyStaleSend,
+  runStaleSubmission,
+  signatureFromSignedBytes,
+  staleSendAmbiguous,
   staleSendExpiry,
   staleSendFailure,
+  SubmissionStatusUnknown,
   unexpectedStaleResultCopy,
   verifyWalletSignedTransaction,
   startAttempt,
@@ -220,26 +229,182 @@ test("the countdown cannot submit and only the chain clock can", () => {
 
 test("a polled block height cannot abandon the sealed stale authorization", async () => {
   const policy = await readFile(new URL("../lib/devnet-public.ts", import.meta.url), "utf8");
+  const runner = policy.slice(policy.indexOf("export async function runStaleSubmission"), policy.indexOf("export async function submitHeld"));
   const submit = policy.slice(policy.indexOf("export async function submitHeld"), policy.indexOf("export async function readSessionBalances"));
-  const beforeSend = submit.slice(0, submit.indexOf("sendTransaction"));
+  const beforeSend = runner.slice(0, runner.indexOf("ports.send(bytes)"));
   assert.equal(heldWaitDecision({ blockHeight: 50n, lastValidBlockHeight: 10n, ready: true }), "submit");
   assert.equal(heldWaitDecision({ blockHeight: 50n, lastValidBlockHeight: 10n, ready: false }), "wait");
   assert.doesNotMatch(beforeSend, /getBlockHeight|lastValidBlockHeight/);
   assert.match(beforeSend, /Uint8Array\.from\(held\.signedBytes\)/);
   assert.match(beforeSend, /assertSameSignedBytes\(held, bytes\)/);
   assert.match(submit, /skipPreflight:\s*true/);
-  assert.match(submit, /confirmSignature\(held\.signature, held\.guardInstructionIndex\)/);
+  assert.match(runner, /ports\.confirm\(expectedSignature, held\.guardInstructionIndex\)/);
   assert.equal(submit.match(/connection\.sendTransaction/g)?.length, 1);
-  assert.doesNotMatch(submit, /getLatestBlockhash|signTransaction|compileTransaction|signAndSend/);
+  assert.doesNotMatch(`${runner}\n${submit}`, /getLatestBlockhash|signTransaction|compileTransaction|signAndSend|Promise\.race|while\s*\(\s*true\s*\)/);
   assert.equal(staleSendExpiry(new Error("Transaction simulation failed: Blockhash not found")), true);
   assert.equal(staleSendExpiry(new Error("Blockhash not found")), true);
   assert.equal(staleSendExpiry(new Error("block height exceeded")), true);
   assert.equal(staleSendExpiry(new Error("Block height exceeded for this transaction")), true);
   assert.equal(staleSendExpiry(new Error("network down")), false);
-  assert.match(submit, /if \(staleSendExpiry\(error\)\) throw new StaleAuthorizationExpired\(\)/);
-  const expiry = new Error("blockhash not found");
-  assert.equal(staleSendFailure(expiry).kind, "SUBMISSION_FAILED");
+  assert.match(runner, /throw new StaleAuthorizationExpired\(\)/);
+  assert.match(runner, /throw new SubmissionStatusUnknown\(expectedSignature\)/);
+  assert.equal(classifyStaleSend({ kind: "error", error: new Error("blockhash not found") }, "sig"), "expired");
+  assert.equal(classifyStaleSend({ kind: "error", error: new Error("block height exceeded") }, "sig"), "expired");
   assert.match(STALE_AUTHORIZATION_EXPIRED_MESSAGE, /not a protection result/);
+});
+
+test("a lost stale send is recovered from the sealed signature", async () => {
+  const presented = compiledTransfer(DEMO_TRANSFER_RAW);
+  const signedBytes = markedSignedWire(presented.transaction);
+  const signature = signatureFromSignedBytes(signedBytes);
+  assert.equal(signature, verifyWalletSignedTransaction(presented.transaction, signedBytes).signature);
+  assert.equal(signature.length > 0, true);
+
+  const held = {
+    signedBytes,
+    sha256: sha256Hex(signedBytes),
+    lastValidBlockHeight: 9n,
+    signature,
+    guardInstructionIndex: 2,
+    expectation: expectationForSnapshot(snapshot({ clock: 40n, activation: 50n })),
+  };
+  const confirmed = {
+    signature,
+    slot: 4n,
+    error: { InstructionError: [2, { Custom: 12 }] },
+    customError: { instructionIndex: 2, code: 12 },
+    logs: [`Program ${reviewedProgramId} invoke [1]`],
+    guardInstructionIndex: 2,
+  };
+  const clock = { now: 0 };
+  const sleep = async (ms) => { clock.now += ms; };
+  const ports = (send, observe) => ({
+    send,
+    observeSignature: observe,
+    confirm: async (observed, guardInstructionIndex) => ({ ...confirmed, signature: observed, guardInstructionIndex }),
+    timeoutMs: STALE_SEND_TIMEOUT_MS,
+    recoveryWindowMs: STALE_STATUS_WINDOW_MS,
+    pollMs: STALE_STATUS_POLL_MS,
+    now: () => clock.now,
+    sleep,
+  });
+
+  let sent = null;
+  const matched = await runStaleSubmission(held, ports(
+    async (bytes) => {
+      sent = bytes;
+      return signature;
+    },
+    async () => { throw new Error("status lookup is not used when send returns"); },
+  ));
+  assert.deepEqual(sent, signedBytes);
+  assert.equal(sent === held.signedBytes, false);
+  assert.equal(matched.signature, signature);
+  assert.equal(matched.guardInstructionIndex, 2);
+  assert.equal(acceptActivationRejection({
+    outcome: matched,
+    before: balances,
+    after: balances,
+    programId: reviewedProgramId,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), true);
+
+  await assert.rejects(
+    runStaleSubmission(held, ports(async () => "different-signature", async () => false)),
+    /different transaction signature/,
+  );
+  await assert.rejects(
+    runStaleSubmission({ ...held, signature: "not-the-sealed-signature" }, ports(async () => signature, async () => false)),
+    /does not match the signed bytes/,
+  );
+
+  for (const message of ["Blockhash not found", "block height exceeded"]) {
+    let lookups = 0;
+    await assert.rejects(
+      runStaleSubmission(held, ports(
+        async () => { throw new Error(message); },
+        async () => { lookups += 1; return false; },
+      )),
+      (error) => error instanceof Error && error.name === "StaleAuthorizationExpired" && error.code === "STALE_AUTHORIZATION_EXPIRED",
+    );
+    assert.equal(lookups, 0);
+  }
+
+  clock.now = 0;
+  let ambiguousLookups = 0;
+  let ambiguousSends = 0;
+  let checking = false;
+  await assert.rejects(
+    runStaleSubmission(held, {
+      ...ports(
+        () => { ambiguousSends += 1; return new Promise(() => undefined); },
+        async (observed) => {
+          assert.equal(observed, signature);
+          ambiguousLookups += 1;
+          return false;
+        },
+      ),
+      onChecking: () => { checking = true; },
+    }),
+    (error) => error instanceof SubmissionStatusUnknown
+      && error.code === "SUBMISSION_STATUS_UNKNOWN"
+      && error.signature === signature
+      && error.message === SUBMISSION_STATUS_UNKNOWN_MESSAGE
+      && !(error instanceof Error && error.name === "StaleAuthorizationExpired"),
+  );
+  assert.equal(checking, true);
+  assert.equal(ambiguousSends, 1);
+  assert.equal(ambiguousLookups > 0, true);
+  assert.equal(clock.now, STALE_SEND_TIMEOUT_MS + STALE_STATUS_WINDOW_MS);
+  assert.doesNotMatch(SUBMISSION_STATUS_UNKNOWN_MESSAGE, /ActivationPhaseChanged|STALE_AUTHORIZATION_EXPIRED|protection result/);
+
+  clock.now = 0;
+  let foundLookups = 0;
+  const recovered = await runStaleSubmission(held, ports(
+    () => new Promise(() => undefined),
+    async (observed) => {
+      assert.equal(observed, signature);
+      foundLookups += 1;
+      return true;
+    },
+  ));
+  assert.equal(foundLookups, 1);
+  assert.equal(recovered.signature, signature);
+  assert.equal(acceptActivationRejection({
+    outcome: recovered,
+    before: balances,
+    after: balances,
+    programId: reviewedProgramId,
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  }), true);
+  assert.equal(clock.now, STALE_SEND_TIMEOUT_MS);
+
+  clock.now = 0;
+  let networkSends = 0;
+  await assert.rejects(
+    runStaleSubmission(held, ports(
+      async () => { networkSends += 1; throw new Error("network down"); },
+      async () => false,
+    )),
+    (error) => error instanceof SubmissionStatusUnknown && networkSends === 1,
+  );
+  assert.equal(staleSendAmbiguous(new Error("network down")), true);
+  assert.equal(classifyStaleSend({ kind: "pending" }, signature), "pending");
+  assert.equal(classifyStaleSend({ kind: "error", error: new Error("network down") }, signature), "ambiguous");
+  assert.notEqual(classifyStaleSend({ kind: "error", error: new Error("network down") }, signature), "rejected");
+
+  const component = await readFile(new URL("../components/demo/live-devnet-experience.tsx", import.meta.url), "utf8");
+  assert.match(component, /Checking whether the signed transaction reached Solana\.\.\./);
+  assert.match(component, /SUBMISSION_STATUS_UNKNOWN_TITLE/);
+  assert.match(component, /Expected signature \{expectedSignature \?\? "None"\}/);
+  assert.match(component, /not confirmed/);
+  assert.match(component, /setPhase\("unknown"\)/);
+  const effect = component.slice(component.indexOf("submitHeld(held"), component.indexOf("async function connect"));
+  const caught = effect.slice(effect.indexOf(".catch("));
+  assert.equal(effect.includes("SUBMISSION_FAILED"), false);
+  assert.ok(caught.indexOf('setPhase("unknown")') < caught.indexOf('setPhase("failed")'));
+  assert.equal(Number.isFinite(STALE_SEND_TIMEOUT_MS) && STALE_SEND_TIMEOUT_MS > 0, true);
+  assert.equal(Number.isFinite(STALE_STATUS_WINDOW_MS) && STALE_STATUS_WINDOW_MS > 0, true);
 });
 
 test("stale success is only ActivationPhaseChanged with zero movement", () => {
@@ -429,7 +594,7 @@ test("a landed ActivationPhaseChanged rejection is recognized at the guard index
     tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
   }), false);
 
-  const effect = component.slice(component.indexOf("submitHeld(held)"), component.indexOf("async function connect"));
+  const effect = component.slice(component.indexOf("submitHeld(held,"), component.indexOf("async function connect"));
   assert.ok(effect.indexOf("setStaleSignature(outcome.signature)") < effect.indexOf("acceptActivationRejection"));
   assert.doesNotMatch(effect, /setStaleSignature\(null\)/);
   const preflight = staleSendFailure(new Error("Transaction simulation failed"));

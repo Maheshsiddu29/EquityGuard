@@ -162,6 +162,16 @@ export const STALE_AUTHORIZATION_EXPIRED_TITLE = "STALE_AUTHORIZATION_EXPIRED";
 export const STALE_AUTHORIZATION_EXPIRED_MESSAGE =
   "The signed authorization expired before Solana could land it. This is not a protection result. Start a new attempt.";
 
+export const SUBMISSION_STATUS_UNKNOWN_TITLE = "SUBMISSION_STATUS_UNKNOWN";
+export const SUBMISSION_STATUS_UNKNOWN_MESSAGE =
+  "The RPC response was interrupted and StateGuard could not confirm whether the signed transaction reached Solana. Check the transaction status before starting another attempt.";
+
+/** Bounds the stale send RPC. A timeout starts signature recovery and is not a failure. */
+export const STALE_SEND_TIMEOUT_MS = 12_000;
+/** Bounds how long recovery looks for the signature already inside the sealed bytes. */
+export const STALE_STATUS_WINDOW_MS = 20_000;
+export const STALE_STATUS_POLL_MS = 2_000;
+
 export const PROTECTION_EXPLANATION =
   "The asset's economic state changed after authorization. StateGuard required a new authorization instead of silently executing against the changed state.";
 
@@ -619,6 +629,16 @@ export class StaleAuthorizationExpired extends Error {
   }
 }
 
+export class SubmissionStatusUnknown extends Error {
+  readonly code = "SUBMISSION_STATUS_UNKNOWN" as const;
+  readonly signature: string;
+  constructor(signature: string) {
+    super(SUBMISSION_STATUS_UNKNOWN_MESSAGE);
+    this.name = "SubmissionStatusUnknown";
+    this.signature = signature;
+  }
+}
+
 export function sha256Hex(bytes: Uint8Array): string {
   return Array.from(sha256(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -1051,10 +1071,42 @@ export class DevnetSubmissionError extends Error {
   }
 }
 
+/** Signature carried by the sealed wire. Uses the same transaction decoder as wallet verification. */
+export function signatureFromSignedBytes(bytes: Uint8Array): string {
+  const signedTransaction = getTransactionDecoder().decode(bytes);
+  const signatureBytes = Object.values(signedTransaction.signatures)[0];
+  if (signatureBytes == null || signatureBytes.every((byte) => byte === 0)) {
+    throw new Error("Signed transaction has no signature");
+  }
+  return getBase58Decoder().decode(signatureBytes);
+}
+
 /** True only when sendTransaction itself rejects these exact signed bytes. */
 export function staleSendExpiry(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /blockhash not found|block height exceeded/i.test(message);
+}
+
+/** Transport and timeout failures do not prove Solana rejected the signed bytes. */
+export function staleSendAmbiguous(error: unknown): boolean {
+  if (staleSendExpiry(error)) return false;
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /timeout|timed out|network|fetch|ECONN|ENOTFOUND|EAI_AGAIN|socket|aborted|abort|502|503|504|429|gateway|unavailable|offline|connection/i.test(message);
+}
+
+type StaleSendSnapshot =
+  | { readonly kind: "pending" }
+  | { readonly kind: "value"; readonly signature: string }
+  | { readonly kind: "error"; readonly error: unknown };
+
+export type StaleSendClass = "pending" | "confirm" | "expired" | "rejected" | "ambiguous" | "mismatch";
+
+export function classifyStaleSend(snapshot: StaleSendSnapshot, expectedSignature: string): StaleSendClass {
+  if (snapshot.kind === "pending") return "pending";
+  if (snapshot.kind === "value") return snapshot.signature === expectedSignature ? "confirm" : "mismatch";
+  if (staleSendExpiry(snapshot.error)) return "expired";
+  if (staleSendAmbiguous(snapshot.error)) return "ambiguous";
+  return "rejected";
 }
 
 export function staleSendFailure(error: unknown): DevnetSubmissionError {
@@ -1225,25 +1277,178 @@ export async function currentBlockHeight(): Promise<bigint> {
   return client().getBlockHeight({ commitment: "processed" }).send();
 }
 
-export async function submitHeld(held: HeldAuthorization): Promise<ConfirmedChainOutcome> {
-  await verifyPublicEnvironment();
-  const connection = client();
+export interface StaleSubmissionPorts {
+  readonly send: (bytes: Uint8Array) => Promise<string>;
+  readonly observeSignature: (signature: string) => Promise<boolean>;
+  readonly confirm: (signature: string, guardInstructionIndex: number) => Promise<ConfirmedChainOutcome>;
+  readonly onExpectedSignature?: (signature: string) => void;
+  readonly onChecking?: () => void;
+  readonly timeoutMs?: number;
+  readonly recoveryWindowMs?: number;
+  readonly pollMs?: number;
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+async function settlePendingReactions(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function observeWithin(
+  observe: (signature: string) => Promise<boolean>,
+  signature: string,
+  timeoutMs: number,
+  sleep: (ms: number) => Promise<void>,
+): Promise<boolean> {
+  const snapshot: { current: boolean | null } = { current: null };
+  let markSettled: () => void = () => undefined;
+  const done = new Promise<void>((resolve) => { markSettled = resolve; });
+  void Promise.resolve().then(() => observe(signature)).then(
+    (seen) => {
+      snapshot.current = seen;
+      markSettled();
+    },
+    () => {
+      snapshot.current = false;
+      markSettled();
+    },
+  );
+  await settlePendingReactions();
+  if (snapshot.current !== null) return snapshot.current;
+  await waitUntilSettled(done, timeoutMs, sleep);
+  await settlePendingReactions();
+  return snapshot.current === true;
+}
+
+async function waitUntilSettled(done: Promise<void>, timeoutMs: number, sleep: (ms: number) => Promise<void>): Promise<void> {
+  let finished = false;
+  await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      resolve();
+    };
+    done.then(finish, finish);
+    void sleep(timeoutMs).then(finish);
+  });
+}
+
+async function signatureVisible(connection: ReturnType<typeof createSolanaRpc>, signature: string): Promise<boolean> {
+  try {
+    const { value } = await connection.getSignatureStatuses([signature as Signature], { searchTransactionHistory: true }).send();
+    return value[0] != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Submits the sealed bytes once. A lost RPC response is recovered by looking
+ * up the signature already inside those bytes. The timeout does not classify
+ * the transaction as failed.
+ */
+export async function runStaleSubmission(held: HeldAuthorization, ports: StaleSubmissionPorts): Promise<ConfirmedChainOutcome> {
   const bytes = Uint8Array.from(held.signedBytes);
   assertSameSignedBytes(held, bytes);
-  let submitted: string;
-  try {
-    submitted = await connection.sendTransaction(encodeWire(bytes) as Parameters<ReturnType<typeof createSolanaRpc>["sendTransaction"]>[0], {
-      encoding: "base64",
-      skipPreflight: true,
-      preflightCommitment: "confirmed",
-    }).send();
-  } catch (error) {
-    if (staleSendExpiry(error)) throw new StaleAuthorizationExpired();
+  const expectedSignature = signatureFromSignedBytes(bytes);
+  if (expectedSignature !== held.signature) throw new Error("Sealed signature does not match the signed bytes");
+  ports.onExpectedSignature?.(expectedSignature);
+
+  const timeoutMs = ports.timeoutMs ?? STALE_SEND_TIMEOUT_MS;
+  const recoveryWindowMs = ports.recoveryWindowMs ?? STALE_STATUS_WINDOW_MS;
+  const pollMs = ports.pollMs ?? STALE_STATUS_POLL_MS;
+  const now = ports.now ?? ((): number => performance.now());
+  const sleep = ports.sleep ?? ((ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); }));
+  const snapshot: { current: StaleSendSnapshot } = { current: { kind: "pending" } };
+  let markSettled: () => void = () => undefined;
+  const sendDone = new Promise<void>((resolve) => { markSettled = resolve; });
+  void Promise.resolve().then(() => ports.send(bytes)).then(
+    (signature) => {
+      snapshot.current = { kind: "value", signature };
+      markSettled();
+    },
+    (error: unknown) => {
+      snapshot.current = { kind: "error", error };
+      markSettled();
+    },
+  );
+
+  await waitUntilSettled(sendDone, timeoutMs, sleep);
+  await settlePendingReactions();
+  const immediate = classifyStaleSend(snapshot.current, expectedSignature);
+  if (immediate === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+  if (immediate === "expired") throw new StaleAuthorizationExpired();
+  if (immediate === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
+  if (immediate === "rejected") {
+    const error = snapshot.current.kind === "error" ? snapshot.current.error : new Error("Stale send failed");
     if (error instanceof DevnetSubmissionError) throw error;
     throw staleSendFailure(error);
   }
-  if (submitted !== held.signature) throw new Error("Devnet RPC returned a different transaction signature");
-  return confirmSignature(held.signature, held.guardInstructionIndex);
+
+  ports.onChecking?.();
+  const started = now();
+  while (now() - started < recoveryWindowMs) {
+    const during = classifyStaleSend(snapshot.current, expectedSignature);
+    if (during === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+    if (during === "expired") throw new StaleAuthorizationExpired();
+    if (during === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
+    if (during === "rejected") {
+      const error = snapshot.current.kind === "error" ? snapshot.current.error : new Error("Stale send failed");
+      if (error instanceof DevnetSubmissionError) throw error;
+      throw staleSendFailure(error);
+    }
+    const remaining = recoveryWindowMs - (now() - started);
+    if (remaining <= 0) break;
+    const beforeObserve = now();
+    if (await observeWithin(ports.observeSignature, expectedSignature, Math.min(pollMs, remaining), sleep)) {
+      return ports.confirm(expectedSignature, held.guardInstructionIndex);
+    }
+    const observedClass = classifyStaleSend(snapshot.current, expectedSignature);
+    if (observedClass === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+    if (observedClass === "expired") throw new StaleAuthorizationExpired();
+    if (observedClass === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
+    if (observedClass === "rejected") {
+      const error = snapshot.current.kind === "error" ? snapshot.current.error : new Error("Stale send failed");
+      if (error instanceof DevnetSubmissionError) throw error;
+      throw staleSendFailure(error);
+    }
+    const elapsed = now() - beforeObserve;
+    const left = recoveryWindowMs - (now() - started);
+    const pause = Math.min(pollMs, Math.max(left, 0)) - elapsed;
+    if (pause > 0) await sleep(pause);
+  }
+  const finalClass = classifyStaleSend(snapshot.current, expectedSignature);
+  if (finalClass === "confirm") return ports.confirm(expectedSignature, held.guardInstructionIndex);
+  if (finalClass === "expired") throw new StaleAuthorizationExpired();
+  if (finalClass === "mismatch") throw new Error("Devnet RPC returned a different transaction signature");
+  if (finalClass === "rejected") {
+    const error = snapshot.current.kind === "error" ? snapshot.current.error : new Error("Stale send failed");
+    if (error instanceof DevnetSubmissionError) throw error;
+    throw staleSendFailure(error);
+  }
+  throw new SubmissionStatusUnknown(expectedSignature);
+}
+
+export async function submitHeld(held: HeldAuthorization, hooks?: {
+  readonly onExpectedSignature?: (signature: string) => void;
+  readonly onChecking?: () => void;
+}): Promise<ConfirmedChainOutcome> {
+  await verifyPublicEnvironment();
+  const connection = client();
+  return runStaleSubmission(held, {
+    ...(hooks?.onExpectedSignature ? { onExpectedSignature: hooks.onExpectedSignature } : {}),
+    ...(hooks?.onChecking ? { onChecking: hooks.onChecking } : {}),
+    send: (bytes) => connection.sendTransaction(encodeWire(bytes) as Parameters<ReturnType<typeof createSolanaRpc>["sendTransaction"]>[0], {
+      encoding: "base64",
+      skipPreflight: true,
+      preflightCommitment: "confirmed",
+    }).send(),
+    observeSignature: (signature) => signatureVisible(connection, signature),
+    confirm: (signature, guardInstructionIndex) => confirmSignature(signature, guardInstructionIndex),
+  });
 }
 
 export async function readSessionBalances(session: PreparedSession): Promise<TokenBalances> {
